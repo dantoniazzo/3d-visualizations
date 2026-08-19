@@ -23,17 +23,32 @@ const _forward = new THREE.Vector3();
 const _normal = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 
-/** Wheel positions in the chassis's own frame: [x along, y up, z across]. */
+/**
+ * Wheel positions in the chassis's own frame.
+ *
+ * Measured from the model rather than copied: this chassis is 2.18 wide on X
+ * and 4.72 long on Z, so Z is the longitudinal axis and +Z is forward — the
+ * same convention the heading maths uses. The sibling project's car is built
+ * the other way round, and reusing its offsets put the wheels 0.21 outside a
+ * body only 1.09 half-wide.
+ *
+ * Y is the axle height: the wheel is 0.66 across, so its centre sits one
+ * radius above the ground, i.e. RIDE_HEIGHT below the chassis origin.
+ */
+const WHEEL_RADIUS = 0.33;
+const RIDE_HEIGHT = 0.45;
+const AXLE_Y = WHEEL_RADIUS - RIDE_HEIGHT;
+const TRACK = 0.86;        // half the distance between left and right wheels
 const WHEELS = [
-    { at: new THREE.Vector3(1.30, -0.30, 0.85), steers: false },
-    { at: new THREE.Vector3(1.30, -0.30, -0.85), steers: false },
-    { at: new THREE.Vector3(-1.35, -0.30, 0.85), steers: true },
-    { at: new THREE.Vector3(-1.35, -0.30, -0.85), steers: true },
+    { at: new THREE.Vector3(TRACK, AXLE_Y, 1.55), steers: true },   // front right
+    { at: new THREE.Vector3(-TRACK, AXLE_Y, 1.55), steers: true },  // front left
+    { at: new THREE.Vector3(TRACK, AXLE_Y, -1.35), steers: false }, // rear right
+    { at: new THREE.Vector3(-TRACK, AXLE_Y, -1.35), steers: false },// rear left
 ];
 
 // Body capsule: lifted so its underside clears the road, and narrow enough
 // to leave room either side in a single garage.
-const CAPSULE_RADIUS = 0.72;
+const CAPSULE_RADIUS = 0.90;   // body is 2.18 wide
 const CAPSULE_LIFT = 0.62;
 
 const PARAMS = {
@@ -46,9 +61,9 @@ const PARAMS = {
     maxSteer: 0.62,       // radians at the front wheels
     steerRate: 2.8,       // how fast the wheels turn toward the target angle
     steerEase: 0.55,      // steering authority falls off with speed
-    wheelBase: 2.65,
-    wheelRadius: 0.38,
-    rideHeight: 0.42,     // chassis origin above the contact point
+    wheelBase: 2.90,      // front axle to rear axle, from the offsets above
+    wheelRadius: WHEEL_RADIUS,
+    rideHeight: RIDE_HEIGHT,
     suspension: 8.0,      // how briskly the body settles onto the ground
     gravity: 22.0,
 };
@@ -102,9 +117,9 @@ export default class Car {
             pivot.position.copy(cfg.at);
             if (models.wheel) {
                 const mesh = models.wheel.clone(true);
-                // The wheel model faces one way; mirror it on the near side so
-                // both sides read correctly.
-                if (cfg.at.z < 0) mesh.rotation.y = Math.PI;
+                // The wheel disc's axle runs along X, so the far side is a
+                // half turn about Y.
+                if (cfg.at.x < 0) mesh.rotation.y = Math.PI;
                 mesh.traverse((o) => {
                     if (o.isMesh) o.castShadow = true;
                 });
@@ -222,7 +237,7 @@ export default class Car {
         for (const wheel of this.wheels) {
             wheel.spin -= travelled / PARAMS.wheelRadius;
             wheel.pivot.rotation.set(0, wheel.cfg.steers ? this.steer : 0, 0);
-            wheel.pivot.rotateZ(wheel.spin);
+            wheel.pivot.rotateX(wheel.spin);
         }
 
         this.updateCamera(dt);
@@ -237,7 +252,7 @@ export default class Car {
      * brake the car to a standstill on flat tarmac.
      */
     collider() {
-        const half = 1.05;
+        const half = 1.45;         // body is 4.72 long, less the cap radius
         const axis = _v.set(Math.sin(this.heading), 0, Math.cos(this.heading));
         const a = this.group.position.clone().addScaledVector(axis, -half);
         const b = this.group.position.clone().addScaledVector(axis, half);
@@ -248,13 +263,13 @@ export default class Car {
 
     updateCamera(dt) {
         // Ideal chase position, behind and above, in the car's own frame.
-        _idealOffset.set(-8.5, 3.2, 0).applyQuaternion(this.group.quaternion);
+        _idealOffset.set(0, 3.2, -8.5).applyQuaternion(this.group.quaternion);
         _idealOffset.add(this.group.position);
         if (_idealOffset.y < this.group.position.y + 1.0) {
             _idealOffset.y = this.group.position.y + 1.0;
         }
 
-        _idealLookAt.set(3.0, 0.8, 0).applyQuaternion(this.group.quaternion);
+        _idealLookAt.set(0, 0.8, 3.0).applyQuaternion(this.group.quaternion);
         _idealLookAt.add(this.group.position);
 
         if (!this.cameraSeeded) {
@@ -271,7 +286,7 @@ export default class Car {
 
     /** Where a driver stands when they get out — beside the door, not inside it. */
     exitPoint() {
-        const side = new THREE.Vector3(0, 0, 1).applyQuaternion(this.group.quaternion);
+        const side = new THREE.Vector3(1, 0, 0).applyQuaternion(this.group.quaternion);
         const spot = this.group.position.clone().addScaledVector(side, 1.9);
         const ground = this.groundAt(spot, 4.0);
         spot.y = ground ? ground.y : this.spec.elevation;
