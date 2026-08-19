@@ -104,6 +104,59 @@ SCENE_EFFORT=high             # low | medium | high | xhigh | max
 
 ---
 
+## Deploying
+
+The server is a **long-lived process**, not a set of functions: it holds
+Socket.IO connections and runs a 50 Hz presence tick with in-memory room
+state. That rules out serverless platforms — and note the app is not playable
+without it even single-player, because your own avatar is created only when
+the server echoes `setAvatarSkin` back. So deploy the container anywhere that
+runs one: Railway, Render, Fly.io.
+
+```bash
+docker build --build-arg VITE_MODEL_BASE=https://cdn.example.com -t walkthrough .
+```
+
+`render.yaml` spells the same thing out for Render; Railway and Fly read the
+Dockerfile directly.
+
+### Scenes
+
+`sceneStore.js` picks a driver from configuration. Set `SCENES_BUCKET` and
+scenes live in S3-compatible object storage (AWS S3, Cloudflare R2, Backblaze,
+MinIO); leave it unset and they are JSON files under `scenes/`, which is what
+local development and `npm run seed` use.
+
+A container's own disk is not durable and is not shared between instances, so
+**set `SCENES_BUCKET` in any real deployment** — `/api/health` reports
+`storage` so you can confirm which driver is live. Seed the bucket once:
+
+```bash
+SCENES_BUCKET=my-bucket npm run seed
+```
+
+| variable | purpose |
+|---|---|
+| `SCENES_BUCKET` | Bucket for scene JSON. Unset = local filesystem. |
+| `SCENES_PREFIX` | Key prefix, default `scenes/`. |
+| `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Credentials. |
+| `S3_ENDPOINT` | Only for R2 / MinIO; omit for AWS S3. |
+| `ANTHROPIC_API_KEY` | Only for AI generation. |
+| `VITE_MODEL_BASE` | CDN origin for the GLBs. **Build-time**, not runtime. |
+
+### Models
+
+Specs store model URLs relative (`/models/x.glb`), so no spec ever carries a
+hostname. Build them, upload once, and point the frontend at the CDN:
+
+```bash
+npm run models                                   # needs Blender
+MODELS_BUCKET=my-bucket npm run upload-models
+docker build --build-arg VITE_MODEL_BASE=https://cdn.example.com -t walkthrough .
+```
+
+---
+
 ## Using it
 
 1. **Describe a property**, or open a saved one.

@@ -1,0 +1,25 @@
+# Render blueprint. Railway and Fly.io read the Dockerfile directly; this just
+# spells out the same configuration for one of them.
+services:
+  - type: web
+    name: space-walkthrough
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    envVars:
+      # Scene persistence. Without SCENES_BUCKET the server falls back to the
+      # local filesystem, which a container loses on every restart.
+      - key: SCENES_BUCKET
+        sync: false
+      - key: AWS_REGION
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      # Only for Cloudflare R2 / MinIO; leave unset for AWS S3.
+      - key: S3_ENDPOINT
+        sync: false
+      # Optional: needed only for AI generation.
+      - key: ANTHROPIC_API_KEY
+        sync: false

@@ -60,12 +60,16 @@ export default class Experience {
         // An imported scene's GLB is queued alongside the avatars so the
         // preloader's progress bar covers the whole download, not just the
         // characters. Procedural scenes add nothing here.
+        // Model URLs are stored relative (`/models/x.glb`) so a spec never
+        // carries a hostname. VITE_MODEL_BASE points them at a CDN in
+        // deployments, where the GLBs are uploaded rather than committed.
+        const base = (import.meta.env?.VITE_MODEL_BASE || "").replace(/\/+$/, "");
         const sceneAssets = this.sceneSpec.model
             ? [
                   {
                       name: "sceneModel",
                       type: "glbModel",
-                      path: this.sceneSpec.model.url,
+                      path: base + this.sceneSpec.model.url,
                   },
               ]
             : [];
