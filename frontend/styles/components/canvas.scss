@@ -1,0 +1,109 @@
+.experience-wrapper {
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+}
+
+.experience-canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+    touch-action: none;
+}
+
+/* Mobile joystick zone — only active once the walkthrough has started. */
+.joystick-area {
+    position: fixed;
+    left: 0;
+    bottom: 0;
+    width: 45vw;
+    height: 45vh;
+    z-index: 11;
+    pointer-events: none;
+}
+
+.walkthrough-active .joystick-area {
+    pointer-events: auto;
+}
+
+/* A hairline crosshair helps aim the inspect raycast. Under pointer lock it
+   only makes sense while the pointer is actually captured; on touch, where
+   there's no lock to acquire, it's always on. */
+.walkthrough-active.pointer-locked .experience-wrapper::after,
+.walkthrough-active:not(.input-pointerlock) .experience-wrapper::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 4px;
+    height: 4px;
+    margin: -2px 0 0 -2px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.45);
+    pointer-events: none;
+}
+
+/* Click-to-look prompt: desktop only, and only while unlocked. */
+.lock-hint {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 1.1rem 1.8rem;
+    background: rgba(12, 14, 18, 0.62);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    backdrop-filter: blur(10px);
+    text-align: center;
+    pointer-events: none;
+    animation: lock-hint-in 0.35s ease-out;
+}
+
+.walkthrough-active.input-pointerlock:not(.pointer-locked) .lock-hint {
+    display: flex;
+}
+
+.lock-hint-main {
+    font-size: 1rem;
+    font-weight: 500;
+}
+
+.lock-hint-sub {
+    font-size: 0.78rem;
+    color: var(--text-faint);
+
+    b {
+        color: var(--text-muted);
+        font-weight: 600;
+    }
+}
+
+@keyframes lock-hint-in {
+    from {
+        opacity: 0;
+        transform: translate(-50%, -46%);
+    }
+    to {
+        opacity: 1;
+        transform: translate(-50%, -50%);
+    }
+}
+
+/* Touch keeps drag-to-look, so the joystick is the only movement affordance. */
+.input-pointerlock .joystick-area {
+    display: none;
+}
+
+@media (max-width: 720px) {
+    .chat-box {
+        width: calc(100vw - 2.2rem);
+    }
+    .joystick-area {
+        width: 100vw;
+        height: 40vh;
+    }
+}

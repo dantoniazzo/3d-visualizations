@@ -1,0 +1,131 @@
+.preloader {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(
+            120% 100% at 50% 30%,
+            rgba(201, 162, 39, 0.07),
+            transparent 65%
+        ),
+        var(--bg);
+}
+
+.preloader-inner {
+    width: min(520px, 90vw);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2.4rem;
+    text-align: center;
+}
+
+.preloader-scene {
+    h2 {
+        font-size: 1.7rem;
+        font-weight: 600;
+        letter-spacing: -0.015em;
+    }
+
+    p {
+        margin-top: 0.6rem;
+        color: var(--text-muted);
+        font-size: 0.92rem;
+    }
+}
+
+.preloader-stage {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.1rem;
+
+    h3 {
+        font-size: 1.1rem;
+        font-weight: 500;
+        color: var(--text-muted);
+    }
+}
+
+.progress-bar-container {
+    width: 100%;
+    height: 3px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.progress-bar {
+    height: 100%;
+    width: 0;
+    background: var(--accent);
+    transition: width 0.2s linear;
+}
+
+.preloader-count {
+    font-size: 0.85rem;
+    color: var(--text-faint);
+    font-variant-numeric: tabular-nums;
+}
+
+.preloader-hint {
+    font-size: 0.88rem;
+    color: var(--text-faint);
+}
+
+.name-form {
+    display: flex;
+    gap: 0.6rem;
+    width: min(360px, 100%);
+
+    input {
+        flex: 1;
+    }
+}
+
+.avatar-grid {
+    display: flex;
+    gap: 1.1rem;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.avatar-option {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.9rem 1.1rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-panel);
+    color: var(--text-muted);
+    transition: all 0.18s ease;
+
+    img {
+        width: 74px;
+        height: 74px;
+        object-fit: cover;
+        border-radius: 50%;
+    }
+
+    &:hover {
+        border-color: rgba(201, 162, 39, 0.5);
+        color: var(--text);
+        transform: translateY(-3px);
+    }
+}
+
+.controls-hint {
+    font-size: 0.8rem;
+    color: var(--text-faint);
+    max-width: 42ch;
+
+    b {
+        color: var(--text-muted);
+        font-weight: 600;
+    }
+}

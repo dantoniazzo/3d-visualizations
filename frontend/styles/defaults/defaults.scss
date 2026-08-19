@@ -1,0 +1,32 @@
+html,
+body {
+    width: 100%;
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    overscroll-behavior: none;
+}
+
+::selection {
+    background: var(--accent-soft);
+}
+
+input,
+textarea,
+button {
+    font-family: inherit;
+    font-size: inherit;
+    color: inherit;
+}
+
+textarea {
+    resize: vertical;
+}
+
+.hidden {
+    display: none !important;
+}

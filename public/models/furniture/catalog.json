@@ -1,0 +1,28 @@
+{
+    "$comment": "Furniture catalogue. Drop .glb files into this folder and add an entry here — nothing else needs changing. Sketchfab, IKEA and Poly Haven exports all work; check the licence before shipping anything.",
+    "categories": [
+        { "id": "seating", "label": "Seating" },
+        { "id": "tables", "label": "Tables & desks" },
+        { "id": "storage", "label": "Storage" },
+        { "id": "bedroom", "label": "Bedroom" },
+        { "id": "kitchen", "label": "Kitchen" },
+        { "id": "bathroom", "label": "Bathroom" },
+        { "id": "lighting", "label": "Lighting" },
+        { "id": "decor", "label": "Decor & plants" }
+    ],
+    "items": [
+        {
+            "$comment": "Template entry — copy this shape for each model you add.",
+            "id": "example-armchair",
+            "name": "Armchair",
+            "category": "seating",
+            "url": "/models/furniture/armchair.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [0.8, 0.82, 0.85],
+            "anchor": "floor",
+            "credit": "",
+            "enabled": false
+        }
+    ]
+}

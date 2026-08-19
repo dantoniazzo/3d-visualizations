@@ -1,0 +1,198 @@
+{
+  "id": "studio-loft",
+  "name": "Studio Loft",
+  "summary": "A 40 m² double-height studio loft. Living area and record corner to the west, kitchen and pantry to the east, a straight stair up to a mezzanine holding the bed, wardrobe and bathroom.",
+  "brief": "Bundled example",
+  "notes": [],
+  "updated_at": "2026-08-19T08:23:36.510Z",
+  "scene": {
+    "name": "Studio Loft",
+    "summary": "A 40 m² double-height studio loft. Living area and record corner to the west, kitchen and pantry to the east, a straight stair up to a mezzanine holding the bed, wardrobe and bathroom.",
+    "environment": {
+      "preset": "interior_white_model",
+      "ground": "none",
+      "ground_size": 0
+    },
+    "model": {
+      "url": "/models/studio_apartment.glb",
+      "scale": 0.39,
+      "offset": [
+        0,
+        0,
+        0
+      ],
+      "rotation": 0,
+      "roomsAreMetadata": true,
+      "collision": "mesh",
+      "collision_exclude": [],
+      "material": {
+        "color": "#cfcac2",
+        "roughness": 0.85,
+        "metalness": 0
+      }
+    },
+    "rooms": [
+      {
+        "id": "living",
+        "name": "Living Area",
+        "polygon": [
+          [
+            -4.19,
+            -1.68
+          ],
+          [
+            -0.6,
+            -1.68
+          ],
+          [
+            -0.6,
+            3.76
+          ],
+          [
+            -4.19,
+            3.76
+          ]
+        ],
+        "voids": [],
+        "floor_finish": "oak_parquet",
+        "ceiling_finish": "none",
+        "height": 2.6,
+        "elevation": 0
+      },
+      {
+        "id": "kitchen",
+        "name": "Kitchen",
+        "polygon": [
+          [
+            0.6,
+            -1.68
+          ],
+          [
+            3.24,
+            -1.68
+          ],
+          [
+            3.24,
+            1.6
+          ],
+          [
+            0.6,
+            1.6
+          ]
+        ],
+        "voids": [],
+        "floor_finish": "oak_parquet",
+        "ceiling_finish": "none",
+        "height": 2.6,
+        "elevation": 0
+      },
+      {
+        "id": "study",
+        "name": "Study Nook",
+        "polygon": [
+          [
+            1.8,
+            1.6
+          ],
+          [
+            3.24,
+            1.6
+          ],
+          [
+            3.24,
+            3.76
+          ],
+          [
+            1.8,
+            3.76
+          ]
+        ],
+        "voids": [],
+        "floor_finish": "oak_parquet",
+        "ceiling_finish": "none",
+        "height": 2.6,
+        "elevation": 0
+      },
+      {
+        "id": "stair",
+        "name": "Stair & Entry",
+        "polygon": [
+          [
+            -0.6,
+            -1.68
+          ],
+          [
+            0.6,
+            -1.68
+          ],
+          [
+            0.6,
+            3.76
+          ],
+          [
+            -0.6,
+            3.76
+          ]
+        ],
+        "voids": [],
+        "floor_finish": "oak_parquet",
+        "ceiling_finish": "none",
+        "height": 4.96,
+        "elevation": 0
+      }
+    ],
+    "walls": [],
+    "roofs": [],
+    "stairs": [],
+    "doors": [],
+    "furniture": [],
+    "finishes": {},
+    "spawns": [
+      {
+        "position": [
+          -0.24,
+          0,
+          2
+        ],
+        "yaw": 250,
+        "label": "Living area"
+      },
+      {
+        "position": [
+          -0.24,
+          0,
+          -0.2
+        ],
+        "yaw": 90,
+        "label": "Kitchen"
+      },
+      {
+        "position": [
+          -3.2,
+          0,
+          2.5
+        ],
+        "yaw": 135,
+        "label": "By the TV"
+      },
+      {
+        "position": [
+          1.4,
+          2.62,
+          1.6
+        ],
+        "yaw": 180,
+        "label": "Mezzanine"
+      },
+      {
+        "position": [
+          2.2,
+          2.62,
+          2
+        ],
+        "yaw": 100,
+        "label": "Upstairs bathroom"
+      }
+    ]
+  }
+}

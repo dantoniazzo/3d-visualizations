@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Space Walkthrough</title>
+        <meta
+            name="description"
+            content="Walk clients through AI-generated furnished spaces together, in the browser."
+        />
+    </head>
+    <body>
+        <!-- ============================================================
+             Launcher — pick or generate a space (before the 3D loads)
+             ============================================================ -->
+        <div class="launcher">
+            <div class="launcher-inner">
+                <header class="launcher-header">
+                    <h1>Space Walkthrough</h1>
+                    <p>
+                        Describe a space and walk through it with your client.
+                        Everyone in the same space sees each other.
+                    </p>
+                </header>
+
+                <section class="launcher-create">
+                    <label for="brief-input">Create a new space</label>
+                    <textarea
+                        id="brief-input"
+                        rows="3"
+                        placeholder="A furnished two-bedroom apartment, 78 m², open-plan kitchen and living room, warm oak floors, Scandinavian furniture, balcony doors on the south wall"
+                    ></textarea>
+                    <div class="launcher-actions">
+                        <button id="generate-button" class="primary">
+                            Generate space
+                        </button>
+                        <span class="launcher-status" id="generate-status"></span>
+                    </div>
+                    <div class="launcher-examples">
+                        <span>Try:</span>
+                        <button class="chip" data-example="A wedding reception for 80 guests in a garden marquee: round tables of eight, a dancefloor, a floral arch at the aisle end, a bar along one side, warm string lights overhead">
+                            Wedding reception
+                        </button>
+                        <button class="chip" data-example="A one-bedroom show apartment for an interior design pitch: 55 m², minimalist Japandi styling, muted greens, a reading nook by the window, integrated kitchen">
+                            Show apartment
+                        </button>
+                        <button class="chip" data-example="A small design studio office for six people: hot desks, a meeting room with a glass partition, a kitchenette, exposed brick, plants throughout">
+                            Studio office
+                        </button>
+                    </div>
+                </section>
+
+                <section class="launcher-library">
+                    <h2>Saved spaces</h2>
+                    <div class="scene-list" id="scene-list">
+                        <p class="empty">Loading…</p>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <!-- ============================================================
+             Preloader — assets, name, avatar
+             ============================================================ -->
+        <div class="preloader" style="display: none">
+            <div class="preloader-inner">
+                <div class="preloader-scene">
+                    <h2 class="preloader-scene-title"></h2>
+                    <p class="preloader-scene-summary"></p>
+                </div>
+
+                <div class="preloader-stage stage-loading">
+                    <div class="progress-bar-container">
+                        <div class="progress-bar"></div>
+                    </div>
+                    <div class="preloader-count">
+                        <span class="preloader-percent">0</span><span>%</span>
+                    </div>
+                    <p class="preloader-hint">Preparing your walkthrough</p>
+                </div>
+
+                <div class="preloader-stage stage-name" style="display: none">
+                    <h3>What should we call you?</h3>
+                    <div class="name-form">
+                        <input
+                            type="text"
+                            id="name-input"
+                            placeholder="Your name"
+                            maxlength="25"
+                            autocomplete="off"
+                        />
+                        <button id="name-input-button" class="primary">Continue</button>
+                    </div>
+                </div>
+
+                <div class="preloader-stage stage-avatar" style="display: none">
+                    <h3>Choose your avatar</h3>
+                    <div class="avatar-grid"></div>
+                    <p class="controls-hint">
+                        <b>Mouse</b> look · <b>WASD</b> move · <b>Shift</b> run ·
+                        <b>Space</b> jump · <b>E</b> open doors · <b>T</b> change
+                        finish · <b>V</b> first / third person · <b>M</b> menu ·
+                        <b>Enter</b> chat · <b>Esc</b> free cursor
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================
+             In-world HUD
+             ============================================================ -->
+        <div class="hud">
+            <div class="hud-top-left">
+                <button class="hud-button" id="menu-button" title="Spaces and rooms">
+                    <span></span><span></span><span></span>
+                </button>
+                <button class="view-toggle" id="view-toggle"
+                        title="Switch between first and third person (V)">
+                    <span class="view-toggle-icon" aria-hidden="true"></span>
+                    <span class="view-toggle-label" id="view-toggle-label">Third person</span>
+                    <kbd>V</kbd>
+                </button>
+                <div class="room-readout" id="room-readout"></div>
+            </div>
+
+            <div class="inspect-label" id="inspect-label"></div>
+
+            <!-- Contextual action for whatever the crosshair is on. -->
+            <div class="action-prompt" id="action-prompt" hidden>
+                <kbd id="action-key">E</kbd><span id="action-label"></span>
+            </div>
+
+            <!-- Finish picker, acting on the surface under the crosshair. -->
+            <div class="finish-picker" id="finish-picker" hidden>
+                <header>
+                    <h4 id="finish-target">Wall</h4>
+                    <button class="icon-button" id="finish-close" aria-label="Close">×</button>
+                </header>
+                <div class="finish-grid" id="finish-grid"></div>
+            </div>
+
+            <!-- Shown while placing a piece of furniture. -->
+            <div class="placement-bar" id="placement-bar" hidden>
+                <span id="placement-name"></span>
+                <span class="placement-keys">
+                    <kbd>Click</kbd> place · <kbd>[</kbd><kbd>]</kbd> rotate ·
+                    <kbd>Esc</kbd> cancel
+                </span>
+            </div>
+
+            <!-- Shown on desktop whenever the pointer isn't captured. -->
+            <div class="lock-hint">
+                <span class="lock-hint-main">Click to look around</span>
+                <span class="lock-hint-sub">
+                    <b>V</b> first / third person · <b>E</b> opens a door ·
+                    <b>T</b> changes a finish
+                </span>
+                <span class="lock-hint-sub">
+                    <b>Esc</b> frees the cursor · <b>M</b> opens the menu ·
+                    <b>Enter</b> to chat
+                </span>
+            </div>
+
+            <div class="hud-panel" id="menu-panel" hidden>
+                <div class="hud-panel-section">
+                    <h4 id="menu-scene-name"></h4>
+                    <p id="menu-scene-summary"></p>
+                </div>
+
+                <div class="hud-panel-section">
+                    <h5>Jump to</h5>
+                    <div class="jump-list" id="jump-list"></div>
+                </div>
+
+                <div class="hud-panel-section">
+                    <h5>Furnish</h5>
+                    <div class="furniture-list" id="furniture-list">
+                        <p class="hud-note">Loading catalogue…</p>
+                    </div>
+                    <p class="hud-note">
+                        Add models to <code>public/models/furniture/</code> and list
+                        them in <code>catalog.json</code>.
+                    </p>
+                </div>
+
+                <div class="hud-panel-section">
+                    <h5>Placed items</h5>
+                    <div class="placed-list" id="placed-list">
+                        <p class="hud-note">Nothing placed yet.</p>
+                    </div>
+                </div>
+
+                <div class="hud-panel-section">
+                    <h5>Ask for a change</h5>
+                    <textarea
+                        id="prompt-input"
+                        rows="2"
+                        placeholder="Swap the sofa for a darker one and add a rug"
+                    ></textarea>
+                    <button id="revise-button" class="primary small">
+                        Apply change
+                    </button>
+                    <p class="hud-note" id="revise-status">
+                        Rebuilds the space and reloads the walkthrough.
+                    </p>
+                </div>
+
+                <div class="hud-panel-section">
+                    <button id="leave-button" class="ghost small">
+                        Back to all spaces
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Mobile look/move -->
+        <div class="joystick-area"></div>
+
+        <!-- Chat -->
+        <div class="chat-box">
+            <div class="chat-container"></div>
+            <div class="form">
+                <div class="message-input-wrapper hidden">
+                    <input
+                        type="text"
+                        id="chat-message-input"
+                        maxlength="500"
+                        placeholder="Say something…"
+                    />
+                    <button id="chat-message-button" aria-label="Send message">
+                        <svg xmlns="http://www.w3.org/2000/svg" height="22" width="22">
+                            <path
+                                fill="currentColor"
+                                d="M3.45 17.3V6.55q0-.575.488-.9.487-.325 1.037-.1l12.65 5.35q.65.3.65 1.025 0 .725-.65 1.025L4.975 18.3q-.55.225-1.037-.1-.488-.325-.488-.9Zm1.25-.25 12.1-5.15L4.7 6.75v3.925L9.9 11.9l-5.2 1.225Z"
+                            />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="experience-wrapper">
+            <canvas class="experience-canvas"></canvas>
+        </div>
+
+        <script type="module" src="/index.js"></script>
+    </body>
+</html>
