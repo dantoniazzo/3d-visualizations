@@ -4,7 +4,7 @@
   "summary": "A capture of a real 101 m² two-bedroom apartment, imported unmodified. Textures are baked from the original photography, and the model was clipped at 2 m so the ceiling is open.",
   "brief": "Bundled example",
   "notes": [],
-  "updated_at": "2026-08-19T08:45:25.175Z",
+  "updated_at": "2026-08-19T09:02:55.767Z",
   "scene": {
     "name": "Scanned Apartment",
     "summary": "A capture of a real 101 m² two-bedroom apartment, imported unmodified. Textures are baked from the original photography, and the model was clipped at 2 m so the ceiling is open.",
@@ -221,6 +221,7 @@
     "roofs": [],
     "stairs": [],
     "doors": [],
+    "vehicles": [],
     "furniture": [],
     "finishes": {},
     "spawns": [

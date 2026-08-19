@@ -201,6 +201,30 @@ export default class Camera extends EventEmitter {
         }
     }
 
+    // ------------------------------------------------------------------
+    // Vehicle camera
+    // ------------------------------------------------------------------
+
+    /**
+     * Hand the camera to a car. Ported from the sibling `game` project: the
+     * car computes its own chase position and look-at each frame and this
+     * just copies them, so the smoothing lives with the thing being followed.
+     */
+    enterVehicleMode(car) {
+        this.vehicleMode = true;
+        this.vehicle = car;
+        // Free the mouse while driving — steering is on the keyboard, and a
+        // captured pointer with no look control is just a trapped cursor.
+        if (document.pointerLockElement) document.exitPointerLock();
+        if (this.controls) this.controls.enabled = false;
+    }
+
+    exitVehicleMode() {
+        this.vehicleMode = false;
+        this.vehicle = null;
+        if (this.controls) this.controls.enabled = true;
+    }
+
     toggleView() {
         if (this.mode === "third") this.setFirstPerson();
         else this.setThirdPerson();
@@ -229,6 +253,14 @@ export default class Camera extends EventEmitter {
     // ------------------------------------------------------------------
 
     update() {
+        // Driving overrides both schemes: on touch the orbit branch returns
+        // early, so checking this second would freeze the camera in the car.
+        if (this.vehicleMode && this.vehicle) {
+            this.perspectiveCamera.position.copy(this.vehicle.cameraPosition);
+            this.perspectiveCamera.lookAt(this.vehicle.cameraLookAt);
+            return;
+        }
+
         if (this.scheme === "orbit") {
             if (this.controls?.enabled) this.controls.update();
             return;

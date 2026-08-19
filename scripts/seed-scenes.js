@@ -501,6 +501,9 @@ const house = {
         wall("a-bed6-east", [-0.6, 5.4], [-0.6, 9.85], { base: STOREY.attic, height: 2.1 }),
         wall("a-store-west", [0.63, 5.4], [0.63, 9.85], { base: STOREY.attic, height: 2.1 }),
     ],
+    vehicles: [
+        { id: "car", position: [6.0, 1.4], elevation: 0, yaw: 180 },
+    ],
     stairs: [
         stair("stair-ground-first", [-1.025, 0.2], "north", STOREY.ground, STOREY.first),
         stair("stair-first-attic", [0.025, 9.6], "south", STOREY.first, STOREY.attic),
@@ -552,6 +555,9 @@ const wrenfield = {
         { position: [12.6, 3.1, -6.0], yaw: 0, label: "Family bathroom" },
         { position: [7.85, 6.05, -8.6], yaw: 0, label: "Loft" },
         { position: [8.0, 0, -13.0], yaw: 0, label: "Back garden" },
+    ],
+    vehicles: [
+        { id: "car", position: [19.2, -3.4], elevation: 0, yaw: 180 },
     ],
     rooms: wrenfieldMeta.rooms,
     walls: [],

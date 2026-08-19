@@ -5,6 +5,7 @@ import MaterialLibrary from "./Builders/MaterialLibrary.js";
 import StructureBuilder from "./Builders/StructureBuilder.js";
 import FurnitureLibrary from "./Builders/FurnitureLibrary.js";
 import Door from "./Door.js";
+import Car from "./Vehicle/Car.js";
 import { GROUND_TYPES, FINISHES } from "../../../shared/catalog.js";
 
 /**
@@ -66,6 +67,10 @@ export default class SceneBuilder {
             door.wallGroup.add(door.group);
             door.group.updateMatrixWorld(true);
         }
+
+        // Cars come after the octree is closed for the same reason doors do:
+        // they move, so they must not be baked into the static collision tree.
+        this.buildVehicles();
 
         // Furniture arrives after the catalogue fetch; it never blocks the
         // shell from being walkable.
@@ -319,6 +324,49 @@ export default class SceneBuilder {
         }
 
         return { surface: this.surfaces.get(base), side: null };
+    }
+
+    // ------------------------------------------------------------------
+    // Vehicles
+    // ------------------------------------------------------------------
+
+    buildVehicles() {
+        this.cars = [];
+        if (!this.spec.vehicles?.length) return;
+
+        const models = {
+            chassis: this.experience.resources.items.carChassis?.scene,
+            wheel: this.experience.resources.items.carWheel?.scene,
+        };
+        if (!models.chassis) {
+            console.error("Car model failed to load; skipping vehicles.");
+            return;
+        }
+
+        this.vehicleGroup = new THREE.Group();
+        this.vehicleGroup.name = "vehicles";
+        this.root.add(this.vehicleGroup);
+
+        for (const spec of this.spec.vehicles) {
+            const car = new Car(spec, models, this.octree);
+            this.vehicleGroup.add(car.group);
+            this.cars.push(car);
+        }
+    }
+
+    /** Nearest car a visitor could reasonably climb into. */
+    nearestCar(position, maxDistance = 3.4) {
+        let best = null;
+        let bestDistance = maxDistance;
+
+        for (const car of this.cars || []) {
+            const distance = car.group.position.distanceTo(position);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = car;
+            }
+        }
+        return best;
     }
 
     // ------------------------------------------------------------------
@@ -583,6 +631,7 @@ export default class SceneBuilder {
     /** Everything a look-at raycast should consider. */
     getInteractiveObjects() {
         const list = [this.shell];
+        if (this.vehicleGroup) list.push(this.vehicleGroup);
         if (this.fittings) list.push(this.fittings);
         if (this.doorAnchors) list.push(this.doorAnchors);
         if (this.furnitureGroup) list.push(this.furnitureGroup);

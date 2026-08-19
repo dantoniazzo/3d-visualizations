@@ -169,12 +169,14 @@ docker build --build-arg VITE_MODEL_BASE=https://cdn.example.com -t walkthrough 
    | `WASD` / arrows | move |
    | `Shift` | run |
    | `Space` | jump |
-   | `E` | open / close the door you're at |
+   | `E` | open a door — or get in / out of the car you're at |
    | `T` | change the finish of the surface under the crosshair |
    | `V` | first / third person |
    | `M` | menu (furnishing, jump-to-room, revisions) |
    | `Enter` | chat |
    | `Esc` | free the cursor |
+
+   Behind the wheel, `WASD` steers and `Space` brakes; `E` gets you out.
 
    Touch devices fall back to drag-to-look plus an on-screen joystick.
 
@@ -282,6 +284,18 @@ image serves every surface using a finish; nothing is unwrapped per object.
 Each baked tile is scaled so its mean matches the flat colour the palette was
 tuned against, because grout lines and board joints otherwise drag every floor
 about a quarter darker.
+
+**The car is arcade, not simulated.** Its enter/exit flow, chase camera and
+controls come from the sibling `game` project, but not its physics: that car
+is a Rapier raycast vehicle in a world built entirely from Rapier colliders,
+whereas everything here — the player included — collides against a three.js
+Octree. Running a second physics world alongside the octree, plus two
+megabytes of wasm, is a poor trade for a car that lives in a garage and on a
+drive, so `Car.js` uses the same octree: a ray per wheel to sit it on the
+ground and take its pitch, and a swept capsule for walls. That capsule is
+lifted clear of the road on purpose — one wide enough to span the car has a
+lower hemisphere that otherwise ploughs the floor slab and brakes it to a
+standstill on flat tarmac.
 
 **Doors are not in the collision octree.** That octree is built once and is
 static, so a leaf baked into it would either block a doorway forever or never

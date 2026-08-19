@@ -370,6 +370,17 @@ export function validateScene(raw) {
         ];
     });
 
+    // --- vehicles (authored) ---------------------------------------------
+    const vehicleIds = new Set();
+    scene.vehicles = (Array.isArray(raw.vehicles) ? raw.vehicles : []).flatMap((v, i) => [
+        {
+            id: uniqueId(v?.id, "car", vehicleIds, i),
+            position: vec(v?.position, 2, [0, 0]),
+            elevation: clamp(num(v?.elevation, 0), -20, 60),
+            yaw: num(v?.yaw, 0),
+        },
+    ]);
+
     // --- furniture placements (authored / user-placed) -------------------
     const furnitureIds = new Set();
     scene.furniture = (Array.isArray(raw.furniture) ? raw.furniture : []).flatMap((f, i) => {

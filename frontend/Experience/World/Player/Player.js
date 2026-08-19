@@ -49,6 +49,8 @@ export default class Player {
         this.player.body = this.camera.perspectiveCamera;
         this.player.animation = "idle";
 
+        this.inVehicle = false;
+        this.currentCar = null;
         this.jumpOnce = false;
         this.player.onFloor = false;
         this.player.gravity = 60;
@@ -193,6 +195,23 @@ export default class Player {
     onKeyDown = (event) => {
         if (this.isTyping()) return;
 
+        // While driving, the movement keys steer the car instead of the body.
+        if (this.inVehicle) {
+            if (event.code === "KeyE") {
+                this.exitVehicle();
+                return;
+            }
+            const c = this.currentCar.controls;
+            switch (event.code) {
+                case "KeyW": case "ArrowUp": c.forward = true; return;
+                case "KeyS": case "ArrowDown": c.backward = true; return;
+                case "KeyA": case "ArrowLeft": c.left = true; return;
+                case "KeyD": case "ArrowRight": c.right = true; return;
+                case "Space": c.brake = true; event.preventDefault(); return;
+                default: return;
+            }
+        }
+
         switch (event.code) {
             case "KeyW":
             case "ArrowUp":
@@ -234,6 +253,18 @@ export default class Player {
     };
 
     onKeyUp = (event) => {
+        if (this.inVehicle) {
+            const c = this.currentCar.controls;
+            switch (event.code) {
+                case "KeyW": case "ArrowUp": c.forward = false; return;
+                case "KeyS": case "ArrowDown": c.backward = false; return;
+                case "KeyA": case "ArrowLeft": c.left = false; return;
+                case "KeyD": case "ArrowRight": c.right = false; return;
+                case "Space": c.brake = false; return;
+                default: return;
+            }
+        }
+
         switch (event.code) {
             case "KeyW":
             case "ArrowUp":
@@ -398,7 +429,9 @@ export default class Player {
             if (this.actions.jump && this.jumpOnce) {
                 this.player.velocity.y = 12;
             }
-            this.jumpOnce = false;
+            this.inVehicle = false;
+        this.currentCar = null;
+        this.jumpOnce = false;
         }
 
         let damping = Math.exp(-15 * this.time.delta) - 1;
@@ -573,6 +606,14 @@ export default class Player {
         const builder = this.experience.world.sceneBuilder;
         if (!builder) return;
 
+        // A car within reach takes priority over a door: you are far more
+        // likely to mean "get in" while standing at the driver's door.
+        const car = builder.nearestCar?.(this.player.collider.end);
+        if (car) {
+            this.enterVehicle(car);
+            return;
+        }
+
         const door = this.lookedAtDoor || builder.nearestDoor(this.player.collider.end);
         if (!door) return;
 
@@ -580,10 +621,72 @@ export default class Player {
         this.experience.world.emit("door", { door, opened });
     }
 
+    /**
+     * Get in. Ported from the sibling `game` project, minus its multiplayer
+     * authority handling — there is one car per scene here and no contest
+     * over who is driving it.
+     */
+    enterVehicle(car) {
+        if (this.inVehicle || !car) return;
+
+        this.inVehicle = true;
+        this.currentCar = car;
+
+        // Hide the walking avatar and stop it drifting on held keys.
+        if (this.avatar) this.avatar.avatar.visible = false;
+        this.actions = {};
+        this.player.velocity.set(0, 0, 0);
+
+        this.camera.enterVehicleMode(car);
+        this.experience.world.emit("vehicle", { driving: true, car });
+    }
+
+    exitVehicle() {
+        if (!this.inVehicle || !this.currentCar) return;
+        const car = this.currentCar;
+
+        // Release anything still held, or the car drives off without you.
+        car.controls = { forward: false, backward: false, left: false, right: false, brake: false };
+
+        const spot = car.exitPoint();
+        this.player.collider.start.copy(spot);
+        this.player.collider.start.y += this.player.collider.radius;
+        this.player.collider.end.copy(this.player.collider.start);
+        this.player.collider.end.y += this.player.height;
+        this.player.velocity.set(0, 0, 0);
+
+        if (this.avatar) this.avatar.avatar.visible = this.camera.mode !== "first";
+
+        this.inVehicle = false;
+        this.currentCar = null;
+        this.camera.exitVehicleMode();
+        this.camera.target.copy(this.player.collider.end);
+        this.experience.world.emit("vehicle", { driving: false, car });
+    }
+
     /** Door close enough to operate, for the on-screen prompt. */
     updateDoorPrompt() {
         const builder = this.experience.world.sceneBuilder;
         if (!builder) return;
+
+        if (this.inVehicle) {
+            if (this.promptedDoorId !== "__driving") {
+                this.promptedDoorId = "__driving";
+                this.experience.world.emit("prompt", { label: "Get out", key: "E" });
+            }
+            return;
+        }
+
+        // Same priority as `interact`, so the prompt never offers one thing
+        // and the key does another.
+        const car = builder.nearestCar?.(this.player.collider.end);
+        if (car) {
+            if (this.promptedDoorId !== `car:${car.spec.id}`) {
+                this.promptedDoorId = `car:${car.spec.id}`;
+                this.experience.world.emit("prompt", { label: "Drive", key: "E" });
+            }
+            return;
+        }
 
         const door = this.lookedAtDoor || builder.nearestDoor(this.player.collider.end);
         const id = door?.spec.id ?? null;
@@ -722,6 +825,16 @@ export default class Player {
 
     update() {
         if (!this.avatar) return;
+
+        if (this.inVehicle) {
+            this.currentCar.update(this.time.delta);
+            // Keep the body with the car so stepping out lands beside it.
+            this.player.collider.start.copy(this.currentCar.group.position);
+            this.player.collider.end.copy(this.currentCar.group.position);
+            this.player.collider.end.y += this.player.height;
+            this.updateOtherPlayers();
+            return;
+        }
 
         this.updateColliderMovement();
         this.updateAvatarPosition();

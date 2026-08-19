@@ -64,6 +64,15 @@ export default class Experience {
         // carries a hostname. VITE_MODEL_BASE points them at a CDN in
         // deployments, where the GLBs are uploaded rather than committed.
         const base = (import.meta.env?.VITE_MODEL_BASE || "").replace(/\/+$/, "");
+        const extra = [];
+        // The car is only downloaded by scenes that place one.
+        if (this.sceneSpec.vehicles?.length) {
+            extra.push(
+                { name: "carChassis", type: "glbModel", path: base + "/models/chassis-draco.glb" },
+                { name: "carWheel", type: "glbModel", path: base + "/models/wheel-draco.glb" }
+            );
+        }
+
         const sceneAssets = this.sceneSpec.model
             ? [
                   {
@@ -74,7 +83,7 @@ export default class Experience {
               ]
             : [];
 
-        this.resources = new Resources([...assets, ...sceneAssets]);
+        this.resources = new Resources([...assets, ...sceneAssets, ...extra]);
     }
 
     setPreloader() {
