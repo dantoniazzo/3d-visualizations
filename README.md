@@ -169,14 +169,15 @@ docker build --build-arg VITE_MODEL_BASE=https://cdn.example.com -t walkthrough 
    | `WASD` / arrows | move |
    | `Shift` | run |
    | `Space` | jump |
-   | `E` | open a door — or get in / out of the car you're at |
+   | `E` | open / close the door you're at |
+   | `F` | get in / out of the car you're at |
    | `T` | change the finish of the surface under the crosshair |
    | `V` | first / third person |
    | `M` | menu (furnishing, jump-to-room, revisions) |
    | `Enter` | chat |
    | `Esc` | free the cursor |
 
-   Behind the wheel, `WASD` steers and `Space` brakes; `E` gets you out.
+   Behind the wheel, `WASD` steers and `Space` brakes; `F` gets you out.
 
    Touch devices fall back to drag-to-look plus an on-screen joystick.
 

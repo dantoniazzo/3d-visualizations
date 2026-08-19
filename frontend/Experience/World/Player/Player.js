@@ -197,7 +197,7 @@ export default class Player {
 
         // While driving, the movement keys steer the car instead of the body.
         if (this.inVehicle) {
-            if (event.code === "KeyE") {
+            if (event.code === "KeyF") {
                 this.exitVehicle();
                 return;
             }
@@ -240,6 +240,9 @@ export default class Player {
                 return;
             case "KeyE":
                 this.interact();
+                return;
+            case "KeyF":
+                this.enterNearestVehicle();
                 return;
             case "Space":
                 if (!this.actions.jump && this.player.onFloor) {
@@ -606,19 +609,18 @@ export default class Player {
         const builder = this.experience.world.sceneBuilder;
         if (!builder) return;
 
-        // A car within reach takes priority over a door: you are far more
-        // likely to mean "get in" while standing at the driver's door.
-        const car = builder.nearestCar?.(this.player.collider.end);
-        if (car) {
-            this.enterVehicle(car);
-            return;
-        }
-
         const door = this.lookedAtDoor || builder.nearestDoor(this.player.collider.end);
         if (!door) return;
 
         const opened = door.toggle();
         this.experience.world.emit("door", { door, opened });
+    }
+
+    /** `F` on foot: get into whichever car is within reach. */
+    enterNearestVehicle() {
+        const builder = this.experience.world.sceneBuilder;
+        const car = builder?.nearestCar?.(this.player.collider.end);
+        if (car) this.enterVehicle(car);
     }
 
     /**
@@ -672,18 +674,18 @@ export default class Player {
         if (this.inVehicle) {
             if (this.promptedDoorId !== "__driving") {
                 this.promptedDoorId = "__driving";
-                this.experience.world.emit("prompt", { label: "Get out", key: "E" });
+                this.experience.world.emit("prompt", { label: "Get out", key: "F" });
             }
             return;
         }
 
-        // Same priority as `interact`, so the prompt never offers one thing
-        // and the key does another.
+        // A car in reach takes the prompt: it is the more specific thing to
+        // be standing next to. Doors are still on `E` either way.
         const car = builder.nearestCar?.(this.player.collider.end);
         if (car) {
             if (this.promptedDoorId !== `car:${car.spec.id}`) {
                 this.promptedDoorId = `car:${car.spec.id}`;
-                this.experience.world.emit("prompt", { label: "Drive", key: "E" });
+                this.experience.world.emit("prompt", { label: "Drive", key: "F" });
             }
             return;
         }
