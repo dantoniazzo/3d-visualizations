@@ -2,9 +2,9 @@
   "id": "ashgrove-house",
   "name": "Ashgrove House",
   "summary": "A detached three-storey family house of about 245 m², set back from the road behind a lawn and a paved path, with an attached garage off the drive. Living room, kitchen-diner, utility, shower room and two bedrooms on the ground floor; three bedrooms, a dressing room and the family bathroom on the first; two more bedrooms and a shower room in the attic. Terracotta pantile roof, lawns front, back and to both sides, and a paved patio off the kitchen.",
-  "brief": "",
+  "brief": "Bundled example",
   "notes": [],
-  "updated_at": "2026-08-20T12:25:34.820Z",
+  "updated_at": "2026-08-20T12:40:18.735Z",
   "scene": {
     "name": "Ashgrove House",
     "summary": "A detached three-storey family house of about 245 m², set back from the road behind a lawn and a paved path, with an attached garage off the drive. Living room, kitchen-diner, utility, shower room and two bedrooms on the ground floor; three bedrooms, a dressing room and the family bathroom on the first; two more bedrooms and a shower room in the attic. Terracotta pantile roof, lawns front, back and to both sides, and a paved patio off the kitchen.",
@@ -2176,11 +2176,240 @@
         "yaw": 180
       }
     ],
-    "furniture": [],
-    "finishes": {
-      "wall:ext-s-0:b": "wall_tile_grey",
-      "wall:ext-s-1:b": "exposed_brick"
-    },
+    "furniture": [
+      {
+        "id": "f-seed-01",
+        "catalog_id": "rug",
+        "position": [
+          -3.3,
+          0,
+          1.4
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "f-seed-02",
+        "catalog_id": "sideboard",
+        "position": [
+          -4,
+          0,
+          -1.45
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "f-seed-03",
+        "catalog_id": "shelving",
+        "position": [
+          -1.95,
+          0,
+          3.6
+        ],
+        "rotation": 90,
+        "scale": 1
+      },
+      {
+        "id": "f-seed-04",
+        "catalog_id": "kitchen-run",
+        "position": [
+          -3.3,
+          0,
+          9.6
+        ],
+        "rotation": 180,
+        "scale": 1
+      },
+      {
+        "id": "f-seed-05",
+        "catalog_id": "fridge",
+        "position": [
+          -4.35,
+          0,
+          5.3
+        ],
+        "rotation": 90,
+        "scale": 1
+      },
+      {
+        "id": "f-seed-06",
+        "catalog_id": "bed-single",
+        "position": [
+          1.6,
+          0,
+          4.9
+        ],
+        "rotation": 90,
+        "scale": 1
+      },
+      {
+        "id": "f-seed-07",
+        "catalog_id": "nightstand",
+        "position": [
+          1.05,
+          0,
+          3.35
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "f-seed-08",
+        "catalog_id": "bed-double",
+        "position": [
+          2.3,
+          0,
+          8.6
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "f-seed-09",
+        "catalog_id": "nightstand",
+        "position": [
+          1.05,
+          0,
+          7.3
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "f-seed-10",
+        "catalog_id": "wardrobe",
+        "position": [
+          3.2,
+          0,
+          6.95
+        ],
+        "rotation": 180,
+        "scale": 1
+      },
+      {
+        "id": "f-seed-11",
+        "catalog_id": "wc",
+        "position": [
+          3.45,
+          0,
+          1.25
+        ],
+        "rotation": -90,
+        "scale": 1
+      },
+      {
+        "id": "f-seed-12",
+        "catalog_id": "vanity",
+        "position": [
+          1.4,
+          0,
+          0.95
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "f-seed-13",
+        "catalog_id": "washing-machine",
+        "position": [
+          1.15,
+          0,
+          -1.35
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "f-seed-14",
+        "catalog_id": "bed-double",
+        "position": [
+          -3.3,
+          2.8,
+          7.6
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "f-seed-15",
+        "catalog_id": "nightstand",
+        "position": [
+          -4.55,
+          2.8,
+          6.35
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "f-seed-16",
+        "catalog_id": "nightstand",
+        "position": [
+          -2.05,
+          2.8,
+          6.35
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "f-seed-17",
+        "catalog_id": "wardrobe",
+        "position": [
+          -3.3,
+          2.8,
+          9.7
+        ],
+        "rotation": 180,
+        "scale": 1
+      },
+      {
+        "id": "f-seed-18",
+        "catalog_id": "rug",
+        "position": [
+          -3.3,
+          2.8,
+          8.9
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "f-seed-19",
+        "catalog_id": "bath",
+        "position": [
+          2.3,
+          2.8,
+          -1.35
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "f-seed-20",
+        "catalog_id": "wc",
+        "position": [
+          3.45,
+          2.8,
+          1.85
+        ],
+        "rotation": -90,
+        "scale": 1
+      },
+      {
+        "id": "f-seed-21",
+        "catalog_id": "towel-rail",
+        "position": [
+          0.78,
+          2.8,
+          0.6
+        ],
+        "rotation": 90,
+        "scale": 1
+      }
+    ],
+    "finishes": {},
     "spawns": [
       {
         "position": [

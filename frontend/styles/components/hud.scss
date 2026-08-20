@@ -427,6 +427,14 @@ kbd {
     bottom: 5.5rem;
     transform: translateX(-50%);
     display: flex;
+
+    /* `display: flex` here outranks the user-agent rule for [hidden], so
+       without this the bar is on permanently. Every other panel in this file
+       carries the same guard. */
+    &[hidden] {
+        display: none;
+    }
+
     align-items: center;
     gap: 0.7rem;
     padding: 0.5rem 0.95rem;

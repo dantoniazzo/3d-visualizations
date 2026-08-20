@@ -202,7 +202,10 @@ function enterScene(sceneId, spec) {
     experience.world.on("prompt", onDoorPrompt);
     experience.world.on("tick", () => { if (grabbed) updateGrab(); });
     experience.world.on("catalog", renderFurnitureCatalog);
-    experience.world.on("furniture-changed", renderPlacedList);
+    experience.world.on("furniture-changed", (list) => {
+        renderPlacedList(list);
+        if (editing) refreshEditorHint();
+    });
     experience.world.on("finish-changed", () => scheduleSave());
 
     // Desktop looks with the mouse via pointer lock; touch keeps drag-to-orbit.
@@ -282,7 +285,12 @@ function onLook(target) {
         experience?.world.sceneBuilder?.highlightFurniture(id);
         if (grabbed) showAction("Click", "Drop");
         else if (id) showAction("Click", "Move · X delete");
-        else showAction(null);
+        else if (target && target.kind !== "surface") {
+            // Furniture baked into an imported model is part of the mesh, not
+            // a placement, so there is nothing to pick up. Saying so beats
+            // clicking at it and getting silence.
+            showAction("M", "Built in — add your own");
+        } else showAction(null);
         return;
     }
 
@@ -420,6 +428,7 @@ function setEditing(on) {
     document.body.classList.toggle("editing", on);
     dom.editorToggle.classList.toggle("is-on", on);
     dom.editorBar.hidden = !on;
+    if (on) refreshEditorHint();
     if (!on) {
         if (grabbed) cancelGrab();
         experience?.world.sceneBuilder?.highlightFurniture(null);
@@ -446,7 +455,7 @@ function grabFurniture(id) {
 
 function dropFurniture() {
     grabbed = null;
-    dom.editorHint.textContent = EDITOR_HINT;
+    refreshEditorHint();
 }
 
 function cancelGrab() {
@@ -472,6 +481,13 @@ function updateGrab() {
 }
 
 const EDITOR_HINT = "Click a piece to move it · X deletes · M adds";
+const EDITOR_HINT_EMPTY = "Nothing placed yet — press M to add furniture";
+
+function refreshEditorHint() {
+    if (grabbed) return;
+    const placed = experience?.world.sceneBuilder?.furniture.size ?? 0;
+    dom.editorHint.textContent = placed ? EDITOR_HINT : EDITOR_HINT_EMPTY;
+}
 
 function startPlacing(catalogId) {
     const library = experience?.world.sceneBuilder?.furnitureLibrary;

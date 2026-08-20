@@ -105,6 +105,20 @@ const stair = (id, start, direction, base, top, opts = {}) => ({
     riser: opts.riser ?? "trim_white",
 });
 
+/**
+ * A placed catalogue piece. These make the bundled house editable out of the
+ * box: without any, editor mode has nothing to act on and the visible
+ * furniture in a GLB-imported property is part of the mesh, not a placement.
+ */
+let placedCount = 0;
+const place = (catalogId, x, z, rotation = 0, y = 0) => ({
+    id: `f-seed-${(placedCount += 1).toString().padStart(2, "0")}`,
+    catalog_id: catalogId,
+    position: [x, y, z],
+    rotation,
+    scale: 1,
+});
+
 const roof = (id, footprint, base, ridge, opts = {}) => ({
     id,
     type: opts.type ?? "gable",
@@ -512,7 +526,47 @@ const house = {
         roof("roof-house", rect(-5, -2, 4, 10), 7.0, 9.7),
         roof("roof-garage", rect(4, -2, 8, 3.5), 2.8, 3.8, { overhang: 0.3 }),
     ],
-    furniture: [],
+    // Ashgrove is fully procedural, so it is the property that can carry
+    // placed furniture — every piece here can be moved, turned or deleted in
+    // editor mode (`G`).
+    furniture: [
+        // --- Living room, x -4.85..-1.70, z -1.85..4.50 ---------------
+        place("rug", -3.30, 1.40),
+        place("sideboard", -4.00, -1.45, 0),
+        place("shelving", -1.95, 3.60, 90),
+
+        // --- Kitchen, x -4.85..-1.70, z 4.60..9.85 --------------------
+        place("kitchen-run", -3.30, 9.60, 180),
+        place("fridge", -4.35, 5.30, 90),
+
+        // --- Guest bedroom, x 0.70..3.85, z 3.00..6.40 ----------------
+        place("bed-single", 1.60, 4.90, 90),
+        place("nightstand", 1.05, 3.35, 0),
+
+        // --- Bedroom 2, x 0.70..3.85, z 6.50..9.85 --------------------
+        place("bed-double", 2.30, 8.60, 0),
+        place("nightstand", 1.05, 7.30, 0),
+        place("wardrobe", 3.20, 6.95, 180),
+
+        // --- Shower room, x 0.70..3.85, z 0.70..2.90 ------------------
+        place("wc", 3.45, 1.25, -90),
+        place("vanity", 1.40, 0.95, 0),
+
+        // --- Utility, x 0.70..3.85, z -1.85..0.60 ---------------------
+        place("washing-machine", 1.15, -1.35, 0),
+
+        // --- Principal bedroom, first floor ---------------------------
+        place("bed-double", -3.30, 7.60, 0, 2.80),
+        place("nightstand", -4.55, 6.35, 0, 2.80),
+        place("nightstand", -2.05, 6.35, 0, 2.80),
+        place("wardrobe", -3.30, 9.70, 180, 2.80),
+        place("rug", -3.30, 8.90, 0, 2.80),
+
+        // --- Family bathroom, first floor -----------------------------
+        place("bath", 2.30, -1.35, 0, 2.80),
+        place("wc", 3.45, 1.85, -90, 2.80),
+        place("towel-rail", 0.78, 0.60, 90, 2.80),
+    ],
     finishes: {},
 };
 
