@@ -123,6 +123,7 @@ export default class FurnitureLibrary {
         this.load(placement.catalog_id).then((source) => {
             if (!source) {
                 group.add(this.missingPlaceholder());
+                group.updateMatrixWorld(true);
                 return;
             }
             const model = source.clone(true);
@@ -133,6 +134,12 @@ export default class FurnitureLibrary {
                 child.receiveShadow = true;
             });
             group.add(model);
+            // The model arrives a frame or more after the group was placed,
+            // so its world matrix is still at the origin until something
+            // recomputes it. The look raycast runs before the renderer, which
+            // means an unflushed piece is invisible to the crosshair — you
+            // could see the furniture but not select it.
+            group.updateMatrixWorld(true);
         });
 
         return group;

@@ -91,6 +91,13 @@ export default class World extends EventEmitter {
         return placement;
     }
 
+    /** Move or turn a placed piece. */
+    moveFurniture(id, position, rotation) {
+        const updated = this.sceneBuilder?.updateFurniture(id, { position, rotation });
+        if (updated) this.emit("furniture-changed", this.sceneBuilder.spec.furniture);
+        return updated;
+    }
+
     removeFurniture(id) {
         const removed = this.sceneBuilder?.removeFurniture(id);
         if (removed) this.emit("furniture-changed", this.sceneBuilder.spec.furniture);
@@ -101,6 +108,7 @@ export default class World extends EventEmitter {
         const delta = this.experience.time.delta;
         if (this.sceneBuilder) this.sceneBuilder.updateDoors(delta);
         if (this.player) this.player.update();
+        this.emit("tick", delta);
     }
 
     dispose() {

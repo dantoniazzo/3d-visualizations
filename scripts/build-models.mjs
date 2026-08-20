@@ -61,9 +61,12 @@ console.log(`Using ${blender.version}\n  ${blender.path}\n`);
 mkdirSync(join(BLENDER_DIR, "out"), { recursive: true });
 
 const shellOnly = process.argv.includes("--shell");
-const steps = shellOnly
-    ? [["build_house.py", ["--shell-only"]]]
-    : [["build_house.py", []], ["export_app.py", []]];
+const furnitureOnly = process.argv.includes("--furniture");
+const steps = furnitureOnly
+    ? [["export_furniture.py", []]]
+    : shellOnly
+      ? [["build_house.py", ["--shell-only"]]]
+      : [["build_house.py", []], ["export_app.py", []], ["export_furniture.py", []]];
 
 for (const [script, args] of steps) {
     console.log(`> ${script} ${args.join(" ")}`.trim());
@@ -74,7 +77,8 @@ for (const [script, args] of steps) {
     );
 }
 
-const glb = join(ROOT, "public", "models", "wrenfield_house.glb");
+const glb = join(ROOT, "public", "models",
+    furnitureOnly ? "furniture/catalog.json" : "wrenfield_house.glb");
 console.log(
     existsSync(glb)
         ? "\nDone. Run `npm run seed` to register the property."

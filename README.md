@@ -173,6 +173,7 @@ docker build --build-arg VITE_MODEL_BASE=https://cdn.example.com -t walkthrough 
    | `F` | get in / out of the car you're at |
    | `T` | change the finish of the surface under the crosshair |
    | `V` | first / third person |
+   | `G` | editor mode — move, rotate and delete furniture |
    | `M` | menu (furnishing, jump-to-room, revisions) |
    | `Enter` | chat |
    | `Esc` | free the cursor |
@@ -196,7 +197,21 @@ automatically.
 
 `M` opens the menu. Pick a catalogue item and it enters placement mode: the
 piece follows the crosshair, `[` and `]` (or the wheel) rotate, click drops
-it, `Esc` cancels. Placed items are listed in the menu and can be removed.
+it, `Esc` cancels. Placed items are also listed in the menu.
+
+**`G` is editor mode.** A banner appears, because it changes what a click
+does. Point at any placed piece and it outlines; click to pick it up and it
+follows your view, `[` and `]` turn it, and a second click sets it down. `X`
+deletes whatever is outlined, and `Esc` either puts a held piece back exactly
+where it was or leaves the mode. Every change writes straight to the scene, so
+it is saved the same way a finish swap is.
+
+The catalogue ships with 18 pieces — beds, wardrobes, a kitchen run and
+island, sanitaryware — built from the same parametric joinery as the houses by
+`npm run furniture`, so there is no licence question and nothing to download.
+They are build outputs, not repository content; add your own `.glb` files to
+`public/models/furniture/` and append entries to `catalog.json` in the same
+shape.
 
 ---
 

@@ -25,6 +25,9 @@ const dom = elements({
     // HUD
     menuButton: "#menu-button",
     viewToggle: "#view-toggle",
+    editorToggle: "#editor-toggle",
+    editorBar: "#editor-bar",
+    editorHint: "#editor-hint",
     viewToggleLabel: "#view-toggle-label",
     menuPanel: "#menu-panel",
     menuSceneName: "#menu-scene-name",
@@ -66,6 +69,16 @@ let currentSceneId = null;
 let lookTarget = null;
 /** Catalogue item being placed, if any. */
 let placing = null;
+
+/**
+ * Editor mode.
+ *
+ * `editing` is the mode toggle; `grabbed` holds the piece currently being
+ * dragged along with the crosshair, plus the transform it had when it was
+ * picked up so Escape can put it back.
+ */
+let editing = false;
+let grabbed = null;
 
 // ---------------------------------------------------------------------
 // API
@@ -187,6 +200,7 @@ function enterScene(sceneId, spec) {
     experience.world.on("look", onLook);
     experience.world.on("view", updateViewToggle);
     experience.world.on("prompt", onDoorPrompt);
+    experience.world.on("tick", () => { if (grabbed) updateGrab(); });
     experience.world.on("catalog", renderFurnitureCatalog);
     experience.world.on("furniture-changed", renderPlacedList);
     experience.world.on("finish-changed", () => scheduleSave());
@@ -261,6 +275,16 @@ function onLook(target) {
 
     dom.inspectLabel.textContent = label;
     dom.inspectLabel.classList.toggle("visible", Boolean(label));
+
+    // In editor mode the crosshair picks furniture rather than surfaces.
+    if (editing && !placing) {
+        const id = grabbed ? grabbed.id : (target?.kind === "furniture" ? target.id : null);
+        experience?.world.sceneBuilder?.highlightFurniture(id);
+        if (grabbed) showAction("Click", "Drop");
+        else if (id) showAction("Click", "Move · X delete");
+        else showAction(null);
+        return;
+    }
 
     // Only surfaces can be retextured; the prompt says so when one is aimed at.
     if (!placing && target?.kind === "surface") {
@@ -390,6 +414,64 @@ function renderPlacedList(furniture = []) {
 
     scheduleSave();
 }
+
+function setEditing(on) {
+    editing = on;
+    document.body.classList.toggle("editing", on);
+    dom.editorToggle.classList.toggle("is-on", on);
+    dom.editorBar.hidden = !on;
+    if (!on) {
+        if (grabbed) cancelGrab();
+        experience?.world.sceneBuilder?.highlightFurniture(null);
+    }
+    showAction(null);
+}
+
+/** Pick up whatever the crosshair is on, so it follows the view. */
+function grabFurniture(id) {
+    const entry = experience?.world.sceneBuilder?.furniture.get(id);
+    if (!entry) return;
+
+    grabbed = {
+        id,
+        rotation: entry.placement.rotation ?? 0,
+        // Kept so Escape can restore the piece exactly where it was.
+        original: {
+            position: [...entry.placement.position],
+            rotation: entry.placement.rotation ?? 0,
+        },
+    };
+    dom.editorHint.textContent = "Click to drop · [ ] rotate · Esc cancel";
+}
+
+function dropFurniture() {
+    grabbed = null;
+    dom.editorHint.textContent = EDITOR_HINT;
+}
+
+function cancelGrab() {
+    if (!grabbed) return;
+    experience?.world.moveFurniture(
+        grabbed.id,
+        grabbed.original.position,
+        grabbed.original.rotation
+    );
+    dropFurniture();
+}
+
+/** Follow the crosshair while a piece is held. */
+function updateGrab() {
+    if (!grabbed || !experience?.world.player) return;
+    const point = experience.world.player.getFloorPointUnderCrosshair();
+    experience.world.moveFurniture(
+        grabbed.id,
+        [point.x, point.y, point.z],
+        grabbed.rotation
+    );
+    experience.world.sceneBuilder?.refreshHighlight();
+}
+
+const EDITOR_HINT = "Click a piece to move it · X deletes · M adds";
 
 function startPlacing(catalogId) {
     const library = experience?.world.sceneBuilder?.furnitureLibrary;
@@ -560,6 +642,11 @@ dom.menuButton.addEventListener("click", () => toggleMenu());
  * which made a first-person walkthrough, the whole point of the tool, look
  * like it did not exist. The button and the key run through the same path.
  */
+dom.editorToggle.addEventListener("click", (event) => {
+    event.stopPropagation();
+    setEditing(!editing);
+});
+
 dom.viewToggle.addEventListener("click", (event) => {
     event.stopPropagation();
     experience?.world?.player?.toggleView();
@@ -616,9 +703,18 @@ dom.placedList.addEventListener("click", (event) => {
     if (button) experience?.world.removeFurniture(button.dataset.remove);
 });
 
-// A click while placing drops the piece; the canvas otherwise grabs the pointer.
+// A click in editor mode picks a piece up, or puts it down again.
+// (Registered before the placement handler so the two never both fire.)
 dom.canvas.addEventListener("mousedown", (event) => {
-    if (!placing || event.button !== 0) return;
+    if (event.button !== 0) return;
+
+    if (editing && !placing) {
+        if (grabbed) dropFurniture();
+        else if (lookTarget?.kind === "furniture") grabFurniture(lookTarget.id);
+        return;
+    }
+
+    if (!placing) return;
     event.preventDefault();
     commitPlacement();
 });
@@ -651,6 +747,28 @@ document.addEventListener("keydown", (event) => {
         return;
     }
 
+    // Editor mode owns its keys, so rotating a held piece cannot also nudge
+    // the camera or fire a walkthrough shortcut.
+    if (editing && !placing && !isChatOpen() && !typingElsewhere) {
+        if (event.key === "Escape") {
+            if (grabbed) cancelGrab();
+            else setEditing(false);
+            return;
+        }
+        if (grabbed && (event.key === "[" || event.key === "]")) {
+            grabbed.rotation += event.key === "[" ? -15 : 15;
+            return;
+        }
+        if ((event.key === "x" || event.key === "X" || event.key === "Delete")) {
+            const id = grabbed?.id ?? (lookTarget?.kind === "furniture" ? lookTarget.id : null);
+            if (id) {
+                if (grabbed) dropFurniture();
+                experience?.world.removeFurniture(id);
+            }
+            return;
+        }
+    }
+
     // Placement mode owns its keys until it ends.
     if (placing) {
         if (event.key === "Escape") {
@@ -665,6 +783,12 @@ document.addEventListener("keydown", (event) => {
             placing.rotation += 15;
             return;
         }
+    }
+
+    if ((event.key === "g" || event.key === "G") && !typingElsewhere && !isChatOpen()) {
+        event.preventDefault();
+        setEditing(!editing);
+        return;
     }
 
     if ((event.key === "t" || event.key === "T") && !typingElsewhere && !isChatOpen()) {

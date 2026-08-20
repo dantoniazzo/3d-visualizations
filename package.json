@@ -14,7 +14,8 @@
     "start": "node server/index.js",
     "seed": "node scripts/seed-scenes.js",
     "models": "node scripts/build-models.mjs",
-    "upload-models": "node scripts/upload-models.mjs"
+    "upload-models": "node scripts/upload-models.mjs",
+    "furniture": "node scripts/build-models.mjs --furniture"
   },
   "devDependencies": {
     "concurrently": "^8.2.0",

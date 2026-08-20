@@ -390,6 +390,10 @@ export default class SceneBuilder {
     addFurniture(placement, { record = true } = {}) {
         const instance = this.furnitureLibrary.createInstance(placement);
         this.furnitureGroup.add(instance);
+        // Flush the transform now: the look raycast runs before the renderer
+        // does, so on the frame a piece appears its matrix would still be at
+        // the origin and the crosshair would look straight through it.
+        instance.updateMatrixWorld(true);
         this.furniture.set(placement.id, { placement, group: instance });
 
         if (record) {
@@ -397,6 +401,73 @@ export default class SceneBuilder {
             this.spec.furniture.push(placement);
         }
         return instance;
+    }
+
+    /**
+     * Move, turn or resize a placed piece, and keep the spec in step so the
+     * change survives a reload.
+     */
+    updateFurniture(id, { position, rotation, scale } = {}) {
+        const entry = this.furniture.get(id);
+        if (!entry) return null;
+
+        if (position) {
+            entry.group.position.set(position[0], position[1], position[2]);
+            entry.placement.position = [...position];
+        }
+        if (rotation !== undefined) {
+            entry.group.rotation.y = THREE.MathUtils.degToRad(rotation);
+            entry.placement.rotation = rotation;
+        }
+        if (scale !== undefined) {
+            const item = this.furnitureLibrary.getItem(entry.placement.catalog_id);
+            entry.group.scale.setScalar(scale * (item?.scale ?? 1));
+            entry.placement.scale = scale;
+        }
+
+        entry.group.updateMatrixWorld(true);
+
+        // `spec.furniture` is what gets saved, and it holds its own copies.
+        const stored = (this.spec.furniture || []).find((f) => f.id === id);
+        if (stored) Object.assign(stored, entry.placement);
+        return entry.placement;
+    }
+
+    /** The placement a raycast hit belongs to, if any. */
+    resolveFurnitureHit(intersection) {
+        let node = intersection.object;
+        while (node && node.userData?.kind !== "furniture") node = node.parent;
+        if (!node) return null;
+        return this.furniture.get(node.userData.id) || null;
+    }
+
+    /** Outline a piece so it is obvious which one is about to be grabbed. */
+    highlightFurniture(id) {
+        if (this.highlightedId === id) return;
+        this.highlightedId = id;
+
+        if (!this.highlightBox) {
+            this.highlightBox = new THREE.Box3Helper(new THREE.Box3(), 0xffc86e);
+            this.highlightBox.visible = false;
+            this.highlightBox.renderOrder = 999;
+            this.highlightBox.material.depthTest = false;
+            this.scene.add(this.highlightBox);
+        }
+
+        const entry = id && this.furniture.get(id);
+        if (!entry) {
+            this.highlightBox.visible = false;
+            return;
+        }
+        this.highlightBox.box.setFromObject(entry.group);
+        this.highlightBox.visible = true;
+    }
+
+    /** Keep the outline on a piece while it is being dragged around. */
+    refreshHighlight() {
+        if (!this.highlightBox?.visible || !this.highlightedId) return;
+        const entry = this.furniture.get(this.highlightedId);
+        if (entry) this.highlightBox.box.setFromObject(entry.group);
     }
 
     removeFurniture(id) {
@@ -408,6 +479,7 @@ export default class SceneBuilder {
             if (child.isMesh && child.name === "missing-model") child.geometry.dispose();
         });
         this.furniture.delete(id);
+        if (this.highlightedId === id) this.highlightFurniture(null);
 
         this.spec.furniture = (this.spec.furniture || []).filter((f) => f.id !== id);
         return true;

@@ -418,3 +418,60 @@ kbd {
         padding: 0;
     }
 }
+
+/* Editor mode: a persistent banner, because it changes what a click does and
+   that should never be a surprise. */
+.editor-bar {
+    position: absolute;
+    left: 50%;
+    bottom: 5.5rem;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.5rem 0.95rem;
+    border-radius: var(--radius-sm);
+    background: rgba(12, 14, 18, 0.72);
+    border: 1px solid var(--border);
+    backdrop-filter: blur(10px);
+    font-size: 0.8rem;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+.editor-tag {
+    padding: 0.12rem 0.42rem;
+    border-radius: 3px;
+    background: #ffc86e;
+    color: #1a1408;
+    font-weight: 600;
+    font-size: 0.68rem;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+
+#editor-toggle.is-on {
+    border-color: #ffc86e;
+    color: #ffc86e;
+}
+
+.editor-toggle-icon {
+    width: 14px;
+    height: 14px;
+    flex: none;
+    border: 1.5px solid currentColor;
+    border-radius: 2px;
+    position: relative;
+    opacity: 0.85;
+
+    &::after {
+        content: "";
+        position: absolute;
+        width: 6px;
+        height: 6px;
+        right: -3px;
+        bottom: -3px;
+        background: currentColor;
+        border-radius: 1px;
+    }
+}

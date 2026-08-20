@@ -99,7 +99,7 @@
                     <p class="controls-hint">
                         <b>Mouse</b> look · <b>WASD</b> move · <b>Shift</b> run ·
                         <b>Space</b> jump · <b>E</b> open doors · <b>T</b> change
-                        finish · <b>V</b> first / third person · <b>M</b> menu ·
+                        finish · <b>V</b> first / third person · <b>G</b> edit · <b>M</b> menu ·
                         <b>Enter</b> chat · <b>Esc</b> free cursor
                     </p>
                 </div>
@@ -120,6 +120,12 @@
                     <span class="view-toggle-label" id="view-toggle-label">Third person</span>
                     <kbd>V</kbd>
                 </button>
+                <button class="view-toggle" id="editor-toggle"
+                        title="Move, add and delete furniture (G)">
+                    <span class="editor-toggle-icon" aria-hidden="true"></span>
+                    <span class="view-toggle-label">Edit</span>
+                    <kbd>G</kbd>
+                </button>
                 <div class="room-readout" id="room-readout"></div>
             </div>
 
@@ -137,6 +143,12 @@
                     <button class="icon-button" id="finish-close" aria-label="Close">×</button>
                 </header>
                 <div class="finish-grid" id="finish-grid"></div>
+            </div>
+
+            <!-- Shown while editor mode is on. -->
+            <div class="editor-bar" id="editor-bar" hidden>
+                <span class="editor-tag">Editing</span>
+                <span id="editor-hint">Click a piece to move it · X deletes · M adds</span>
             </div>
 
             <!-- Shown while placing a piece of furniture. -->
