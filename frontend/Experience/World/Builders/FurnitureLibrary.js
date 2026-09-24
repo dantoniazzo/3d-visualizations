@@ -2,6 +2,8 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 
+import { applyReflections } from "../../Utils/reflections.js";
+
 /**
  * Furniture as imported models rather than generated geometry.
  *
@@ -10,12 +12,18 @@ import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
  * entry, and it appears in the placement picker. Models are fetched lazily
  * the first time a piece is used and then cloned per instance, so ten
  * identical chairs cost one download.
+ *
+ * A scene built from an imported model can also contribute pieces of its
+ * own: the furniture baked into that GLB is lifted out on load and
+ * registered here as local items (`model:<node>`), so the editor treats a
+ * sofa that arrived inside the house exactly like one from the catalogue.
  */
 export default class FurnitureLibrary {
     constructor() {
         this.catalog = { categories: [], items: [] };
         this.sources = new Map(); // catalog id -> loaded GLTF scene
         this.pending = new Map(); // catalog id -> in-flight promise
+        this.localItems = [];
 
         this.loader = new GLTFLoader();
         const draco = new DRACOLoader();
@@ -39,7 +47,39 @@ export default class FurnitureLibrary {
             console.warn("Furniture catalogue unavailable:", error.message);
             this.catalog = { categories: [], items: [] };
         }
+        this.catalog.items.push(...this.localItems);
+        if (this.localItems.length) this.addLocalCategory();
         return this.catalog;
+    }
+
+    /**
+     * Register a piece that comes from the scene rather than a file. The
+     * source's origin must already sit at the piece's base centre, which is
+     * where a placement's position puts it.
+     */
+    registerLocal(id, { name, source }) {
+        const size = new THREE.Box3().setFromObject(source).getSize(new THREE.Vector3());
+        const item = {
+            id,
+            name,
+            category: "scene",
+            local: true,
+            scale: 1,
+            yaw: 0,
+            size: size.toArray(),
+        };
+        applyReflections(source);
+        this.sources.set(id, source);
+        this.localItems.push(item);
+        if (!this.catalog.items.includes(item)) this.catalog.items.push(item);
+        this.addLocalCategory();
+        return item;
+    }
+
+    addLocalCategory() {
+        if (!this.catalog.categories.some((c) => c.id === "scene")) {
+            this.catalog.categories.push({ id: "scene", label: "From this model" });
+        }
     }
 
     getItem(catalogId) {
@@ -72,6 +112,9 @@ export default class FurnitureLibrary {
             this.loader.load(
                 item.url,
                 (gltf) => {
+                    // Instances are clones sharing these materials, so
+                    // this reaches every copy placed from now on.
+                    applyReflections(gltf.scene);
                     this.sources.set(catalogId, gltf.scene);
                     this.pending.delete(catalogId);
                     resolve(gltf.scene);
@@ -92,7 +135,8 @@ export default class FurnitureLibrary {
     /**
      * Build a placed instance from a scene-spec entry.
      * Returns a group immediately; the model is swapped in when it arrives,
-     * so a slow download never blocks the walkthrough.
+     * so a slow download never blocks the walkthrough. `userData.ready`
+     * resolves once it has.
      *
      * @param {object} placement { id, catalog_id, position, rotation, scale }
      */
@@ -114,17 +158,24 @@ export default class FurnitureLibrary {
 
         if (!item) {
             group.add(this.missingPlaceholder());
+            group.userData.ready = Promise.resolve(group);
             return group;
         }
 
         const scale = (placement.scale ?? 1) * (item.scale ?? 1);
         group.scale.setScalar(scale);
 
-        this.load(placement.catalog_id).then((source) => {
+        if (item.local) {
+            group.add(this.sources.get(item.id).clone(true));
+            group.userData.ready = Promise.resolve(group);
+            return group;
+        }
+
+        group.userData.ready = this.load(placement.catalog_id).then((source) => {
             if (!source) {
                 group.add(this.missingPlaceholder());
                 group.updateMatrixWorld(true);
-                return;
+                return group;
             }
             const model = source.clone(true);
             model.rotation.y = THREE.MathUtils.degToRad(item.yaw ?? 0);
@@ -140,6 +191,7 @@ export default class FurnitureLibrary {
             // means an unflushed piece is invisible to the crosshair — you
             // could see the furniture but not select it.
             group.updateMatrixWorld(true);
+            return group;
         });
 
         return group;

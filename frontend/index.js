@@ -9,33 +9,28 @@ import { finishesFor, FINISHES } from "../shared/catalog.js";
  * App shell.
  *
  * The 3D Experience needs its scene spec at construction time, so this file
- * owns everything that happens before that: listing and generating spaces,
- * then wiring up chat, the HUD and the sockets once a space is chosen.
+ * owns everything that happens before that — listing the saved spaces —
+ * then wires up chat, the walkthrough HUD, saving and the sockets once a
+ * space is open. Edit mode brings its own interface (Editor/EditorUI);
+ * while it is open the walkthrough's keys and panels stand aside.
  */
 
 const dom = elements({
     // Launcher
     launcher: ".launcher",
     sceneList: "#scene-list",
-    briefInput: "#brief-input",
-    generateButton: "#generate-button",
-    generateStatus: "#generate-status",
+    launcherStatus: "#launcher-status",
     // Preloader
     preloader: ".preloader",
     // HUD
     menuButton: "#menu-button",
     viewToggle: "#view-toggle",
     editorToggle: "#editor-toggle",
-    editorBar: "#editor-bar",
-    editorHint: "#editor-hint",
     viewToggleLabel: "#view-toggle-label",
     menuPanel: "#menu-panel",
     menuSceneName: "#menu-scene-name",
     menuSceneSummary: "#menu-scene-summary",
     jumpList: "#jump-list",
-    promptInput: "#prompt-input",
-    reviseButton: "#revise-button",
-    reviseStatus: "#revise-status",
     leaveButton: "#leave-button",
     roomReadout: "#room-readout",
     inspectLabel: "#inspect-label",
@@ -46,10 +41,6 @@ const dom = elements({
     finishTarget: "#finish-target",
     finishGrid: "#finish-grid",
     finishClose: "#finish-close",
-    placementBar: "#placement-bar",
-    placementName: "#placement-name",
-    furnitureList: "#furniture-list",
-    placedList: "#placed-list",
     // Chat
     chatContainer: ".chat-container",
     chatInput: "#chat-message-input",
@@ -67,18 +58,9 @@ let currentSceneId = null;
 
 /** Whatever the crosshair is currently on, from the world's "look" event. */
 let lookTarget = null;
-/** Catalogue item being placed, if any. */
-let placing = null;
 
-/**
- * Editor mode.
- *
- * `editing` is the mode toggle; `grabbed` holds the piece currently being
- * dragged along with the crosshair, plus the transform it had when it was
- * picked up so Escape can put it back.
- */
-let editing = false;
-let grabbed = null;
+const editor = () => experience?.world?.editor ?? null;
+const editing = () => Boolean(editor()?.active);
 
 // ---------------------------------------------------------------------
 // API
@@ -107,7 +89,7 @@ async function loadSceneList() {
 
         if (scenes.length === 0) {
             dom.sceneList.innerHTML =
-                '<p class="empty">No spaces yet — describe one above to get started.</p>';
+                '<p class="empty">No spaces yet — run <code>npm run seed</code> to write the bundled examples.</p>';
             return;
         }
 
@@ -131,40 +113,13 @@ async function loadSceneList() {
     }
 }
 
-async function generateScene() {
-    const brief = dom.briefInput.value.trim();
-    if (!brief) {
-        dom.briefInput.focus();
-        return;
-    }
-
-    setGenerating(true, "Designing the space — this usually takes 30–90 seconds…");
-
-    try {
-        const record = await api("/api/generate", {
-            method: "POST",
-            body: JSON.stringify({ brief }),
-        });
-        enterScene(record.id, record.scene);
-    } catch (error) {
-        setGenerating(false, error.message);
-    }
-}
-
-function setGenerating(busy, message = "") {
-    dom.generateButton.disabled = busy;
-    dom.generateButton.textContent = busy ? "Generating…" : "Generate space";
-    dom.generateStatus.textContent = message;
-    dom.generateStatus.classList.toggle("error", !busy && Boolean(message));
-}
-
 async function openScene(sceneId) {
-    setGenerating(true, "Opening…");
+    dom.launcherStatus.textContent = "Opening…";
     try {
         const record = await api(`/api/scenes/${sceneId}`);
         enterScene(record.id, record.scene);
     } catch (error) {
-        setGenerating(false, error.message);
+        dom.launcherStatus.textContent = error.message;
         // Fall back to the library so a bad link isn't a dead end.
         loadSceneList();
     }
@@ -195,18 +150,17 @@ function enterScene(sceneId, spec) {
     // teleport, or read the spec that produced what you're looking at.
     window.experience = experience;
 
-    experience.world.on("ready", () => setupHud(spec));
-    experience.world.on("room", updateRoomReadout);
-    experience.world.on("look", onLook);
-    experience.world.on("view", updateViewToggle);
-    experience.world.on("prompt", onDoorPrompt);
-    experience.world.on("tick", () => { if (grabbed) updateGrab(); });
-    experience.world.on("catalog", renderFurnitureCatalog);
-    experience.world.on("furniture-changed", (list) => {
-        renderPlacedList(list);
-        if (editing) refreshEditorHint();
-    });
-    experience.world.on("finish-changed", () => scheduleSave());
+    const world = experience.world;
+    world.on("ready", () => setupHud(spec));
+    world.on("room", updateRoomReadout);
+    world.on("look", onLook);
+    world.on("view", updateViewToggle);
+    world.on("prompt", onDoorPrompt);
+    world.on("finish-changed", () => scheduleSave());
+    world.on("scene-edited", () => scheduleSave());
+    world.on("save-now", () => scheduleSave(0));
+    world.on("leave-space", leaveSpace);
+    world.on("mode", onModeChange);
 
     // Desktop looks with the mouse via pointer lock; touch keeps drag-to-orbit.
     if (experience.camera.scheme === "pointerLock") {
@@ -239,6 +193,12 @@ function handleAvatar(avatarId) {
     updateSocket.emit("setAvatar", avatarId);
 }
 
+function leaveSpace() {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("scene");
+    window.location.href = url.toString();
+}
+
 // ---------------------------------------------------------------------
 // HUD
 // ---------------------------------------------------------------------
@@ -263,6 +223,17 @@ function updateRoomReadout(room) {
     dom.roomReadout.classList.toggle("visible", Boolean(room));
 }
 
+/** Edit mode takes the screen: the walkthrough's panels close as it opens. */
+function onModeChange(mode) {
+    if (mode === "edit") {
+        toggleMenu(false);
+        if (!dom.finishPicker.hidden) closeFinishPicker({ relock: false });
+        if (isChatOpen()) closeChat({ relock: false });
+        showAction(null);
+        dom.inspectLabel.classList.remove("visible");
+    }
+}
+
 // ---------------------------------------------------------------------
 // Crosshair target, doors and finishes
 // ---------------------------------------------------------------------
@@ -279,23 +250,8 @@ function onLook(target) {
     dom.inspectLabel.textContent = label;
     dom.inspectLabel.classList.toggle("visible", Boolean(label));
 
-    // In editor mode the crosshair picks furniture rather than surfaces.
-    if (editing && !placing) {
-        const id = grabbed ? grabbed.id : (target?.kind === "furniture" ? target.id : null);
-        experience?.world.sceneBuilder?.highlightFurniture(id);
-        if (grabbed) showAction("Click", "Drop");
-        else if (id) showAction("Click", "Move · X delete");
-        else if (target && target.kind !== "surface") {
-            // Furniture baked into an imported model is part of the mesh, not
-            // a placement, so there is nothing to pick up. Saying so beats
-            // clicking at it and getting silence.
-            showAction("M", "Built in — add your own");
-        } else showAction(null);
-        return;
-    }
-
     // Only surfaces can be retextured; the prompt says so when one is aimed at.
-    if (!placing && target?.kind === "surface") {
+    if (target?.kind === "surface") {
         showAction("T", "Change finish");
     } else if (target?.kind !== "door") {
         showAction(null);
@@ -308,7 +264,6 @@ function onLook(target) {
 }
 
 function onDoorPrompt(prompt) {
-    if (placing) return;
     if (prompt) showAction(prompt.key, prompt.label);
     else if (lookTarget?.kind !== "surface") showAction(null);
 }
@@ -370,196 +325,40 @@ function renderFinishGrid(target) {
 }
 
 // ---------------------------------------------------------------------
-// Furniture
-// ---------------------------------------------------------------------
-
-function renderFurnitureCatalog(catalog) {
-    const library = experience?.world.sceneBuilder?.furnitureLibrary;
-    if (!library) return;
-
-    const groups = library.itemsByCategory();
-
-    if (groups.size === 0) {
-        dom.furnitureList.innerHTML =
-            '<p class="hud-note">No models in the catalogue yet.</p>';
-        return;
-    }
-
-    dom.furnitureList.innerHTML = [...groups]
-        .map(
-            ([category, items]) => `
-            <div class="furniture-group">
-                <h6>${escapeHtml(category.label)}</h6>
-                <div class="furniture-items">
-                    ${items
-                        .map(
-                            (item) =>
-                                `<button class="chip" data-catalog="${escapeHtml(item.id)}">${escapeHtml(item.name)}</button>`
-                        )
-                        .join("")}
-                </div>
-            </div>`
-        )
-        .join("");
-}
-
-function renderPlacedList(furniture = []) {
-    if (!furniture.length) {
-        dom.placedList.innerHTML = '<p class="hud-note">Nothing placed yet.</p>';
-        return;
-    }
-
-    const library = experience?.world.sceneBuilder?.furnitureLibrary;
-    dom.placedList.innerHTML = furniture
-        .map((f) => {
-            const name = library?.getItem(f.catalog_id)?.name ?? f.catalog_id;
-            return `<div class="placed-row">
-                <span>${escapeHtml(name)}</span>
-                <button class="icon-button" data-remove="${escapeHtml(f.id)}" title="Remove">×</button>
-            </div>`;
-        })
-        .join("");
-
-    scheduleSave();
-}
-
-function setEditing(on) {
-    editing = on;
-    document.body.classList.toggle("editing", on);
-    dom.editorToggle.classList.toggle("is-on", on);
-    dom.editorBar.hidden = !on;
-    if (on) refreshEditorHint();
-    if (!on) {
-        if (grabbed) cancelGrab();
-        experience?.world.sceneBuilder?.highlightFurniture(null);
-    }
-    showAction(null);
-}
-
-/** Pick up whatever the crosshair is on, so it follows the view. */
-function grabFurniture(id) {
-    const entry = experience?.world.sceneBuilder?.furniture.get(id);
-    if (!entry) return;
-
-    grabbed = {
-        id,
-        rotation: entry.placement.rotation ?? 0,
-        // Kept so Escape can restore the piece exactly where it was.
-        original: {
-            position: [...entry.placement.position],
-            rotation: entry.placement.rotation ?? 0,
-        },
-    };
-    dom.editorHint.textContent = "Click to drop · [ ] rotate · Esc cancel";
-}
-
-function dropFurniture() {
-    grabbed = null;
-    refreshEditorHint();
-}
-
-function cancelGrab() {
-    if (!grabbed) return;
-    experience?.world.moveFurniture(
-        grabbed.id,
-        grabbed.original.position,
-        grabbed.original.rotation
-    );
-    dropFurniture();
-}
-
-/** Follow the crosshair while a piece is held. */
-function updateGrab() {
-    if (!grabbed || !experience?.world.player) return;
-    const point = experience.world.player.getFloorPointUnderCrosshair();
-    experience.world.moveFurniture(
-        grabbed.id,
-        [point.x, point.y, point.z],
-        grabbed.rotation
-    );
-    experience.world.sceneBuilder?.refreshHighlight();
-}
-
-const EDITOR_HINT = "Click a piece to move it · X deletes · M adds";
-const EDITOR_HINT_EMPTY = "Nothing placed yet — press M to add furniture";
-
-function refreshEditorHint() {
-    if (grabbed) return;
-    const placed = experience?.world.sceneBuilder?.furniture.size ?? 0;
-    dom.editorHint.textContent = placed ? EDITOR_HINT : EDITOR_HINT_EMPTY;
-}
-
-function startPlacing(catalogId) {
-    const library = experience?.world.sceneBuilder?.furnitureLibrary;
-    const item = library?.getItem(catalogId);
-    if (!item) return;
-
-    placing = { item, rotation: 0 };
-    dom.placementName.textContent = item.name;
-    dom.placementBar.hidden = false;
-    showAction(null);
-    toggleMenu(false);
-    experience?.camera.requestLock();
-}
-
-function cancelPlacing() {
-    placing = null;
-    dom.placementBar.hidden = true;
-}
-
-function commitPlacement() {
-    if (!placing || !experience?.world.player) return;
-
-    const point = experience.world.player.getFloorPointUnderCrosshair();
-    experience.world.placeFurniture(placing.item.id, point, placing.rotation);
-    cancelPlacing();
-}
-
-// ---------------------------------------------------------------------
 // Persistence
 // ---------------------------------------------------------------------
 
 let saveTimer = null;
 
-/** Debounced save of finishes and furniture back to the stored scene. */
-function scheduleSave() {
+/** Debounced save of the whole spec — finishes, furniture, stairs, doors. */
+function scheduleSave(delay = 900) {
     if (!currentSceneId || !experience?.world.sceneBuilder) return;
 
+    editor()?.ui.setSaveState("pending");
     clearTimeout(saveTimer);
     saveTimer = setTimeout(async () => {
+        editor()?.ui.setSaveState("saving");
         try {
             await api(`/api/scenes/${currentSceneId}`, {
                 method: "PUT",
                 body: JSON.stringify({ scene: experience.world.sceneBuilder.spec }),
             });
+            editor()?.ui.setSaveState("saved");
         } catch (error) {
             console.warn("Could not save changes:", error.message);
+            editor()?.ui.setSaveState("error");
+            editor()?.ui.toast(`Couldn't save: ${error.message}`, "error");
         }
-    }, 900);
+    }, delay);
 }
 
-async function reviseScene() {
-    const instruction = dom.promptInput.value.trim();
-    if (!instruction || !currentSceneId) return;
-
-    dom.reviseButton.disabled = true;
-    dom.reviseStatus.textContent = "Rebuilding the space…";
-
-    try {
-        await api("/api/generate", {
-            method: "POST",
-            body: JSON.stringify({ id: currentSceneId, instruction }),
-        });
-
-        // The world is built once at construction, so the cheapest correct
-        // way to show a revision is a reload into the same space.
-        dom.reviseStatus.textContent = "Done — reloading…";
-        window.location.reload();
-    } catch (error) {
-        dom.reviseStatus.textContent = error.message;
-        dom.reviseButton.disabled = false;
+// Unsaved edits are worth a prompt before the tab closes.
+window.addEventListener("beforeunload", (event) => {
+    if (saveTimer && editor()?.ui.dom.save.dataset.state === "pending") {
+        event.preventDefault();
+        event.returnValue = "";
     }
-}
+});
 
 // ---------------------------------------------------------------------
 // Chat
@@ -634,19 +433,9 @@ function escapeHtml(value) {
     return div.innerHTML;
 }
 
-dom.generateButton.addEventListener("click", generateScene);
-
 dom.sceneList.addEventListener("click", (event) => {
     const card = event.target.closest("[data-scene]");
     if (card) openScene(card.dataset.scene);
-});
-
-document.querySelector(".launcher-examples")?.addEventListener("click", (event) => {
-    const chip = event.target.closest("[data-example]");
-    if (chip) {
-        dom.briefInput.value = chip.dataset.example;
-        dom.briefInput.focus();
-    }
 });
 
 dom.menuButton.addEventListener("click", () => toggleMenu());
@@ -658,14 +447,14 @@ dom.menuButton.addEventListener("click", () => toggleMenu());
  * which made a first-person walkthrough, the whole point of the tool, look
  * like it did not exist. The button and the key run through the same path.
  */
-dom.editorToggle.addEventListener("click", (event) => {
-    event.stopPropagation();
-    setEditing(!editing);
-});
-
 dom.viewToggle.addEventListener("click", (event) => {
     event.stopPropagation();
     experience?.world?.player?.toggleView();
+});
+
+dom.editorToggle.addEventListener("click", (event) => {
+    event.stopPropagation();
+    editor()?.enter();
 });
 
 function updateViewToggle(mode) {
@@ -688,13 +477,7 @@ dom.jumpList.addEventListener("click", (event) => {
     }
 });
 
-dom.reviseButton.addEventListener("click", reviseScene);
-
-dom.leaveButton.addEventListener("click", () => {
-    const url = new URL(window.location.href);
-    url.searchParams.delete("scene");
-    window.location.href = url.toString();
-});
+dom.leaveButton.addEventListener("click", leaveSpace);
 
 dom.chatSend.addEventListener("click", sendChat);
 
@@ -709,46 +492,10 @@ dom.finishGrid.addEventListener("click", (event) => {
 
 dom.finishClose.addEventListener("click", () => closeFinishPicker());
 
-dom.furnitureList.addEventListener("click", (event) => {
-    const chip = event.target.closest("[data-catalog]");
-    if (chip) startPlacing(chip.dataset.catalog);
-});
-
-dom.placedList.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-remove]");
-    if (button) experience?.world.removeFurniture(button.dataset.remove);
-});
-
-// A click in editor mode picks a piece up, or puts it down again.
-// (Registered before the placement handler so the two never both fire.)
-dom.canvas.addEventListener("mousedown", (event) => {
-    if (event.button !== 0) return;
-
-    if (editing && !placing) {
-        if (grabbed) dropFurniture();
-        else if (lookTarget?.kind === "furniture") grabFurniture(lookTarget.id);
-        return;
-    }
-
-    if (!placing) return;
-    event.preventDefault();
-    commitPlacement();
-});
-
-// Rotate the ghost with the wheel as well as the bracket keys.
-dom.canvas.addEventListener(
-    "wheel",
-    (event) => {
-        if (!placing) return;
-        event.preventDefault();
-        placing.rotation += Math.sign(event.deltaY) * 15;
-    },
-    { passive: false }
-);
-
 document.addEventListener("keydown", (event) => {
-    // Only meaningful once we're actually in a space.
-    if (!experience) return;
+    // Only meaningful once we're actually in a space, and walking it: edit
+    // mode handles its own keys.
+    if (!experience || editing()) return;
 
     const typingElsewhere =
         document.activeElement !== dom.chatInput &&
@@ -760,50 +507,6 @@ document.addEventListener("keydown", (event) => {
         event.preventDefault();
         if (isChatOpen()) sendChat();
         else openChat();
-        return;
-    }
-
-    // Editor mode owns its keys, so rotating a held piece cannot also nudge
-    // the camera or fire a walkthrough shortcut.
-    if (editing && !placing && !isChatOpen() && !typingElsewhere) {
-        if (event.key === "Escape") {
-            if (grabbed) cancelGrab();
-            else setEditing(false);
-            return;
-        }
-        if (grabbed && (event.key === "[" || event.key === "]")) {
-            grabbed.rotation += event.key === "[" ? -15 : 15;
-            return;
-        }
-        if ((event.key === "x" || event.key === "X" || event.key === "Delete")) {
-            const id = grabbed?.id ?? (lookTarget?.kind === "furniture" ? lookTarget.id : null);
-            if (id) {
-                if (grabbed) dropFurniture();
-                experience?.world.removeFurniture(id);
-            }
-            return;
-        }
-    }
-
-    // Placement mode owns its keys until it ends.
-    if (placing) {
-        if (event.key === "Escape") {
-            cancelPlacing();
-            return;
-        }
-        if (event.key === "[") {
-            placing.rotation -= 15;
-            return;
-        }
-        if (event.key === "]") {
-            placing.rotation += 15;
-            return;
-        }
-    }
-
-    if ((event.key === "g" || event.key === "G") && !typingElsewhere && !isChatOpen()) {
-        event.preventDefault();
-        setEditing(!editing);
         return;
     }
 

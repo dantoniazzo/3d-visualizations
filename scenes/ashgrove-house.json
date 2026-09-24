@@ -2,9 +2,9 @@
   "id": "ashgrove-house",
   "name": "Ashgrove House",
   "summary": "A detached three-storey family house of about 245 m², set back from the road behind a lawn and a paved path, with an attached garage off the drive. Living room, kitchen-diner, utility, shower room and two bedrooms on the ground floor; three bedrooms, a dressing room and the family bathroom on the first; two more bedrooms and a shower room in the attic. Terracotta pantile roof, lawns front, back and to both sides, and a paved patio off the kitchen.",
-  "brief": "Bundled example",
+  "brief": "",
   "notes": [],
-  "updated_at": "2026-08-20T12:40:18.735Z",
+  "updated_at": "2026-09-24T12:46:53.516Z",
   "scene": {
     "name": "Ashgrove House",
     "summary": "A detached three-storey family house of about 245 m², set back from the road behind a lawn and a paved path, with an attached garage off the drive. Living room, kitchen-diner, utility, shower room and two bedrooms on the ground floor; three bedrooms, a dressing room and the family bathroom on the first; two more bedrooms and a shower room in the attic. Terracotta pantile roof, lawns front, back and to both sides, and a paved patio off the kitchen.",
@@ -35,26 +35,7 @@
             9.85
           ]
         ],
-        "voids": [
-          [
-            [
-              -1.58,
-              0.2
-            ],
-            [
-              -0.45,
-              0.2
-            ],
-            [
-              -0.45,
-              4.4
-            ],
-            [
-              -1.58,
-              4.4
-            ]
-          ]
-        ],
+        "voids": [],
         "floor_finish": "oak_parquet",
         "ceiling_finish": "ceiling_white",
         "height": 2.6,
@@ -270,44 +251,7 @@
             9.85
           ]
         ],
-        "voids": [
-          [
-            [
-              -1.58,
-              0.2
-            ],
-            [
-              -0.45,
-              0.2
-            ],
-            [
-              -0.45,
-              4.4
-            ],
-            [
-              -1.58,
-              4.4
-            ]
-          ],
-          [
-            [
-              -0.55,
-              5.4
-            ],
-            [
-              0.58,
-              5.4
-            ],
-            [
-              0.58,
-              9.6
-            ],
-            [
-              -0.55,
-              9.6
-            ]
-          ]
-        ],
+        "voids": [],
         "floor_finish": "oak_parquet",
         "ceiling_finish": "ceiling_white",
         "height": 2.6,
@@ -1017,13 +961,13 @@
             "offset": 1.725,
             "width": 1.4,
             "height": 1.4,
-            "sill": 0.9,
+            "sill": 0.8,
             "frame": "trim_white"
           },
           {
             "id": "d-back",
             "type": "door",
-            "offset": 6.6,
+            "offset": 6.7,
             "width": 0.9,
             "height": 2.05,
             "sill": 0,
@@ -2140,6 +2084,7 @@
           0.2
         ],
         "direction": "north",
+        "yaw": 0,
         "width": 1.15,
         "base_height": 0,
         "top_height": 2.8,
@@ -2155,6 +2100,7 @@
           9.6
         ],
         "direction": "south",
+        "yaw": 180,
         "width": 1.15,
         "base_height": 2.8,
         "top_height": 5.6,
@@ -2164,13 +2110,39 @@
         "riser": "trim_white"
       }
     ],
+    "floor_openings": [
+      {
+        "id": "hole-stair-ground-first",
+        "position": [
+          -1.0150000000000001,
+          2.3000000000000003
+        ],
+        "elevation": 2.8,
+        "width": 1.1300000000000001,
+        "depth": 4.2,
+        "yaw": 0,
+        "stair_id": "stair-ground-first"
+      },
+      {
+        "id": "hole-stair-first-attic",
+        "position": [
+          0.014999999999999958,
+          7.5
+        ],
+        "elevation": 5.6,
+        "width": 1.13,
+        "depth": 4.199999999999999,
+        "yaw": 0,
+        "stair_id": "stair-first-attic"
+      }
+    ],
     "doors": [],
     "vehicles": [
       {
         "id": "car",
         "position": [
           6,
-          1.4
+          -1.2
         ],
         "elevation": 0,
         "yaw": 180
@@ -2216,7 +2188,7 @@
         "position": [
           -3.3,
           0,
-          9.6
+          6.4
         ],
         "rotation": 180,
         "scale": 1
@@ -2236,9 +2208,9 @@
         "id": "f-seed-06",
         "catalog_id": "bed-single",
         "position": [
-          1.6,
+          2.3125,
           0,
-          4.9
+          3.8
         ],
         "rotation": 90,
         "scale": 1
@@ -2379,9 +2351,9 @@
         "id": "f-seed-19",
         "catalog_id": "bath",
         "position": [
-          2.3,
+          2.2,
           2.8,
-          -1.35
+          -1.15
         ],
         "rotation": 0,
         "scale": 1
@@ -2407,9 +2379,45 @@
         ],
         "rotation": 90,
         "scale": 1
+      },
+      {
+        "id": "f-mufj06zmk0",
+        "catalog_id": "desk-chair",
+        "position": [
+          -3.8255,
+          2.8,
+          1.3733
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "f-mufj0chkvx",
+        "catalog_id": "lounge-chair",
+        "position": [
+          -6.9407,
+          0,
+          0.9162
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "f-mufj0ktwri",
+        "catalog_id": "console-table",
+        "position": [
+          -4.1236,
+          2.8,
+          4.9145
+        ],
+        "rotation": 0,
+        "scale": 1
       }
     ],
-    "finishes": {},
+    "finishes": {
+      "wall:g-hall-east:b": "paint_clay",
+      "floor:g-bed": "slate_tile"
+    },
     "spawns": [
       {
         "position": [

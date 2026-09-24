@@ -5,6 +5,8 @@ selection state and an active view layer, which makes them slow and fragile
 in a headless script that creates a few thousand objects.
 """
 
+import math
+
 import bmesh
 import bpy
 from mathutils import Vector
@@ -102,6 +104,141 @@ def cylinder(name, radius, height, loc=(0, 0, 0), col=None, mat=None, rot=None,
         if len(p.vertices) > 4:
             p.use_smooth = False
     return obj
+
+
+def cone(name, radius_bottom, radius_top, height, loc=(0, 0, 0), col=None, mat=None,
+         rot=None, segments=24, origin="center"):
+    """A tapered cylinder — lampshades, pots, table pedestals."""
+    bm = bmesh.new()
+    bmesh.ops.create_cone(
+        bm, cap_ends=True, cap_tris=False, segments=segments,
+        radius1=radius_bottom, radius2=radius_top, depth=height,
+    )
+    if "z" in origin:
+        bmesh.ops.translate(bm, vec=Vector((0, 0, height / 2)), verts=bm.verts)
+    mesh = bpy.data.meshes.new(name)
+    bm.to_mesh(mesh)
+    bm.free()
+    obj = _finish(mesh, name, col, mat, loc, rot, True)
+    for p in obj.data.polygons:
+        if len(p.vertices) > 4:
+            p.use_smooth = False
+    return obj
+
+
+def sphere(name, radius, loc=(0, 0, 0), col=None, mat=None, scale=None, subdivisions=2):
+    """An icosphere, optionally squashed — foliage, cushions, knobs."""
+    bm = bmesh.new()
+    bmesh.ops.create_icosphere(bm, subdivisions=subdivisions, radius=radius)
+    if scale:
+        bmesh.ops.scale(bm, vec=Vector(scale), verts=bm.verts)
+    mesh = bpy.data.meshes.new(name)
+    bm.to_mesh(mesh)
+    bm.free()
+    return _finish(mesh, name, col, mat, loc, None, True)
+
+
+def rounded_rect(w, d, r, segments=5):
+    """Outline of a rounded rectangle centred on the origin, as (x, y)
+    points running anticlockwise seen from above. Every call with the same
+    `segments` gives the same number of points, so outlines of different
+    sizes can be lofted into one another."""
+    r = max(0.002, min(r, w / 2 - 0.001, d / 2 - 0.001))
+    points = []
+    for cx, cy, start in ((w / 2 - r, d / 2 - r, 0), (-w / 2 + r, d / 2 - r, 90),
+                          (-w / 2 + r, -d / 2 + r, 180), (w / 2 - r, -d / 2 + r, 270)):
+        for i in range(segments + 1):
+            a = math.radians(start + 90 * i / segments)
+            points.append((cx + r * math.cos(a), cy + r * math.sin(a)))
+    return points
+
+
+def loft(name, loops, center=None, sharp=(), col=None, mat=None, loc=(0, 0, 0),
+         smooth=True):
+    """One continuous surface through a series of closed loops.
+
+    Each loop is a list of (x, y, z) points, all loops the same length and
+    running the same way round. Consecutive loops are joined by a band of
+    quads, and `center`, if given, closes the last loop with a fan. The side
+    a band faces follows from the order: loops going up an outside face
+    outwards, going inwards across a top face upwards, going down an inside
+    face inwards — which is how a basin or a bath is built from one strip.
+
+    `sharp` lists loops whose edges should stay crisp under smooth shading
+    (a rim, a lip); everything else shades smooth, or nothing does with
+    `smooth=False`, for shapes made of planes. There are no caps unless
+    asked for, so nothing sits coplanar with whatever the shape stands on.
+    """
+    bm = bmesh.new()
+    rings = [[bm.verts.new(p) for p in loop] for loop in loops]
+    n = len(rings[0])
+    for a, b in zip(rings, rings[1:]):
+        for j in range(n):
+            k = (j + 1) % n
+            bm.faces.new((a[j], a[k], b[k], b[j]))
+    if center is not None:
+        hub = bm.verts.new(center)
+        last = rings[-1]
+        for j in range(n):
+            bm.faces.new((last[j], last[(j + 1) % n], hub))
+    bm.edges.ensure_lookup_table()
+    for index in sharp:
+        ring = rings[index]
+        for j in range(n):
+            edge = bm.edges.get((ring[j], ring[(j + 1) % n]))
+            if edge:
+                edge.smooth = False
+    mesh = bpy.data.meshes.new(name)
+    bm.to_mesh(mesh)
+    bm.free()
+    return _finish(mesh, name, col, mat, loc, None, smooth)
+
+
+def catmull_rom(points, steps=4):
+    """A smooth curve through every point, `steps` samples per span."""
+    pts = [Vector(p) for p in points]
+    ext = [pts[0] * 2 - pts[1]] + pts + [pts[-1] * 2 - pts[-2]]
+    out = []
+    for i in range(1, len(ext) - 2):
+        p0, p1, p2, p3 = ext[i - 1], ext[i], ext[i + 1], ext[i + 2]
+        for s in range(steps):
+            t = s / steps
+            out.append(0.5 * (2 * p1 + (p2 - p0) * t +
+                              (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t +
+                              (3 * p1 - p0 - 3 * p2 + p3) * t * t * t))
+    out.append(pts[-1])
+    return out
+
+
+def sweep(name, points, radius, sides=6, col=None, mat=None):
+    """A round section carried along a path — hoses, cables, bent rails.
+
+    The section is turned from one point to the next by the smallest twist
+    that follows the path, so it never corkscrews, and the ends are left
+    open: they are meant to disappear into whatever they connect to.
+    """
+    pts = [Vector(p) for p in points]
+    n = len(pts)
+    tangents = [(pts[min(n - 1, i + 1)] - pts[max(0, i - 1)]).normalized() for i in range(n)]
+    ref = Vector((0, 0, 1)) if abs(tangents[0].z) < 0.9 else Vector((1, 0, 0))
+    normal = tangents[0].cross(ref).normalized()
+
+    bm = bmesh.new()
+    rings = []
+    for p, t in zip(pts, tangents):
+        normal = (normal - t * normal.dot(t)).normalized()
+        binormal = t.cross(normal)
+        rings.append([bm.verts.new(p + (normal * math.cos(a) + binormal * math.sin(a)) * radius)
+                      for a in (2 * math.pi * k / sides for k in range(sides))])
+    # Round the section, then along the path: this winding faces outwards.
+    for a, b in zip(rings, rings[1:]):
+        for k in range(sides):
+            j = (k + 1) % sides
+            bm.faces.new((a[k], a[j], b[j], b[k]))
+    mesh = bpy.data.meshes.new(name)
+    bm.to_mesh(mesh)
+    bm.free()
+    return _finish(mesh, name, col, mat, None, None, True)
 
 
 def tube(name, radius, height, thickness, loc=(0, 0, 0), col=None, mat=None,
@@ -335,9 +472,8 @@ def bounds(obj):
 
 
 def fit_to(obj, target_size=None, target_height=None, sit_on=None):
-    """Scale an imported asset to a real-world size, and optionally drop it
-    onto a surface. Poly Haven assets are metric, but not all are the size a
-    given room wants."""
+    """Scale an object to a real-world size, and optionally drop it onto a
+    surface."""
     lo, hi = bounds(obj)
     size = hi - lo
     if target_height:

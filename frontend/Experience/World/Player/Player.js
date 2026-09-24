@@ -27,11 +27,12 @@ export default class Player {
         this.domElements = elements({
             joystickArea: ".joystick-area",
             messageInput: "#chat-message-input",
-            promptInput: "#prompt-input",
         });
 
         this.listeners = [];
         this.otherPlayers = {};
+        // Off while the editor has the scene: the keys belong to it then.
+        this.enabled = true;
 
         this.initPlayer();
         this.initControls();
@@ -186,14 +187,79 @@ export default class Player {
         const active = document.activeElement;
         return (
             active === this.domElements.messageInput ||
-            active === this.domElements.promptInput ||
             active?.tagName === "INPUT" ||
             active?.tagName === "TEXTAREA"
         );
     }
 
+    /**
+     * Hand the controls to the editor, or take them back. Held keys are
+     * dropped either way, so nobody walks off on a W that was pressed as
+     * the mode changed.
+     */
+    setEnabled(enabled) {
+        if (!enabled && this.inVehicle) this.exitVehicle();
+        this.enabled = enabled;
+        this.actions = {};
+        this.player.velocity.set(0, 0, 0);
+        this.lookSignature = undefined;
+        this.promptedDoorId = undefined;
+    }
+
+    /**
+     * Walk from edit mode. Its camera is not behind the body, so it hands
+     * over its heading instead — a function returning it, in the same terms
+     * as the walkthrough's look angle: W walks the way that camera looks, A
+     * and D strafe across it, and the body turns to face the way it goes.
+     * Null gives walking back to the walkthrough's own camera.
+     */
+    setRemote(heading) {
+        this.remote = heading || null;
+        this.actions = {};
+        this.player.velocity.x = 0;
+        this.player.velocity.z = 0;
+    }
+
+    /**
+     * Walking, running and jumping keys, and nothing else — edit mode owns
+     * the rest of the keyboard. Returns whether the key was one of them.
+     */
+    setMovementKey(code, down) {
+        switch (code) {
+            case "KeyW":
+            case "ArrowUp":
+                this.actions.forward = down;
+                return true;
+            case "KeyS":
+            case "ArrowDown":
+                this.actions.backward = down;
+                return true;
+            case "KeyA":
+            case "ArrowLeft":
+                this.actions.left = down;
+                return true;
+            case "KeyD":
+            case "ArrowRight":
+                this.actions.right = down;
+                return true;
+            case "ShiftLeft":
+                this.actions.run = down;
+                return true;
+            case "Space":
+                if (!down) {
+                    this.actions.jump = false;
+                } else if (!this.actions.jump && this.player.onFloor) {
+                    this.actions.jump = true;
+                    this.jumpOnce = true;
+                }
+                return true;
+            default:
+                return false;
+        }
+    }
+
     onKeyDown = (event) => {
-        if (this.isTyping()) return;
+        if (this.isTyping() || !this.enabled) return;
 
         // While driving, the movement keys steer the car instead of the body.
         if (this.inVehicle) {
@@ -212,26 +278,9 @@ export default class Player {
             }
         }
 
+        if (this.setMovementKey(event.code, true)) return;
+
         switch (event.code) {
-            case "KeyW":
-            case "ArrowUp":
-                this.actions.forward = true;
-                break;
-            case "KeyS":
-            case "ArrowDown":
-                this.actions.backward = true;
-                break;
-            case "KeyA":
-            case "ArrowLeft":
-                this.actions.left = true;
-                break;
-            case "KeyD":
-            case "ArrowRight":
-                this.actions.right = true;
-                break;
-            case "ShiftLeft":
-                this.actions.run = true;
-                break;
             case "KeyO":
                 this.player.animation = "dancing";
                 return;
@@ -243,12 +292,6 @@ export default class Player {
                 return;
             case "KeyF":
                 this.enterNearestVehicle();
-                return;
-            case "Space":
-                if (!this.actions.jump && this.player.onFloor) {
-                    this.actions.jump = true;
-                    this.jumpOnce = true;
-                }
                 return;
             default:
                 return;
@@ -268,32 +311,7 @@ export default class Player {
             }
         }
 
-        switch (event.code) {
-            case "KeyW":
-            case "ArrowUp":
-                this.actions.forward = false;
-                break;
-            case "KeyS":
-            case "ArrowDown":
-                this.actions.backward = false;
-                break;
-            case "KeyA":
-            case "ArrowLeft":
-                this.actions.left = false;
-                break;
-            case "KeyD":
-            case "ArrowRight":
-                this.actions.right = false;
-                break;
-            case "ShiftLeft":
-                this.actions.run = false;
-                break;
-            case "Space":
-                this.actions.jump = false;
-                break;
-            default:
-                break;
-        }
+        this.setMovementKey(event.code, false);
     };
 
     addEventListeners() {
@@ -370,9 +388,15 @@ export default class Player {
      * than the camera's matrix: it's exact, and it doesn't care that the
      * camera is updated after the player each frame.
      */
+    /** The heading movement is relative to: edit mode's, or the look angle. */
+    heading() {
+        if (this.remote) return this.remote();
+        return this.camera.scheme === "pointerLock" ? this.camera.angles.horizontal : null;
+    }
+
     getForwardVector() {
-        if (this.camera.scheme === "pointerLock") {
-            const theta = this.camera.angles.horizontal;
+        const theta = this.heading();
+        if (theta !== null) {
             return this.player.direction.set(-Math.sin(theta), 0, -Math.cos(theta));
         }
 
@@ -383,8 +407,8 @@ export default class Player {
     }
 
     getSideVector() {
-        if (this.camera.scheme === "pointerLock") {
-            const theta = this.camera.angles.horizontal;
+        const theta = this.heading();
+        if (theta !== null) {
             return this.player.direction.set(Math.cos(theta), 0, -Math.sin(theta));
         }
 
@@ -491,8 +515,8 @@ export default class Player {
         this.avatar.avatar.position.y -= 1.56;
 
         // Hide your own avatar in first person — otherwise the camera sits
-        // inside its head.
-        this.avatar.avatar.visible = this.camera.mode !== "first";
+        // inside its head. Edit mode decides for itself.
+        if (!this.remote) this.avatar.avatar.visible = this.camera.mode !== "first";
 
         this.avatar.animation.update(this.time.delta);
     }
@@ -546,7 +570,7 @@ export default class Player {
         // positions coincide and the atan2 collapses to zero.
         this.targetRotation.setFromAxisAngle(
             this.upVector,
-            this.camera.getYaw() + this.player.directionOffset
+            (this.remote ? this.remote() : this.camera.getYaw()) + this.player.directionOffset
         );
         this.avatar.avatar.quaternion.rotateTowards(this.targetRotation, 0.15);
     }
@@ -780,30 +804,6 @@ export default class Player {
         }
     }
 
-    /** Floor point under the crosshair, for placing furniture. */
-    getFloorPointUnderCrosshair(maxDistance = 8) {
-        const ray = new THREE.Raycaster();
-        ray.far = maxDistance;
-        ray.ray.origin.copy(this.player.collider.end);
-        ray.ray.direction.copy(this.getLookDirection());
-
-        const hits = ray.intersectObjects(this.player.interactionObjects, true);
-        for (const hit of hits) {
-            // Near-horizontal, upward-facing surface = something to stand on.
-            const normal = hit.face?.normal;
-            if (!normal) continue;
-            const world = normal.clone().transformDirection(hit.object.matrixWorld);
-            if (world.y > 0.7) return hit.point.clone();
-        }
-
-        // Nothing underfoot in view: drop it a couple of metres ahead.
-        const forward = this.getLookDirection().setY(0).normalize();
-        return this.player.collider.end
-            .clone()
-            .addScaledVector(forward, 2)
-            .setY(this.player.collider.start.y - this.player.collider.radius);
-    }
-
     updateRoomReadout() {
         const builder = this.experience.world.sceneBuilder;
         if (!builder) return;
@@ -828,6 +828,16 @@ export default class Player {
     update() {
         if (!this.avatar) return;
 
+        if (!this.enabled && !this.remote) {
+            // Paused, not frozen: the body stands where it was and everyone
+            // else keeps moving.
+            this.player.animation = "idle";
+            this.avatar.animation.play("idle");
+            this.avatar.animation.update(this.time.delta);
+            this.updateOtherPlayers();
+            return;
+        }
+
         if (this.inVehicle) {
             this.currentCar.update(this.time.delta);
             // Keep the body with the car so stepping out lands beside it.
@@ -844,6 +854,8 @@ export default class Player {
         this.updateAvatarAnimation();
         this.updateAvatarFacing();
         this.updateOtherPlayers();
+        // Prompts and readouts are the walkthrough's; edit mode hides them.
+        if (!this.enabled) return;
         this.updateLookTarget();
         this.updateDoorPrompt();
         this.updateRoomReadout();

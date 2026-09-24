@@ -1,10 +1,11 @@
 import { EventEmitter } from "events";
-import { Octree } from "three/examples/jsm/math/Octree.js";
 
 import Experience from "../Experience.js";
 import SceneBuilder from "./SceneBuilder.js";
 import Environment from "./Environment.js";
+import Collision from "./Collision.js";
 import Player from "./Player/Player.js";
+import Editor from "../Editor/Editor.js";
 
 export default class World extends EventEmitter {
     constructor() {
@@ -14,7 +15,10 @@ export default class World extends EventEmitter {
         this.resources = this.experience.resources;
         this.spec = this.experience.sceneSpec;
 
-        this.octree = new Octree();
+        // Stands in for an octree everywhere one was passed before: the
+        // player and the car ask it the same questions.
+        this.collision = new Collision();
+        this.octree = this.collision;
         this.player = null;
 
         this.resources.on("ready", () => {
@@ -23,6 +27,7 @@ export default class World extends EventEmitter {
             this.sceneBuilder = new SceneBuilder(this.spec);
             this.environment = new Environment(this.spec);
             this.player = new Player();
+            this.editor = new Editor();
 
             this.player.setInteractionObjects(this.sceneBuilder.getInteractiveObjects());
 
@@ -74,44 +79,16 @@ export default class World extends EventEmitter {
         return changed;
     }
 
-    /** Place a catalogue item at a world point. */
-    placeFurniture(catalogId, position, rotation = 0) {
-        if (!this.sceneBuilder) return null;
-
-        const placement = {
-            id: `f-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e4).toString(36)}`,
-            catalog_id: catalogId,
-            position: [position.x, position.y, position.z],
-            rotation,
-            scale: 1,
-        };
-
-        this.sceneBuilder.addFurniture(placement);
-        this.emit("furniture-changed", this.sceneBuilder.spec.furniture);
-        return placement;
-    }
-
-    /** Move or turn a placed piece. */
-    moveFurniture(id, position, rotation) {
-        const updated = this.sceneBuilder?.updateFurniture(id, { position, rotation });
-        if (updated) this.emit("furniture-changed", this.sceneBuilder.spec.furniture);
-        return updated;
-    }
-
-    removeFurniture(id) {
-        const removed = this.sceneBuilder?.removeFurniture(id);
-        if (removed) this.emit("furniture-changed", this.sceneBuilder.spec.furniture);
-        return removed;
-    }
-
     update() {
         const delta = this.experience.time.delta;
         if (this.sceneBuilder) this.sceneBuilder.updateDoors(delta);
         if (this.player) this.player.update();
+        if (this.editor) this.editor.update(delta);
         this.emit("tick", delta);
     }
 
     dispose() {
+        this.editor?.dispose();
         this.sceneBuilder?.dispose();
         this.environment?.dispose();
         this.player?.dispose();

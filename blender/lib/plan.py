@@ -87,13 +87,19 @@ FIRST_ROOMS = {
     "ensuite1": (rect(IX0, 3.20, 3.20, 5.80),            "tile_white",  "wall_white"),
     "dressing": (rect(3.30, 3.20, 5.90, 5.80),           "carpet_beige","wall_warm"),
     "bed1":     (rect(IX0, 5.90, 5.90, IY1),             "carpet_beige","wall_warm"),
-    "bed3":     (rect(9.70, IY0, IX1, 4.20),             "carpet_grey", "wall_white"),
+    # L-shaped round en-suite 2, which is cut out of its corner: a rectangle
+    # laid its carpet under the en-suite's tiles at the same height.
+    "bed3":     ([(9.70, IY0), (13.30, IY0), (13.30, 2.40), (IX1, 2.40), (IX1, 4.20),
+                  (9.70, 4.20)],                         "carpet_grey", "wall_white"),
     "ensuite2": (rect(13.40, IY0, IX1, 2.30),            "tile_white",  "wall_white"),
     "bath":     (rect(9.70, 4.30, IX1, 6.60),            "tile_white",  "wall_white"),
     "bed4":     (rect(9.70, 6.70, IX1, IY1),             "carpet_beige","wall_clay"),
 }
 
 ATTIC_ROOMS = {
-    "loft":     (rect(AT_X0, AT_Y0, AT_X1, AT_Y1),       "oak",        "wall_white"),
+    # L-shaped round the shower room in its south-west corner, for the same
+    # reason as bedroom 3.
+    "loft":     ([(6.30, AT_Y0), (AT_X1, AT_Y0), (AT_X1, AT_Y1), (AT_X0, AT_Y1),
+                  (AT_X0, 4.70), (6.30, 4.70)],           "oak",        "wall_white"),
     "loftbath": (rect(AT_X0, AT_Y0, 6.20, 4.60),         "tile_white", "wall_white"),
 }

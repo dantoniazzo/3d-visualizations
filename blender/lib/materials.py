@@ -4,7 +4,7 @@ One material per finish, shared by every object using it. Everything is
 Principled BSDF driven by plain numbers rather than image textures, apart
 from the few surfaces that genuinely need a pattern — those get procedural
 node graphs, so the .blend has no external texture dependencies of its own.
-Imported Poly Haven assets bring their own textures.
+Nothing in the house is imported: every object is built by these scripts.
 """
 
 import bpy
@@ -196,17 +196,24 @@ def planks(name, color_a, color_b, width=0.16, length=1.6, rough=0.35, bump=0.25
     return mat
 
 
-def tiles(name, color, grout, size=0.3, rough=0.15, bump=0.4):
-    """Square tiling with a grout line."""
+def tiles(name, color, grout, size=0.3, rough=0.15, bump=0.4, height=None, span=BAKE_TILE,
+          grout_px=None):
+    """Tiling with a grout line: square, or `size` wide by `height` tall.
+
+    `span` is the metres one baked image covers. The image is always 512 px,
+    so a smaller span gives a finer grout line; `grout_px` is that line's
+    width on each side of a tile, in pixels.
+    """
     if name in _cache:
         return _cache[name]
+    height = height or size
     mat, nt, bsdf = _new(name)
 
     coord = nt.nodes.new("ShaderNodeTexCoord")
     coord.location = (-900, 0)
     mapping = nt.nodes.new("ShaderNodeMapping")
     mapping.location = (-700, 0)
-    mapping.inputs["Scale"].default_value = (1.0 / size, 1.0 / size, 1.0)
+    mapping.inputs["Scale"].default_value = (1.0 / size, 1.0 / height, 1.0)
 
     brick = nt.nodes.new("ShaderNodeTexBrick")
     brick.location = (-480, 0)
@@ -235,11 +242,12 @@ def tiles(name, color, grout, size=0.3, rough=0.15, bump=0.4):
     nt.links.new(bump_node.outputs["Normal"], bsdf.inputs["Normal"])
 
     # Grout occupies a small but visible share of a tiled surface.
-    _bake_recipe(mat, "tiles", dict(
-        base=list(color), grout=list(grout),
-        cols=max(1, int(round(BAKE_TILE / size))),
-        rows=max(1, int(round(BAKE_TILE / size))), variation=0.06,
-    ), BAKE_TILE)
+    params = dict(base=list(color), grout=list(grout),
+                  cols=max(1, int(round(span / size))),
+                  rows=max(1, int(round(span / height))), variation=0.06)
+    if grout_px is not None:
+        params["grout_px"] = grout_px
+    _bake_recipe(mat, "tiles", params, span)
     _cache[name] = _remember(mat, _avg(color, grout, 0.18))
     return mat
 
@@ -323,6 +331,35 @@ def library():
         "fabric_cream": noisy("fabric_cream", (0.545, 0.500, 0.425), (0.485, 0.445, 0.375), scale=140, detail=8, rough=0.95, bump=0.3),
         "linen_white": noisy("linen_white", (0.92, 0.91, 0.88), (0.86, 0.85, 0.82), scale=160, detail=8, rough=0.9, bump=0.25),
         "porcelain": plain("porcelain", (0.95, 0.95, 0.94), rough=0.09, coat=0.6, coat_rough=0.05),
+        # Showers: 30 x 60 cm glazed wall tiles with a 5 mm grout line, a
+        # slate-effect stone tray, and clear seals on the glass.
+        "tile_shower": tiles("tile_shower", (0.60, 0.59, 0.56), (0.76, 0.75, 0.72), size=0.3,
+                             height=0.6, span=1.2, grout_px=1, rough=0.18, bump=0.2),
+        "stone_slate": plain("stone_slate", (0.070, 0.073, 0.077), rough=0.6),
+        "seal": plain("seal", (0.62, 0.65, 0.66), rough=0.35),
+        "bottle_white": plain("bottle_white", (0.86, 0.85, 0.82), rough=0.3),
+        "bottle_sage": plain("bottle_sage", (0.26, 0.34, 0.28), rough=0.25),
+        # Loose furniture and decor
+        "fabric_sage": plain("fabric_sage", (0.20, 0.25, 0.19), rough=0.95),
+        "fabric_rust": plain("fabric_rust", (0.36, 0.14, 0.07), rough=0.95),
+        "leather_tan": plain("leather_tan", (0.30, 0.15, 0.06), rough=0.55),
+        "wood_walnut": plain("wood_walnut", (0.085, 0.046, 0.026), rough=0.5),
+        "foliage": plain("foliage", (0.06, 0.16, 0.05), rough=0.8),
+        "terracotta": plain("terracotta", (0.42, 0.17, 0.08), rough=0.85),
+        "soil": plain("soil", (0.05, 0.035, 0.025), rough=1.0),
+        "ceramic_blue": plain("ceramic_blue", (0.10, 0.20, 0.36), rough=0.2, coat=0.5),
+        "screen": plain("screen", (0.01, 0.01, 0.012), rough=0.15),
+        "art_a": plain("art_a", (0.55, 0.32, 0.18), rough=0.8),
+        "art_b": plain("art_b", (0.16, 0.30, 0.42), rough=0.8),
+        "book_red": plain("book_red", (0.30, 0.05, 0.04), rough=0.7),
+        "book_green": plain("book_green", (0.06, 0.18, 0.10), rough=0.7),
+        "book_blue": plain("book_blue", (0.05, 0.08, 0.22), rough=0.7),
+        "shade": plain("shade", (0.85, 0.80, 0.70), rough=0.9),
+        # The car
+        "car_paint": plain("car_paint", (0.55, 0.20, 0.02), rough=0.25, coat=0.8, coat_rough=0.05),
+        "rubber": plain("rubber", (0.02, 0.02, 0.02), rough=0.9),
+        "lamp_front": emissive("lamp_front", (0.95, 0.93, 0.85), 2.0),
+        "lamp_rear": emissive("lamp_rear", (0.70, 0.03, 0.02), 1.5),
         "glass": glass(),
         "mirror": plain("mirror", (0.96, 0.96, 0.96), rough=0.02, metal=1.0),
         "roof_tile": _roof(noisy("roof_tile", (0.225, 0.082, 0.048), (0.160, 0.055, 0.030), scale=30, rough=0.8, bump=0.5)),

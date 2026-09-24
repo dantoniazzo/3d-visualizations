@@ -5,22 +5,15 @@ dist
 .DS_Store
 *.log
 
-# Poly Haven download cache. blender/lib/assets.py refetches these from the
-# public CC0 API on demand, so 147 MB of them do not belong in the repo.
-blender/cache/
-
 # Blender's own rolling backup of the last save.
 *.blend1
 
 # Build outputs. `npm run models` regenerates the Blender scene and its GLB;
 # see README "Building the models".
 blender/out/
-public/models/wrenfield_house.glb
+public/models/wrenfield_furnishings.glb
+public/models/kit.glb
 
 # Generated furniture catalogue — `npm run furniture` rebuilds it.
 public/models/furniture/*.glb
 
-# Third-party imports that are not ours to redistribute. Drop your own copies
-# in public/models/ — the scenes that use them are skipped when absent.
-public/models/apartment_2.glb
-public/models/studio_apartment.glb

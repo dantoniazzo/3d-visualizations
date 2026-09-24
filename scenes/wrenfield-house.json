@@ -1,20 +1,20 @@
 {
   "id": "wrenfield-house",
   "name": "Wrenfield House",
-  "summary": "A detached three-storey family house of about 380 m², modelled and furnished in Blender: open-plan kitchen-diner, living room, study and snug on the ground floor, four bedrooms with two en-suites and the family bathroom on the first, and a loft room with its own shower room above. Every internal door works, and both stair flights are walkable.",
-  "brief": "Bundled example",
+  "summary": "A detached three-storey family house of about 380 m², furnished in Blender: open-plan kitchen-diner, living room, study and snug on the ground floor, four bedrooms with two en-suites and the family bathroom on the first, and a loft room with its own shower room above. Every internal door works, and both stair flights are walkable.",
+  "brief": "",
   "notes": [],
-  "updated_at": "2026-08-20T12:40:18.739Z",
+  "updated_at": "2026-09-24T19:15:01.944Z",
   "scene": {
     "name": "Wrenfield House",
-    "summary": "A detached three-storey family house of about 380 m², modelled and furnished in Blender: open-plan kitchen-diner, living room, study and snug on the ground floor, four bedrooms with two en-suites and the family bathroom on the first, and a loft room with its own shower room above. Every internal door works, and both stair flights are walkable.",
+    "summary": "A detached three-storey family house of about 380 m², furnished in Blender: open-plan kitchen-diner, living room, study and snug on the ground floor, four bedrooms with two en-suites and the family bathroom on the first, and a loft room with its own shower room above. Every internal door works, and both stair flights are walkable.",
     "environment": {
       "preset": "exterior_day",
       "ground": "grass",
       "ground_size": 300
     },
     "model": {
-      "url": "/models/wrenfield_house.glb",
+      "url": "/models/wrenfield_furnishings.glb",
       "scale": 1,
       "offset": [
         0,
@@ -23,10 +23,11 @@
       ],
       "rotation": 0,
       "roomsAreMetadata": true,
-      "collision": "mesh",
-      "collision_exclude": [
-        "stairtreads_"
-      ]
+      "collision": "auto",
+      "collision_exclude": [],
+      "fixed_nodes": [],
+      "parts_extracted": true,
+      "role": "furnishings"
     },
     "rooms": [
       {
@@ -52,7 +53,7 @@
         ],
         "voids": [],
         "floor_finish": "slate_tile",
-        "ceiling_finish": "none",
+        "ceiling_finish": "ceiling_white",
         "height": 2.85,
         "elevation": 0
       },
@@ -79,7 +80,7 @@
         ],
         "voids": [],
         "floor_finish": "oak_parquet",
-        "ceiling_finish": "none",
+        "ceiling_finish": "ceiling_white",
         "height": 2.85,
         "elevation": 0
       },
@@ -106,7 +107,7 @@
         ],
         "voids": [],
         "floor_finish": "oak_parquet",
-        "ceiling_finish": "none",
+        "ceiling_finish": "ceiling_white",
         "height": 2.85,
         "elevation": 0
       },
@@ -133,7 +134,7 @@
         ],
         "voids": [],
         "floor_finish": "oak_parquet",
-        "ceiling_finish": "none",
+        "ceiling_finish": "ceiling_white",
         "height": 2.85,
         "elevation": 0
       },
@@ -160,7 +161,7 @@
         ],
         "voids": [],
         "floor_finish": "ceramic_tile_white",
-        "ceiling_finish": "none",
+        "ceiling_finish": "ceiling_white",
         "height": 2.85,
         "elevation": 0
       },
@@ -187,7 +188,7 @@
         ],
         "voids": [],
         "floor_finish": "ceramic_tile_white",
-        "ceiling_finish": "none",
+        "ceiling_finish": "ceiling_white",
         "height": 2.85,
         "elevation": 0
       },
@@ -214,7 +215,7 @@
         ],
         "voids": [],
         "floor_finish": "carpet_grey",
-        "ceiling_finish": "none",
+        "ceiling_finish": "ceiling_white",
         "height": 2.85,
         "elevation": 0
       },
@@ -239,52 +240,15 @@
             -10.65
           ]
         ],
-        "voids": [
-          [
-            [
-              5.95,
-              -0.95
-            ],
-            [
-              7.4,
-              -0.95
-            ],
-            [
-              7.4,
-              -5.4
-            ],
-            [
-              5.95,
-              -5.4
-            ]
-          ],
-          [
-            [
-              8.3,
-              -2.65
-            ],
-            [
-              9.7,
-              -2.65
-            ],
-            [
-              9.7,
-              -7.6
-            ],
-            [
-              8.3,
-              -7.6
-            ]
-          ]
-        ],
+        "voids": [],
         "floor_finish": "oak_parquet",
-        "ceiling_finish": "none",
+        "ceiling_finish": "ceiling_white",
         "height": 2.7,
         "elevation": 3.1
       },
       {
         "id": "first-bed2",
-        "name": "Bed2",
+        "name": "Bedroom 2",
         "polygon": [
           [
             0.35,
@@ -305,13 +269,13 @@
         ],
         "voids": [],
         "floor_finish": "carpet_grey",
-        "ceiling_finish": "none",
+        "ceiling_finish": "ceiling_white",
         "height": 2.7,
         "elevation": 3.1
       },
       {
         "id": "first-ensuite1",
-        "name": "Ensuite1",
+        "name": "En-suite 1",
         "polygon": [
           [
             0.35,
@@ -332,7 +296,7 @@
         ],
         "voids": [],
         "floor_finish": "ceramic_tile_white",
-        "ceiling_finish": "none",
+        "ceiling_finish": "ceiling_white",
         "height": 2.7,
         "elevation": 3.1
       },
@@ -359,7 +323,7 @@
         ],
         "voids": [],
         "floor_finish": "carpet_beige",
-        "ceiling_finish": "none",
+        "ceiling_finish": "ceiling_white",
         "height": 2.7,
         "elevation": 3.1
       },
@@ -386,21 +350,29 @@
         ],
         "voids": [],
         "floor_finish": "carpet_beige",
-        "ceiling_finish": "none",
+        "ceiling_finish": "ceiling_white",
         "height": 2.7,
         "elevation": 3.1
       },
       {
         "id": "first-bed3",
-        "name": "Bed3",
+        "name": "Bedroom 3",
         "polygon": [
           [
             9.7,
             -0.35
           ],
           [
-            15.65,
+            13.3,
             -0.35
+          ],
+          [
+            13.3,
+            -2.4
+          ],
+          [
+            15.65,
+            -2.4
           ],
           [
             15.65,
@@ -413,13 +385,13 @@
         ],
         "voids": [],
         "floor_finish": "carpet_grey",
-        "ceiling_finish": "none",
+        "ceiling_finish": "ceiling_white",
         "height": 2.7,
         "elevation": 3.1
       },
       {
         "id": "first-ensuite2",
-        "name": "Ensuite2",
+        "name": "En-suite 2",
         "polygon": [
           [
             13.4,
@@ -440,13 +412,13 @@
         ],
         "voids": [],
         "floor_finish": "ceramic_tile_white",
-        "ceiling_finish": "none",
+        "ceiling_finish": "ceiling_white",
         "height": 2.7,
         "elevation": 3.1
       },
       {
         "id": "first-bath",
-        "name": "Bath",
+        "name": "Family Bathroom",
         "polygon": [
           [
             9.7,
@@ -467,13 +439,13 @@
         ],
         "voids": [],
         "floor_finish": "ceramic_tile_white",
-        "ceiling_finish": "none",
+        "ceiling_finish": "ceiling_white",
         "height": 2.7,
         "elevation": 3.1
       },
       {
         "id": "first-bed4",
-        "name": "Bed4",
+        "name": "Bedroom 4",
         "polygon": [
           [
             9.7,
@@ -494,7 +466,7 @@
         ],
         "voids": [],
         "floor_finish": "carpet_beige",
-        "ceiling_finish": "none",
+        "ceiling_finish": "ceiling_white",
         "height": 2.7,
         "elevation": 3.1
       },
@@ -503,7 +475,7 @@
         "name": "Loft",
         "polygon": [
           [
-            3.5,
+            6.3,
             -2
           ],
           [
@@ -517,30 +489,19 @@
           [
             3.5,
             -9
-          ]
-        ],
-        "voids": [
+          ],
           [
-            [
-              8.3,
-              -2.65
-            ],
-            [
-              9.7,
-              -2.65
-            ],
-            [
-              9.7,
-              -7.6
-            ],
-            [
-              8.3,
-              -7.6
-            ]
+            3.5,
+            -4.7
+          ],
+          [
+            6.3,
+            -4.7
           ]
         ],
+        "voids": [],
         "floor_finish": "oak_parquet",
-        "ceiling_finish": "none",
+        "ceiling_finish": "ceiling_white",
         "height": 2.3,
         "elevation": 6.05
       },
@@ -567,420 +528,3147 @@
         ],
         "voids": [],
         "floor_finish": "ceramic_tile_white",
-        "ceiling_finish": "none",
+        "ceiling_finish": "ceiling_white",
         "height": 2.3,
         "elevation": 6.05
+      },
+      {
+        "id": "ground-garage",
+        "name": "Garage",
+        "polygon": [
+          [
+            16,
+            -0.35
+          ],
+          [
+            22.05,
+            -0.35
+          ],
+          [
+            22.05,
+            -6.05
+          ],
+          [
+            16,
+            -6.05
+          ]
+        ],
+        "voids": [],
+        "floor_finish": "polished_concrete",
+        "ceiling_finish": "ceiling_white",
+        "height": 3.1,
+        "elevation": 0
+      },
+      {
+        "id": "site-road",
+        "name": "Road",
+        "polygon": [
+          [
+            -22,
+            18
+          ],
+          [
+            34,
+            18
+          ],
+          [
+            34,
+            13
+          ],
+          [
+            -22,
+            13
+          ]
+        ],
+        "voids": [],
+        "floor_finish": "tarmac_surface",
+        "ceiling_finish": "none",
+        "height": 0.05,
+        "elevation": 0
+      },
+      {
+        "id": "site-drive",
+        "name": "Driveway",
+        "polygon": [
+          [
+            16.4,
+            13
+          ],
+          [
+            22,
+            13
+          ],
+          [
+            22,
+            0
+          ],
+          [
+            16.4,
+            0
+          ]
+        ],
+        "voids": [],
+        "floor_finish": "tarmac_surface",
+        "ceiling_finish": "none",
+        "height": 0.05,
+        "elevation": 0
+      },
+      {
+        "id": "site-path",
+        "name": "Front path",
+        "polygon": [
+          [
+            7.6,
+            13
+          ],
+          [
+            9.2,
+            13
+          ],
+          [
+            9.2,
+            0
+          ],
+          [
+            7.6,
+            0
+          ]
+        ],
+        "voids": [],
+        "floor_finish": "paving_slab",
+        "ceiling_finish": "none",
+        "height": 0.05,
+        "elevation": 0
+      },
+      {
+        "id": "site-patio",
+        "name": "Patio",
+        "polygon": [
+          [
+            4,
+            -11
+          ],
+          [
+            16,
+            -11
+          ],
+          [
+            16,
+            -15.5
+          ],
+          [
+            4,
+            -15.5
+          ]
+        ],
+        "voids": [],
+        "floor_finish": "paving_slab",
+        "ceiling_finish": "none",
+        "height": 0.05,
+        "elevation": 0
+      },
+      {
+        "id": "site-front-w",
+        "name": "Front garden",
+        "polygon": [
+          [
+            -22,
+            13
+          ],
+          [
+            7.6,
+            13
+          ],
+          [
+            7.6,
+            0
+          ],
+          [
+            -22,
+            0
+          ]
+        ],
+        "voids": [],
+        "floor_finish": "lawn",
+        "ceiling_finish": "none",
+        "height": 0.05,
+        "elevation": 0
+      },
+      {
+        "id": "site-front-m",
+        "name": "Front garden",
+        "polygon": [
+          [
+            9.2,
+            13
+          ],
+          [
+            16.4,
+            13
+          ],
+          [
+            16.4,
+            0
+          ],
+          [
+            9.2,
+            0
+          ]
+        ],
+        "voids": [],
+        "floor_finish": "lawn",
+        "ceiling_finish": "none",
+        "height": 0.05,
+        "elevation": 0
+      },
+      {
+        "id": "site-front-e",
+        "name": "Front garden",
+        "polygon": [
+          [
+            22,
+            13
+          ],
+          [
+            34,
+            13
+          ],
+          [
+            34,
+            0
+          ],
+          [
+            22,
+            0
+          ]
+        ],
+        "voids": [],
+        "floor_finish": "lawn",
+        "ceiling_finish": "none",
+        "height": 0.05,
+        "elevation": 0
+      },
+      {
+        "id": "site-side-w",
+        "name": "West side",
+        "polygon": [
+          [
+            -22,
+            0
+          ],
+          [
+            0,
+            0
+          ],
+          [
+            0,
+            -11
+          ],
+          [
+            -22,
+            -11
+          ]
+        ],
+        "voids": [],
+        "floor_finish": "lawn",
+        "ceiling_finish": "none",
+        "height": 0.05,
+        "elevation": 0
+      },
+      {
+        "id": "site-side-e",
+        "name": "East side",
+        "polygon": [
+          [
+            22.4,
+            0
+          ],
+          [
+            34,
+            0
+          ],
+          [
+            34,
+            -11
+          ],
+          [
+            22.4,
+            -11
+          ]
+        ],
+        "voids": [],
+        "floor_finish": "lawn",
+        "ceiling_finish": "none",
+        "height": 0.05,
+        "elevation": 0
+      },
+      {
+        "id": "site-garage-n",
+        "name": "Beside the garage",
+        "polygon": [
+          [
+            16,
+            -6.4
+          ],
+          [
+            22.4,
+            -6.4
+          ],
+          [
+            22.4,
+            -11
+          ],
+          [
+            16,
+            -11
+          ]
+        ],
+        "voids": [],
+        "floor_finish": "lawn",
+        "ceiling_finish": "none",
+        "height": 0.05,
+        "elevation": 0
+      },
+      {
+        "id": "site-back-w",
+        "name": "Back garden",
+        "polygon": [
+          [
+            -22,
+            -11
+          ],
+          [
+            4,
+            -11
+          ],
+          [
+            4,
+            -30
+          ],
+          [
+            -22,
+            -30
+          ]
+        ],
+        "voids": [],
+        "floor_finish": "lawn",
+        "ceiling_finish": "none",
+        "height": 0.05,
+        "elevation": 0
+      },
+      {
+        "id": "site-back-m",
+        "name": "Back garden",
+        "polygon": [
+          [
+            4,
+            -15.5
+          ],
+          [
+            16,
+            -15.5
+          ],
+          [
+            16,
+            -30
+          ],
+          [
+            4,
+            -30
+          ]
+        ],
+        "voids": [],
+        "floor_finish": "lawn",
+        "ceiling_finish": "none",
+        "height": 0.05,
+        "elevation": 0
+      },
+      {
+        "id": "site-back-e",
+        "name": "Back garden",
+        "polygon": [
+          [
+            16,
+            -11
+          ],
+          [
+            34,
+            -11
+          ],
+          [
+            34,
+            -30
+          ],
+          [
+            16,
+            -30
+          ]
+        ],
+        "voids": [],
+        "floor_finish": "lawn",
+        "ceiling_finish": "none",
+        "height": 0.05,
+        "elevation": 0
       }
     ],
-    "walls": [],
-    "roofs": [],
+    "walls": [
+      {
+        "id": "g-ext-0",
+        "start": [
+          0.175,
+          -0.175
+        ],
+        "end": [
+          15.825,
+          -0.175
+        ],
+        "height": 3.1,
+        "thickness": 0.35,
+        "finish": "paint_warm_white",
+        "finish_back": "paint_white",
+        "reveal": "trim_white",
+        "base_height": 0,
+        "openings": [
+          {
+            "id": "g-ext-0-0",
+            "type": "window",
+            "offset": 1.8,
+            "width": 1.5,
+            "height": 1.8,
+            "sill": 0.6,
+            "frame": "trim_white",
+            "panes": [
+              2,
+              3
+            ],
+            "cill": true
+          },
+          {
+            "id": "g-ext-0-1",
+            "type": "window",
+            "offset": 4.1,
+            "width": 1.5,
+            "height": 1.8,
+            "sill": 0.6,
+            "frame": "trim_white",
+            "panes": [
+              2,
+              3
+            ],
+            "cill": true
+          },
+          {
+            "id": "g-ext-0-2",
+            "type": "door",
+            "offset": 8.4,
+            "width": 1.05,
+            "height": 2.2,
+            "sill": 0,
+            "door": {
+              "type": "hinged",
+              "swing": "inward_right",
+              "leaf": "trim_charcoal",
+              "frame": "trim_white",
+              "handle": "metal_brass"
+            }
+          },
+          {
+            "id": "g-ext-0-3",
+            "type": "window",
+            "offset": 10.55,
+            "width": 0.6,
+            "height": 0.9,
+            "sill": 1.5,
+            "frame": "trim_white",
+            "panes": [
+              1,
+              2
+            ],
+            "cill": true
+          },
+          {
+            "id": "g-ext-0-4",
+            "type": "window",
+            "offset": 13.6,
+            "width": 1.8,
+            "height": 1.8,
+            "sill": 0.6,
+            "frame": "trim_white",
+            "panes": [
+              3,
+              3
+            ],
+            "cill": true
+          }
+        ],
+        "trims": "b"
+      },
+      {
+        "id": "g-ext-1",
+        "start": [
+          15.825,
+          -0.175
+        ],
+        "end": [
+          15.825,
+          -10.825
+        ],
+        "height": 3.1,
+        "thickness": 0.35,
+        "finish": "paint_warm_white",
+        "finish_back": "paint_white",
+        "reveal": "trim_white",
+        "base_height": 0,
+        "openings": [
+          {
+            "id": "g-ext-1-0",
+            "type": "door",
+            "offset": 4.45,
+            "width": 0.9,
+            "height": 2.04,
+            "sill": 0,
+            "door": {
+              "type": "hinged",
+              "swing": "inward_right",
+              "leaf": "trim_white",
+              "frame": "trim_white",
+              "handle": "metal_brass"
+            }
+          },
+          {
+            "id": "g-ext-1-1",
+            "type": "window",
+            "offset": 8.05,
+            "width": 2.4,
+            "height": 1.8,
+            "sill": 0.6,
+            "frame": "trim_white",
+            "panes": [
+              4,
+              3
+            ],
+            "cill": true
+          }
+        ],
+        "trims": "b"
+      },
+      {
+        "id": "g-ext-2",
+        "start": [
+          15.825,
+          -10.825
+        ],
+        "end": [
+          0.175,
+          -10.825
+        ],
+        "height": 3.1,
+        "thickness": 0.35,
+        "finish": "paint_warm_white",
+        "finish_back": "paint_white",
+        "reveal": "trim_white",
+        "base_height": 0,
+        "openings": [
+          {
+            "id": "g-ext-2-0",
+            "type": "window",
+            "offset": 4,
+            "width": 2.6,
+            "height": 2.3,
+            "sill": 0,
+            "frame": "trim_white",
+            "panes": [
+              4,
+              3
+            ]
+          },
+          {
+            "id": "g-ext-2-1",
+            "type": "window",
+            "offset": 8,
+            "width": 1.6,
+            "height": 1.5,
+            "sill": 0.9,
+            "frame": "trim_white",
+            "panes": [
+              2,
+              2
+            ],
+            "cill": true
+          },
+          {
+            "id": "g-ext-2-2",
+            "type": "window",
+            "offset": 13,
+            "width": 1.8,
+            "height": 1.6,
+            "sill": 0.7,
+            "frame": "trim_white",
+            "panes": [
+              3,
+              2
+            ],
+            "cill": true
+          }
+        ],
+        "trims": "b"
+      },
+      {
+        "id": "g-ext-3",
+        "start": [
+          0.175,
+          -10.825
+        ],
+        "end": [
+          0.175,
+          -0.175
+        ],
+        "height": 3.1,
+        "thickness": 0.35,
+        "finish": "paint_warm_white",
+        "finish_back": "paint_white",
+        "reveal": "trim_white",
+        "base_height": 0,
+        "openings": [
+          {
+            "id": "g-ext-3-0",
+            "type": "window",
+            "offset": 2.5,
+            "width": 1.5,
+            "height": 1.6,
+            "sill": 0.7,
+            "frame": "trim_white",
+            "panes": [
+              2,
+              2
+            ],
+            "cill": true
+          },
+          {
+            "id": "g-ext-3-1",
+            "type": "window",
+            "offset": 6.5,
+            "width": 1.5,
+            "height": 1.8,
+            "sill": 0.6,
+            "frame": "trim_white",
+            "panes": [
+              2,
+              3
+            ],
+            "cill": true
+          },
+          {
+            "id": "g-ext-3-2",
+            "type": "window",
+            "offset": 9.1,
+            "width": 1.5,
+            "height": 1.8,
+            "sill": 0.6,
+            "frame": "trim_white",
+            "panes": [
+              2,
+              3
+            ],
+            "cill": true
+          }
+        ],
+        "trims": "b"
+      },
+      {
+        "id": "f-ext-0",
+        "start": [
+          0.175,
+          -0.175
+        ],
+        "end": [
+          15.825,
+          -0.175
+        ],
+        "height": 2.95,
+        "thickness": 0.35,
+        "finish": "paint_warm_white",
+        "finish_back": "paint_white",
+        "reveal": "trim_white",
+        "base_height": 3.1,
+        "openings": [
+          {
+            "id": "f-ext-0-0",
+            "type": "window",
+            "offset": 1.8,
+            "width": 1.4,
+            "height": 1.5,
+            "sill": 0.9,
+            "frame": "trim_white",
+            "panes": [
+              2,
+              2
+            ],
+            "cill": true
+          },
+          {
+            "id": "f-ext-0-1",
+            "type": "window",
+            "offset": 4.2,
+            "width": 1.4,
+            "height": 1.5,
+            "sill": 0.9,
+            "frame": "trim_white",
+            "panes": [
+              2,
+              2
+            ],
+            "cill": true
+          },
+          {
+            "id": "f-ext-0-2",
+            "type": "window",
+            "offset": 7.525,
+            "width": 1.2,
+            "height": 1.5,
+            "sill": 0.9,
+            "frame": "trim_white",
+            "panes": [
+              2,
+              2
+            ],
+            "cill": true
+          },
+          {
+            "id": "f-ext-0-3",
+            "type": "window",
+            "offset": 11.1,
+            "width": 1.4,
+            "height": 1.5,
+            "sill": 0.9,
+            "frame": "trim_white",
+            "panes": [
+              2,
+              2
+            ],
+            "cill": true
+          },
+          {
+            "id": "f-ext-0-4",
+            "type": "window",
+            "offset": 14.2,
+            "width": 0.8,
+            "height": 1,
+            "sill": 1.4,
+            "frame": "trim_white",
+            "panes": [
+              1,
+              2
+            ],
+            "cill": true
+          }
+        ],
+        "trims": "b"
+      },
+      {
+        "id": "f-ext-1",
+        "start": [
+          15.825,
+          -0.175
+        ],
+        "end": [
+          15.825,
+          -10.825
+        ],
+        "height": 2.95,
+        "thickness": 0.35,
+        "finish": "paint_warm_white",
+        "finish_back": "paint_white",
+        "reveal": "trim_white",
+        "base_height": 3.1,
+        "openings": [
+          {
+            "id": "f-ext-1-0",
+            "type": "window",
+            "offset": 1.4,
+            "width": 0.8,
+            "height": 1,
+            "sill": 1.4,
+            "frame": "trim_white",
+            "panes": [
+              1,
+              2
+            ],
+            "cill": true
+          },
+          {
+            "id": "f-ext-1-1",
+            "type": "window",
+            "offset": 5.5,
+            "width": 1.4,
+            "height": 1.5,
+            "sill": 0.9,
+            "frame": "trim_white",
+            "panes": [
+              2,
+              2
+            ],
+            "cill": true
+          },
+          {
+            "id": "f-ext-1-2",
+            "type": "window",
+            "offset": 8.8,
+            "width": 1.6,
+            "height": 1.5,
+            "sill": 0.9,
+            "frame": "trim_white",
+            "panes": [
+              2,
+              2
+            ],
+            "cill": true
+          }
+        ],
+        "trims": "b"
+      },
+      {
+        "id": "f-ext-2",
+        "start": [
+          15.825,
+          -10.825
+        ],
+        "end": [
+          0.175,
+          -10.825
+        ],
+        "height": 2.95,
+        "thickness": 0.35,
+        "finish": "paint_warm_white",
+        "finish_back": "paint_white",
+        "reveal": "trim_white",
+        "base_height": 3.1,
+        "openings": [
+          {
+            "id": "f-ext-2-0",
+            "type": "window",
+            "offset": 3,
+            "width": 1.6,
+            "height": 1.5,
+            "sill": 0.9,
+            "frame": "trim_white",
+            "panes": [
+              2,
+              2
+            ],
+            "cill": true
+          },
+          {
+            "id": "f-ext-2-1",
+            "type": "window",
+            "offset": 11.5,
+            "width": 1.4,
+            "height": 1.5,
+            "sill": 0.9,
+            "frame": "trim_white",
+            "panes": [
+              2,
+              2
+            ],
+            "cill": true
+          },
+          {
+            "id": "f-ext-2-2",
+            "type": "window",
+            "offset": 14,
+            "width": 1.4,
+            "height": 1.5,
+            "sill": 0.9,
+            "frame": "trim_white",
+            "panes": [
+              2,
+              2
+            ],
+            "cill": true
+          }
+        ],
+        "trims": "b"
+      },
+      {
+        "id": "f-ext-3",
+        "start": [
+          0.175,
+          -10.825
+        ],
+        "end": [
+          0.175,
+          -0.175
+        ],
+        "height": 2.95,
+        "thickness": 0.35,
+        "finish": "paint_warm_white",
+        "finish_back": "paint_white",
+        "reveal": "trim_white",
+        "base_height": 3.1,
+        "openings": [
+          {
+            "id": "f-ext-3-0",
+            "type": "window",
+            "offset": 2.5,
+            "width": 1.6,
+            "height": 1.5,
+            "sill": 0.9,
+            "frame": "trim_white",
+            "panes": [
+              2,
+              2
+            ],
+            "cill": true
+          },
+          {
+            "id": "f-ext-3-1",
+            "type": "window",
+            "offset": 6.5,
+            "width": 0.8,
+            "height": 1,
+            "sill": 1.4,
+            "frame": "trim_white",
+            "panes": [
+              1,
+              2
+            ],
+            "cill": true
+          },
+          {
+            "id": "f-ext-3-2",
+            "type": "window",
+            "offset": 9.3,
+            "width": 1.4,
+            "height": 1.5,
+            "sill": 0.9,
+            "frame": "trim_white",
+            "panes": [
+              2,
+              2
+            ],
+            "cill": true
+          }
+        ],
+        "trims": "b"
+      },
+      {
+        "id": "a-ext-0",
+        "start": [
+          0.175,
+          -0.175
+        ],
+        "end": [
+          15.825,
+          -0.175
+        ],
+        "height": 0.95,
+        "thickness": 0.35,
+        "finish": "paint_warm_white",
+        "finish_back": "paint_white",
+        "reveal": "trim_white",
+        "base_height": 6.05,
+        "openings": []
+      },
+      {
+        "id": "a-ext-1",
+        "start": [
+          15.825,
+          -0.175
+        ],
+        "end": [
+          15.825,
+          -10.825
+        ],
+        "height": 0.95,
+        "thickness": 0.35,
+        "finish": "paint_warm_white",
+        "finish_back": "paint_white",
+        "reveal": "trim_white",
+        "base_height": 6.05,
+        "openings": []
+      },
+      {
+        "id": "a-ext-2",
+        "start": [
+          15.825,
+          -10.825
+        ],
+        "end": [
+          0.175,
+          -10.825
+        ],
+        "height": 0.95,
+        "thickness": 0.35,
+        "finish": "paint_warm_white",
+        "finish_back": "paint_white",
+        "reveal": "trim_white",
+        "base_height": 6.05,
+        "openings": []
+      },
+      {
+        "id": "a-ext-3",
+        "start": [
+          0.175,
+          -10.825
+        ],
+        "end": [
+          0.175,
+          -0.175
+        ],
+        "height": 0.95,
+        "thickness": 0.35,
+        "finish": "paint_warm_white",
+        "finish_back": "paint_white",
+        "reveal": "trim_white",
+        "base_height": 6.05,
+        "openings": []
+      },
+      {
+        "id": "g-wall-0",
+        "start": [
+          5.95,
+          -0.35
+        ],
+        "end": [
+          5.95,
+          -10.65
+        ],
+        "height": 2.85,
+        "thickness": 0.1,
+        "finish": "paint_white",
+        "finish_back": "paint_warm_white",
+        "reveal": "trim_white",
+        "base_height": 0,
+        "openings": [
+          {
+            "id": "g-wall-0-0",
+            "type": "door",
+            "offset": 0.53,
+            "width": 0.76,
+            "height": 2.04,
+            "sill": 0,
+            "door": {
+              "type": "hinged",
+              "swing": "inward_right",
+              "leaf": "trim_white",
+              "frame": "trim_white",
+              "handle": "metal_brass"
+            }
+          }
+        ],
+        "trims": "both"
+      },
+      {
+        "id": "g-wall-1",
+        "start": [
+          0.35,
+          -6.45
+        ],
+        "end": [
+          5.95,
+          -6.45
+        ],
+        "height": 2.85,
+        "thickness": 0.1,
+        "finish": "paint_warm_white",
+        "finish_back": "paint_sage",
+        "reveal": "trim_white",
+        "base_height": 0,
+        "openings": [
+          {
+            "id": "g-wall-1-0",
+            "type": "doorway",
+            "offset": 2.65,
+            "width": 1.2,
+            "height": 2.1,
+            "sill": 0
+          }
+        ],
+        "trims": "both"
+      },
+      {
+        "id": "g-wall-2",
+        "start": [
+          9.65,
+          -0.35
+        ],
+        "end": [
+          9.65,
+          -5.65
+        ],
+        "height": 2.85,
+        "thickness": 0.1,
+        "finish": "paint_clay",
+        "finish_back": "paint_white",
+        "reveal": "trim_white",
+        "base_height": 0,
+        "openings": [
+          {
+            "id": "g-wall-2-0",
+            "type": "door",
+            "offset": 1.05,
+            "width": 0.76,
+            "height": 2.04,
+            "sill": 0,
+            "door": {
+              "type": "hinged",
+              "swing": "inward_right",
+              "leaf": "trim_white",
+              "frame": "trim_white",
+              "handle": "metal_brass"
+            }
+          },
+          {
+            "id": "g-wall-2-1",
+            "type": "door",
+            "offset": 3.65,
+            "width": 0.8,
+            "height": 2.04,
+            "sill": 0,
+            "door": {
+              "type": "hinged",
+              "swing": "inward_right",
+              "leaf": "trim_white",
+              "frame": "trim_white",
+              "handle": "metal_brass"
+            }
+          }
+        ],
+        "trims": "both"
+      },
+      {
+        "id": "g-wall-3",
+        "start": [
+          9.65,
+          -2.45
+        ],
+        "end": [
+          11.45,
+          -2.45
+        ],
+        "height": 2.85,
+        "thickness": 0.1,
+        "finish": "paint_clay",
+        "finish_back": "paint_white",
+        "reveal": "trim_white",
+        "base_height": 0,
+        "openings": [],
+        "trims": "both"
+      },
+      {
+        "id": "g-wall-4",
+        "start": [
+          11.45,
+          -0.35
+        ],
+        "end": [
+          11.45,
+          -5.65
+        ],
+        "height": 2.85,
+        "thickness": 0.1,
+        "finish": "paint_white",
+        "finish_back": "paint_charcoal",
+        "reveal": "trim_white",
+        "base_height": 0,
+        "openings": [],
+        "trims": "both"
+      },
+      {
+        "id": "g-wall-5",
+        "start": [
+          5.95,
+          -5.65
+        ],
+        "end": [
+          15.65,
+          -5.65
+        ],
+        "height": 2.85,
+        "thickness": 0.1,
+        "finish": "paint_white",
+        "finish_back": "paint_white",
+        "reveal": "trim_white",
+        "base_height": 0,
+        "openings": [
+          {
+            "id": "g-wall-5-0",
+            "type": "doorway",
+            "offset": 2.05,
+            "width": 1.6,
+            "height": 2.1,
+            "sill": 0
+          },
+          {
+            "id": "g-wall-5-1",
+            "type": "door",
+            "offset": 4.55,
+            "width": 0.8,
+            "height": 2.04,
+            "sill": 0,
+            "door": {
+              "type": "hinged",
+              "swing": "inward_right",
+              "leaf": "trim_white",
+              "frame": "trim_white",
+              "handle": "metal_brass"
+            }
+          },
+          {
+            "id": "g-wall-5-2",
+            "type": "door",
+            "offset": 7.55,
+            "width": 0.85,
+            "height": 2.04,
+            "sill": 0,
+            "door": {
+              "type": "hinged",
+              "swing": "inward_right",
+              "leaf": "trim_white",
+              "frame": "trim_white",
+              "handle": "metal_brass"
+            }
+          }
+        ],
+        "trims": "both"
+      },
+      {
+        "id": "f-wall-0",
+        "start": [
+          5.95,
+          -0.35
+        ],
+        "end": [
+          5.95,
+          -10.65
+        ],
+        "height": 2.7,
+        "thickness": 0.1,
+        "finish": "paint_white",
+        "finish_back": "paint_sage",
+        "reveal": "trim_white",
+        "base_height": 3.1,
+        "openings": [
+          {
+            "id": "f-wall-0-0",
+            "type": "door",
+            "offset": 1.35,
+            "width": 0.86,
+            "height": 2.04,
+            "sill": 0,
+            "door": {
+              "type": "hinged",
+              "swing": "inward_right",
+              "leaf": "trim_white",
+              "frame": "trim_white",
+              "handle": "metal_brass"
+            }
+          },
+          {
+            "id": "f-wall-0-1",
+            "type": "door",
+            "offset": 4.45,
+            "width": 0.8,
+            "height": 2.04,
+            "sill": 0,
+            "door": {
+              "type": "hinged",
+              "swing": "inward_right",
+              "leaf": "trim_white",
+              "frame": "trim_white",
+              "handle": "metal_brass"
+            }
+          },
+          {
+            "id": "f-wall-0-2",
+            "type": "door",
+            "offset": 7.85,
+            "width": 0.86,
+            "height": 2.04,
+            "sill": 0,
+            "door": {
+              "type": "hinged",
+              "swing": "inward_right",
+              "leaf": "trim_white",
+              "frame": "trim_white",
+              "handle": "metal_brass"
+            }
+          }
+        ],
+        "trims": "both"
+      },
+      {
+        "id": "f-wall-1",
+        "start": [
+          9.65,
+          -0.35
+        ],
+        "end": [
+          9.65,
+          -10.65
+        ],
+        "height": 2.7,
+        "thickness": 0.1,
+        "finish": "paint_white",
+        "finish_back": "paint_white",
+        "reveal": "trim_white",
+        "base_height": 3.1,
+        "openings": [
+          {
+            "id": "f-wall-1-0",
+            "type": "door",
+            "offset": 1.85,
+            "width": 0.86,
+            "height": 2.04,
+            "sill": 0,
+            "door": {
+              "type": "hinged",
+              "swing": "inward_right",
+              "leaf": "trim_white",
+              "frame": "trim_white",
+              "handle": "metal_brass"
+            }
+          },
+          {
+            "id": "f-wall-1-1",
+            "type": "door",
+            "offset": 5.15,
+            "width": 0.8,
+            "height": 2.04,
+            "sill": 0,
+            "door": {
+              "type": "hinged",
+              "swing": "inward_right",
+              "leaf": "trim_white",
+              "frame": "trim_white",
+              "handle": "metal_brass"
+            }
+          },
+          {
+            "id": "f-wall-1-2",
+            "type": "door",
+            "offset": 8.25,
+            "width": 0.86,
+            "height": 2.04,
+            "sill": 0,
+            "door": {
+              "type": "hinged",
+              "swing": "inward_right",
+              "leaf": "trim_white",
+              "frame": "trim_white",
+              "handle": "metal_brass"
+            }
+          }
+        ],
+        "trims": "both"
+      },
+      {
+        "id": "f-wall-2",
+        "start": [
+          0.35,
+          -3.15
+        ],
+        "end": [
+          5.95,
+          -3.15
+        ],
+        "height": 2.7,
+        "thickness": 0.1,
+        "finish": "paint_sage",
+        "finish_back": "paint_white",
+        "reveal": "trim_white",
+        "base_height": 3.1,
+        "openings": [],
+        "trims": "both"
+      },
+      {
+        "id": "f-wall-3",
+        "start": [
+          3.25,
+          -3.2
+        ],
+        "end": [
+          3.25,
+          -5.85
+        ],
+        "height": 2.7,
+        "thickness": 0.1,
+        "finish": "paint_white",
+        "finish_back": "paint_warm_white",
+        "reveal": "trim_white",
+        "base_height": 3.1,
+        "openings": [],
+        "trims": "both"
+      },
+      {
+        "id": "f-wall-4",
+        "start": [
+          0.35,
+          -5.85
+        ],
+        "end": [
+          5.95,
+          -5.85
+        ],
+        "height": 2.7,
+        "thickness": 0.1,
+        "finish": "paint_white",
+        "finish_back": "paint_warm_white",
+        "reveal": "trim_white",
+        "base_height": 3.1,
+        "openings": [
+          {
+            "id": "f-wall-4-0",
+            "type": "door",
+            "offset": 1.45,
+            "width": 0.76,
+            "height": 2.04,
+            "sill": 0,
+            "door": {
+              "type": "hinged",
+              "swing": "inward_right",
+              "leaf": "trim_white",
+              "frame": "trim_white",
+              "handle": "metal_brass"
+            }
+          },
+          {
+            "id": "f-wall-4-1",
+            "type": "door",
+            "offset": 4.25,
+            "width": 0.8,
+            "height": 2.04,
+            "sill": 0,
+            "door": {
+              "type": "hinged",
+              "swing": "inward_right",
+              "leaf": "trim_white",
+              "frame": "trim_white",
+              "handle": "metal_brass"
+            }
+          }
+        ],
+        "trims": "both"
+      },
+      {
+        "id": "f-wall-5",
+        "start": [
+          13.35,
+          -0.35
+        ],
+        "end": [
+          13.35,
+          -2.35
+        ],
+        "height": 2.7,
+        "thickness": 0.1,
+        "finish": "paint_white",
+        "finish_back": "paint_white",
+        "reveal": "trim_white",
+        "base_height": 3.1,
+        "openings": [
+          {
+            "id": "f-wall-5-0",
+            "type": "door",
+            "offset": 0.95,
+            "width": 0.76,
+            "height": 2.04,
+            "sill": 0,
+            "door": {
+              "type": "hinged",
+              "swing": "inward_right",
+              "leaf": "trim_white",
+              "frame": "trim_white",
+              "handle": "metal_brass"
+            }
+          }
+        ],
+        "trims": "both"
+      },
+      {
+        "id": "f-wall-6",
+        "start": [
+          13.35,
+          -2.35
+        ],
+        "end": [
+          15.65,
+          -2.35
+        ],
+        "height": 2.7,
+        "thickness": 0.1,
+        "finish": "paint_white",
+        "finish_back": "paint_white",
+        "reveal": "trim_white",
+        "base_height": 3.1,
+        "openings": [],
+        "trims": "both"
+      },
+      {
+        "id": "f-wall-7",
+        "start": [
+          9.65,
+          -4.25
+        ],
+        "end": [
+          15.65,
+          -4.25
+        ],
+        "height": 2.7,
+        "thickness": 0.1,
+        "finish": "paint_white",
+        "finish_back": "paint_white",
+        "reveal": "trim_white",
+        "base_height": 3.1,
+        "openings": [],
+        "trims": "both"
+      },
+      {
+        "id": "f-wall-8",
+        "start": [
+          9.65,
+          -6.65
+        ],
+        "end": [
+          15.65,
+          -6.65
+        ],
+        "height": 2.7,
+        "thickness": 0.1,
+        "finish": "paint_white",
+        "finish_back": "paint_clay",
+        "reveal": "trim_white",
+        "base_height": 3.1,
+        "openings": [],
+        "trims": "both"
+      },
+      {
+        "id": "a-wall-0",
+        "start": [
+          3.5,
+          -2
+        ],
+        "end": [
+          3.5,
+          -9
+        ],
+        "height": 2.3,
+        "thickness": 0.1,
+        "finish": "paint_white",
+        "finish_back": "paint_white",
+        "reveal": "trim_white",
+        "base_height": 6.05,
+        "openings": [],
+        "trims": "both"
+      },
+      {
+        "id": "a-wall-1",
+        "start": [
+          12.5,
+          -2
+        ],
+        "end": [
+          12.5,
+          -9
+        ],
+        "height": 2.3,
+        "thickness": 0.1,
+        "finish": "paint_white",
+        "finish_back": "paint_white",
+        "reveal": "trim_white",
+        "base_height": 6.05,
+        "openings": [],
+        "trims": "both"
+      },
+      {
+        "id": "a-wall-2",
+        "start": [
+          3.5,
+          -2
+        ],
+        "end": [
+          12.5,
+          -2
+        ],
+        "height": 2.3,
+        "thickness": 0.1,
+        "finish": "paint_white",
+        "finish_back": "paint_white",
+        "reveal": "trim_white",
+        "base_height": 6.05,
+        "openings": [],
+        "trims": "both"
+      },
+      {
+        "id": "a-wall-3",
+        "start": [
+          3.5,
+          -9
+        ],
+        "end": [
+          12.5,
+          -9
+        ],
+        "height": 2.3,
+        "thickness": 0.1,
+        "finish": "paint_white",
+        "finish_back": "paint_white",
+        "reveal": "trim_white",
+        "base_height": 6.05,
+        "openings": [],
+        "trims": "both"
+      },
+      {
+        "id": "a-wall-4",
+        "start": [
+          6.25,
+          -2
+        ],
+        "end": [
+          6.25,
+          -4.6
+        ],
+        "height": 2.3,
+        "thickness": 0.1,
+        "finish": "paint_white",
+        "finish_back": "paint_white",
+        "reveal": "trim_white",
+        "base_height": 6.05,
+        "openings": [
+          {
+            "id": "a-wall-4-0",
+            "type": "door",
+            "offset": 1.3,
+            "width": 0.76,
+            "height": 2.04,
+            "sill": 0,
+            "door": {
+              "type": "hinged",
+              "swing": "inward_right",
+              "leaf": "trim_white",
+              "frame": "trim_white",
+              "handle": "metal_brass"
+            }
+          }
+        ],
+        "trims": "both"
+      },
+      {
+        "id": "a-wall-5",
+        "start": [
+          3.5,
+          -4.65
+        ],
+        "end": [
+          6.25,
+          -4.65
+        ],
+        "height": 2.3,
+        "thickness": 0.1,
+        "finish": "paint_white",
+        "finish_back": "paint_white",
+        "reveal": "trim_white",
+        "base_height": 6.05,
+        "openings": [],
+        "trims": "both"
+      },
+      {
+        "id": "garage-ext-0",
+        "start": [
+          16,
+          -0.175
+        ],
+        "end": [
+          22.225,
+          -0.175
+        ],
+        "height": 3.1,
+        "thickness": 0.35,
+        "finish": "paint_warm_white",
+        "finish_back": "paint_white",
+        "reveal": "trim_white",
+        "base_height": 0,
+        "openings": [
+          {
+            "id": "garage-ext-0-0",
+            "type": "doorway",
+            "offset": 3.2,
+            "width": 4.6,
+            "height": 2.4,
+            "sill": 0
+          }
+        ]
+      },
+      {
+        "id": "garage-ext-1",
+        "start": [
+          22.225,
+          -0.175
+        ],
+        "end": [
+          22.225,
+          -6.225
+        ],
+        "height": 3.1,
+        "thickness": 0.35,
+        "finish": "paint_warm_white",
+        "finish_back": "paint_white",
+        "reveal": "trim_white",
+        "base_height": 0,
+        "openings": []
+      },
+      {
+        "id": "garage-ext-2",
+        "start": [
+          22.225,
+          -6.225
+        ],
+        "end": [
+          16,
+          -6.225
+        ],
+        "height": 3.1,
+        "thickness": 0.35,
+        "finish": "paint_warm_white",
+        "finish_back": "paint_white",
+        "reveal": "trim_white",
+        "base_height": 0,
+        "openings": [
+          {
+            "id": "garage-ext-2-0",
+            "type": "door",
+            "offset": 1.2,
+            "width": 0.9,
+            "height": 2.05,
+            "sill": 0,
+            "door": {
+              "type": "hinged",
+              "swing": "inward_right",
+              "leaf": "trim_white",
+              "frame": "trim_white",
+              "handle": "metal_brass"
+            }
+          }
+        ]
+      }
+    ],
+    "roofs": [
+      {
+        "id": "roof-house",
+        "type": "gable",
+        "footprint": [
+          [
+            0,
+            0
+          ],
+          [
+            16,
+            0
+          ],
+          [
+            16,
+            -11
+          ],
+          [
+            0,
+            -11
+          ]
+        ],
+        "base_height": 7,
+        "ridge_height": 11.3,
+        "ridge_axis": "x",
+        "finish": "roof_terracotta",
+        "gable_finish": "paint_warm_white",
+        "overhang": 0.55,
+        "thickness": 0.24,
+        "soffit": "trim_white"
+      },
+      {
+        "id": "roof-garage",
+        "type": "gable",
+        "footprint": [
+          [
+            16,
+            0
+          ],
+          [
+            22.4,
+            0
+          ],
+          [
+            22.4,
+            -6.4
+          ],
+          [
+            16,
+            -6.4
+          ]
+        ],
+        "base_height": 3.1,
+        "ridge_height": 4.45,
+        "ridge_axis": "z",
+        "finish": "roof_terracotta",
+        "gable_finish": "paint_warm_white",
+        "overhang": 0.4,
+        "thickness": 0.2,
+        "soffit": "trim_white"
+      }
+    ],
     "stairs": [
       {
         "id": "flight-a",
         "start": [
           6.675,
-          -1.2
+          -1.4
         ],
         "direction": "south",
-        "width": 1.1500000000000004,
+        "yaw": 180,
+        "width": 1.15,
         "base_height": 0,
         "top_height": 3.1,
         "run": 4.2,
         "steps": 17,
         "finish": "oak_parquet",
-        "riser": "trim_white"
+        "riser": "trim_white",
+        "balustrade": "right"
       },
       {
         "id": "flight-b",
         "start": [
-          9.024999999999999,
+          9.025,
           -3
         ],
         "direction": "south",
-        "width": 1.1500000000000004,
+        "yaw": 180,
+        "width": 1.15,
         "base_height": 3.1,
         "top_height": 6.05,
         "run": 4.6,
         "steps": 16,
         "finish": "oak_parquet",
-        "riser": "trim_white"
+        "riser": "trim_white",
+        "balustrade": "left"
       }
     ],
-    "doors": [
+    "floor_openings": [
       {
-        "id": "wd-0",
+        "id": "hole-flight-a",
         "position": [
-          8.575,
-          -0.175
-        ],
-        "elevation": 0,
-        "yaw": 0,
-        "width": 1.05,
-        "height": 2.2,
-        "thickness": 0.35,
-        "door": {
-          "type": "hinged",
-          "swing": "inward_right",
-          "leaf": "trim_charcoal",
-          "frame": "trim_white",
-          "handle": "metal_brass",
-          "lining": "none"
-        }
-      },
-      {
-        "id": "wd-1",
-        "position": [
-          15.825,
-          -4.625
-        ],
-        "elevation": 0,
-        "yaw": 90,
-        "width": 0.9,
-        "height": 2.04,
-        "thickness": 0.35,
-        "door": {
-          "type": "hinged",
-          "swing": "inward_right",
-          "leaf": "trim_white",
-          "frame": "trim_white",
-          "handle": "metal_brass",
-          "lining": "none"
-        }
-      },
-      {
-        "id": "wd-2",
-        "position": [
-          5.95,
-          -0.78
-        ],
-        "elevation": 0,
-        "yaw": 90,
-        "width": 0.76,
-        "height": 2.04,
-        "thickness": 0.1,
-        "door": {
-          "type": "hinged",
-          "swing": "inward_right",
-          "leaf": "trim_white",
-          "frame": "trim_white",
-          "handle": "metal_brass",
-          "lining": "none"
-        }
-      },
-      {
-        "id": "wd-3",
-        "position": [
-          9.65,
-          -1.4
-        ],
-        "elevation": 0,
-        "yaw": 90,
-        "width": 0.76,
-        "height": 2.04,
-        "thickness": 0.1,
-        "door": {
-          "type": "hinged",
-          "swing": "inward_right",
-          "leaf": "trim_white",
-          "frame": "trim_white",
-          "handle": "metal_brass",
-          "lining": "none"
-        }
-      },
-      {
-        "id": "wd-4",
-        "position": [
-          9.65,
-          -4
-        ],
-        "elevation": 0,
-        "yaw": 90,
-        "width": 0.8,
-        "height": 2.04,
-        "thickness": 0.1,
-        "door": {
-          "type": "hinged",
-          "swing": "inward_right",
-          "leaf": "trim_white",
-          "frame": "trim_white",
-          "handle": "metal_brass",
-          "lining": "none"
-        }
-      },
-      {
-        "id": "wd-5",
-        "position": [
-          10.5,
-          -5.65
-        ],
-        "elevation": 0,
-        "yaw": 0,
-        "width": 0.8,
-        "height": 2.04,
-        "thickness": 0.1,
-        "door": {
-          "type": "hinged",
-          "swing": "inward_right",
-          "leaf": "trim_white",
-          "frame": "trim_white",
-          "handle": "metal_brass",
-          "lining": "none"
-        }
-      },
-      {
-        "id": "wd-6",
-        "position": [
-          13.5,
-          -5.65
-        ],
-        "elevation": 0,
-        "yaw": 0,
-        "width": 0.85,
-        "height": 2.04,
-        "thickness": 0.1,
-        "door": {
-          "type": "hinged",
-          "swing": "inward_right",
-          "leaf": "trim_white",
-          "frame": "trim_white",
-          "handle": "metal_brass",
-          "lining": "none"
-        }
-      },
-      {
-        "id": "wd-7",
-        "position": [
-          5.95,
-          -1.7
+          6.675,
+          -3.5
         ],
         "elevation": 3.1,
-        "yaw": 90,
-        "width": 0.86,
-        "height": 2.04,
-        "thickness": 0.1,
-        "door": {
-          "type": "hinged",
-          "swing": "inward_right",
-          "leaf": "trim_white",
-          "frame": "trim_white",
-          "handle": "metal_brass",
-          "lining": "none"
-        }
+        "width": 1.15,
+        "depth": 4.2,
+        "yaw": 180,
+        "stair_id": "flight-a",
+        "rails": [
+          "x+",
+          "z+"
+        ]
       },
       {
-        "id": "wd-8",
+        "id": "hole-flight-b",
         "position": [
-          5.95,
-          -4.5
-        ],
-        "elevation": 3.1,
-        "yaw": 90,
-        "width": 0.8,
-        "height": 2.04,
-        "thickness": 0.1,
-        "door": {
-          "type": "hinged",
-          "swing": "inward_right",
-          "leaf": "trim_white",
-          "frame": "trim_white",
-          "handle": "metal_brass",
-          "lining": "none"
-        }
-      },
-      {
-        "id": "wd-9",
-        "position": [
-          5.95,
-          -8.2
-        ],
-        "elevation": 3.1,
-        "yaw": 90,
-        "width": 0.86,
-        "height": 2.04,
-        "thickness": 0.1,
-        "door": {
-          "type": "hinged",
-          "swing": "inward_right",
-          "leaf": "trim_white",
-          "frame": "trim_white",
-          "handle": "metal_brass",
-          "lining": "none"
-        }
-      },
-      {
-        "id": "wd-10",
-        "position": [
-          9.65,
-          -2.2
-        ],
-        "elevation": 3.1,
-        "yaw": 90,
-        "width": 0.86,
-        "height": 2.04,
-        "thickness": 0.1,
-        "door": {
-          "type": "hinged",
-          "swing": "inward_right",
-          "leaf": "trim_white",
-          "frame": "trim_white",
-          "handle": "metal_brass",
-          "lining": "none"
-        }
-      },
-      {
-        "id": "wd-11",
-        "position": [
-          9.65,
-          -5.5
-        ],
-        "elevation": 3.1,
-        "yaw": 90,
-        "width": 0.8,
-        "height": 2.04,
-        "thickness": 0.1,
-        "door": {
-          "type": "hinged",
-          "swing": "inward_right",
-          "leaf": "trim_white",
-          "frame": "trim_white",
-          "handle": "metal_brass",
-          "lining": "none"
-        }
-      },
-      {
-        "id": "wd-12",
-        "position": [
-          9.65,
-          -8.6
-        ],
-        "elevation": 3.1,
-        "yaw": 90,
-        "width": 0.86,
-        "height": 2.04,
-        "thickness": 0.1,
-        "door": {
-          "type": "hinged",
-          "swing": "inward_right",
-          "leaf": "trim_white",
-          "frame": "trim_white",
-          "handle": "metal_brass",
-          "lining": "none"
-        }
-      },
-      {
-        "id": "wd-13",
-        "position": [
-          1.8,
-          -5.85
-        ],
-        "elevation": 3.1,
-        "yaw": 0,
-        "width": 0.76,
-        "height": 2.04,
-        "thickness": 0.1,
-        "door": {
-          "type": "hinged",
-          "swing": "inward_right",
-          "leaf": "trim_white",
-          "frame": "trim_white",
-          "handle": "metal_brass",
-          "lining": "none"
-        }
-      },
-      {
-        "id": "wd-14",
-        "position": [
-          4.6,
-          -5.85
-        ],
-        "elevation": 3.1,
-        "yaw": 0,
-        "width": 0.8,
-        "height": 2.04,
-        "thickness": 0.1,
-        "door": {
-          "type": "hinged",
-          "swing": "inward_right",
-          "leaf": "trim_white",
-          "frame": "trim_white",
-          "handle": "metal_brass",
-          "lining": "none"
-        }
-      },
-      {
-        "id": "wd-15",
-        "position": [
-          13.35,
-          -1.3
-        ],
-        "elevation": 3.1,
-        "yaw": 90,
-        "width": 0.76,
-        "height": 2.04,
-        "thickness": 0.1,
-        "door": {
-          "type": "hinged",
-          "swing": "inward_right",
-          "leaf": "trim_white",
-          "frame": "trim_white",
-          "handle": "metal_brass",
-          "lining": "none"
-        }
-      },
-      {
-        "id": "wd-16",
-        "position": [
-          6.25,
-          -3.3
+          9,
+          -5.125
         ],
         "elevation": 6.05,
-        "yaw": 90,
-        "width": 0.76,
-        "height": 2.04,
-        "thickness": 0.1,
-        "door": {
-          "type": "hinged",
-          "swing": "inward_right",
-          "leaf": "trim_white",
-          "frame": "trim_white",
-          "handle": "metal_brass",
-          "lining": "none"
-        }
-      },
-      {
-        "id": "wd-17",
-        "position": [
-          21.025,
-          -6.225
-        ],
-        "elevation": 0,
-        "yaw": 180,
-        "width": 0.9,
-        "height": 2.05,
-        "thickness": 0.35,
-        "door": {
-          "type": "hinged",
-          "swing": "inward_right",
-          "leaf": "trim_white",
-          "frame": "trim_white",
-          "handle": "metal_brass",
-          "lining": "none"
-        }
+        "width": 1.4,
+        "depth": 4.95,
+        "yaw": 0,
+        "stair_id": "flight-b",
+        "rails": [
+          "x-",
+          "z+",
+          "x+"
+        ]
       }
     ],
+    "doors": [],
     "vehicles": [
       {
         "id": "car",
         "position": [
-          19.2,
-          -3.4
+          19.4059,
+          -3.0683
         ],
         "elevation": 0,
-        "yaw": 180
+        "yaw": 172.464
       }
     ],
-    "furniture": [],
-    "finishes": {},
+    "furniture": [
+      {
+        "id": "m-kit-run-n",
+        "catalog_id": "model:kit_run_n",
+        "position": [
+          7.6,
+          0,
+          8.558
+        ],
+        "rotation": 180,
+        "scale": 1
+      },
+      {
+        "id": "m-kit-sink",
+        "catalog_id": "model:kit_sink",
+        "position": [
+          7.2,
+          0.77,
+          -10.202
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-kit-wall-n",
+        "catalog_id": "model:kit_wall_n",
+        "position": [
+          6.65,
+          1.52,
+          -10.485
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-kit-tall",
+        "catalog_id": "model:kit_tall",
+        "position": [
+          9.75,
+          0,
+          -10.34
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-kit-oven",
+        "catalog_id": "model:kit_oven",
+        "position": [
+          9.3,
+          0.72,
+          -10.022
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-kit-oven2",
+        "catalog_id": "model:kit_oven2",
+        "position": [
+          9.3,
+          1.34,
+          -10.022
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-kit-microwave",
+        "catalog_id": "model:kit_microwave",
+        "position": [
+          10.15,
+          1.42,
+          -10.358
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-kit-extractor",
+        "catalog_id": "model:kit_extractor",
+        "position": [
+          8.2,
+          1.522,
+          -8.05
+        ],
+        "rotation": 0,
+        "scale": 1.1
+      },
+      {
+        "id": "m-kit-fridge",
+        "catalog_id": "model:kit_fridge",
+        "position": [
+          14.7,
+          0.002,
+          -6.122
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-barstool0",
+        "catalog_id": "model:barstool0",
+        "position": [
+          7.3,
+          0,
+          -9
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-barstool1",
+        "catalog_id": "model:barstool1",
+        "position": [
+          12.687,
+          0,
+          4.801
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-barstool2",
+        "catalog_id": "model:barstool2",
+        "position": [
+          8.9,
+          0.002,
+          -9
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-dining-table",
+        "catalog_id": "model:dining_table",
+        "position": [
+          13,
+          0,
+          -8.6
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-dchair0",
+        "catalog_id": "model:dchair0",
+        "position": [
+          12.05,
+          0,
+          -9.25
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-dchair1",
+        "catalog_id": "model:dchair1",
+        "position": [
+          11.95,
+          0.002,
+          -8.55
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-dchair2",
+        "catalog_id": "model:dchair2",
+        "position": [
+          12.05,
+          0.002,
+          -7.92
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-dchair3",
+        "catalog_id": "model:dchair3",
+        "position": [
+          13.95,
+          0,
+          -9.25
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-dchair4",
+        "catalog_id": "model:dchair4",
+        "position": [
+          13.95,
+          0,
+          -8.55
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-dchair5",
+        "catalog_id": "model:dchair5",
+        "position": [
+          13.95,
+          0,
+          -7.85
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-wooden-bowl-01",
+        "catalog_id": "model:wooden_bowl_01",
+        "position": [
+          13,
+          0.76,
+          -8.6
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-potted-plant-01",
+        "catalog_id": "model:potted_plant_01",
+        "position": [
+          15.11,
+          0,
+          -10.09
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-liv-rug",
+        "catalog_id": "model:liv_rug",
+        "position": [
+          3,
+          0.004,
+          -3.1
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-sofa-a",
+        "catalog_id": "model:sofa_a",
+        "position": [
+          3,
+          0,
+          -1.8
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-sofa-b",
+        "catalog_id": "model:sofa_b",
+        "position": [
+          3,
+          0,
+          -4.45
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-modern-coffee-table-01",
+        "catalog_id": "model:modern_coffee_table_01",
+        "position": [
+          3,
+          0,
+          -3.1
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-armchair-01",
+        "catalog_id": "model:ArmChair_01",
+        "position": [
+          1.2,
+          0,
+          -3.1
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-side-table-01",
+        "catalog_id": "model:side_table_01",
+        "position": [
+          4.9,
+          0,
+          -3.6
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-ceramic-vase-01",
+        "catalog_id": "model:ceramic_vase_01",
+        "position": [
+          4.9,
+          0.55,
+          -3.6
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-television-01",
+        "catalog_id": "model:Television_01",
+        "position": [
+          1.05,
+          0.511,
+          -0.62
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-liv-tvunit",
+        "catalog_id": "model:liv_tvunit",
+        "position": [
+          1.05,
+          -0.011,
+          -0.604
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-potted-plant-02",
+        "catalog_id": "model:potted_plant_02",
+        "position": [
+          5.409,
+          0,
+          -5.891
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-book-encyclopedia-set-01",
+        "catalog_id": "model:book_encyclopedia_set_01",
+        "position": [
+          3.149,
+          0.4,
+          -3.1
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-liv-art0",
+        "catalog_id": "model:liv_art0",
+        "position": [
+          3,
+          1.5,
+          -0.42
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-liv-art1",
+        "catalog_id": "model:liv_art1",
+        "position": [
+          0.4,
+          1.5,
+          -3.05
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-study-desk",
+        "catalog_id": "model:study_desk",
+        "position": [
+          3,
+          0,
+          -9.9
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-modern-arm-chair-01",
+        "catalog_id": "model:modern_arm_chair_01",
+        "position": [
+          3.003,
+          0.016,
+          -9.0567
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-classic-laptop",
+        "catalog_id": "model:classic_laptop",
+        "position": [
+          3,
+          0.756,
+          -9.95
+        ],
+        "rotation": 180,
+        "scale": 1
+      },
+      {
+        "id": "m-desk-lamp-arm-01",
+        "catalog_id": "model:desk_lamp_arm_01",
+        "position": [
+          3.85,
+          0.756,
+          -9.958
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-study-shelves",
+        "catalog_id": "model:study_shelves",
+        "position": [
+          1.55,
+          -0.011,
+          -10.454
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-wooden-bookshelf-worn",
+        "catalog_id": "model:wooden_bookshelf_worn",
+        "position": [
+          5.5,
+          0,
+          -7.6
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-study-rug",
+        "catalog_id": "model:study_rug",
+        "position": [
+          3,
+          0.004,
+          -8.2
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-snug-rug",
+        "catalog_id": "model:snug_rug",
+        "position": [
+          13.5,
+          0.004,
+          -2.9
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-mid-century-lounge-chair",
+        "catalog_id": "model:mid_century_lounge_chair",
+        "position": [
+          12.603,
+          0.016,
+          -1.803
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-snug-chair-b",
+        "catalog_id": "model:snug_chair_b",
+        "position": [
+          14.397,
+          0.016,
+          -1.803
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-ottoman-01",
+        "catalog_id": "model:Ottoman_01",
+        "position": [
+          13.5,
+          0.016,
+          -2.6615
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-television-02",
+        "catalog_id": "model:television_02",
+        "position": [
+          12.35,
+          0.561,
+          -5.36
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-snug-tvunit",
+        "catalog_id": "model:snug_tvunit",
+        "position": [
+          12.35,
+          -0.011,
+          -5.364
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-potted-plant-04",
+        "catalog_id": "model:potted_plant_04",
+        "position": [
+          15.206,
+          0,
+          -5.096
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-util-run",
+        "catalog_id": "model:util_run",
+        "position": [
+          10.55,
+          0,
+          -2.858
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-util-washer",
+        "catalog_id": "model:util_washer",
+        "position": [
+          10.13,
+          0,
+          -2.913
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-util-dryer",
+        "catalog_id": "model:util_dryer",
+        "position": [
+          10.9,
+          0,
+          -2.913
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-wc-pan",
+        "catalog_id": "model:wc_pan",
+        "position": [
+          11.08,
+          0,
+          -1.2
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-wc-vanity",
+        "catalog_id": "model:wc_vanity",
+        "position": [
+          9.994,
+          0.34,
+          -2.05
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-classicconsole-01",
+        "catalog_id": "model:ClassicConsole_01",
+        "position": [
+          11.824,
+          0,
+          0.4619
+        ],
+        "rotation": 0,
+        "scale": 0.7056
+      },
+      {
+        "id": "m-ceramic-vase-03",
+        "catalog_id": "model:ceramic_vase_03",
+        "position": [
+          9.5984,
+          0.74,
+          7.4
+        ],
+        "rotation": -90,
+        "scale": 1
+      },
+      {
+        "id": "m-ornate-mirror-01",
+        "catalog_id": "model:ornate_mirror_01",
+        "position": [
+          9.55,
+          1.15,
+          -2.7
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-hall-runner",
+        "catalog_id": "model:hall_runner",
+        "position": [
+          8.4,
+          0.004,
+          -2.2
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-bed1-bed",
+        "catalog_id": "model:bed1_bed",
+        "position": [
+          3.1,
+          3.116,
+          -7.017
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-bed1-ns0",
+        "catalog_id": "model:bed1_ns0",
+        "position": [
+          2.1,
+          3.1,
+          -6.341
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-bed1-lamp0",
+        "catalog_id": "model:bed1_lamp0",
+        "position": [
+          2.106,
+          3.62,
+          -6.241
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-bed1-ns1",
+        "catalog_id": "model:bed1_ns1",
+        "position": [
+          4.4,
+          3.102,
+          -6.241
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-bed1-lamp1",
+        "catalog_id": "model:bed1_lamp1",
+        "position": [
+          4.106,
+          3.62,
+          -6.441
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-bed1-rug",
+        "catalog_id": "model:bed1_rug",
+        "position": [
+          3.1,
+          3.102,
+          -8.4
+        ],
+        "rotation": 0,
+        "scale": 1.1
+      },
+      {
+        "id": "m-mid-century-lounge-chair001",
+        "catalog_id": "model:mid_century_lounge_chair001",
+        "position": [
+          5.047,
+          3.116,
+          -9.7769
+        ],
+        "rotation": -75,
+        "scale": 1
+      },
+      {
+        "id": "m-potted-plant-02001",
+        "catalog_id": "model:potted_plant_02001",
+        "position": [
+          0.809,
+          3.1,
+          -10.091
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-hanging-picture-frame-02",
+        "catalog_id": "model:hanging_picture_frame_02",
+        "position": [
+          3.1,
+          4.65,
+          -5.99
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-dress-wr",
+        "catalog_id": "model:dress_wr",
+        "position": [
+          4.625,
+          3.1,
+          -3.55
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-ens1-shower",
+        "catalog_id": "model:ens1_shower",
+        "position": [
+          0.862,
+          3.099,
+          -5.39
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-ens1-vanity",
+        "catalog_id": "model:ens1_vanity",
+        "position": [
+          2.3,
+          3.44,
+          -3.509
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-ens1-wc",
+        "catalog_id": "model:ens1_wc",
+        "position": [
+          2.88,
+          3.1,
+          -4.6
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-ens1-towel",
+        "catalog_id": "model:ens1_towel",
+        "position": [
+          0.48,
+          4,
+          -3.9
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-bed2-bed",
+        "catalog_id": "model:bed2_bed",
+        "position": [
+          3,
+          3.1,
+          -1.517
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-bed2-ns",
+        "catalog_id": "model:bed2_ns",
+        "position": [
+          1.9,
+          3.1,
+          -0.991
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-bed2-wr",
+        "catalog_id": "model:bed2_wr",
+        "position": [
+          5.075,
+          3.1,
+          -2.738
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-bed2-rug",
+        "catalog_id": "model:bed2_rug",
+        "position": [
+          3,
+          3.104,
+          -2.2
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-bed3-bed",
+        "catalog_id": "model:bed3_bed",
+        "position": [
+          11.6,
+          3.102,
+          -1.5145
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-bed3-ns",
+        "catalog_id": "model:bed3_ns",
+        "position": [
+          10.25,
+          3.1,
+          -0.991
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-bed3-wr",
+        "catalog_id": "model:bed3_wr",
+        "position": [
+          10.725,
+          3.1,
+          -3.837
+        ],
+        "rotation": 0,
+        "scale": 0.46
+      },
+      {
+        "id": "m-bed3-desk",
+        "catalog_id": "model:bed3_desk",
+        "position": [
+          12.6,
+          3.1,
+          -3.9
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-ens2-shower",
+        "catalog_id": "model:ens2_shower",
+        "position": [
+          15.128,
+          3.099,
+          -1.84
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-ens2-vanity",
+        "catalog_id": "model:ens2_vanity",
+        "position": [
+          14.886,
+          3.44,
+          -0.78
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-ens2-wc",
+        "catalog_id": "model:ens2_wc",
+        "position": [
+          13.7,
+          3.1,
+          -1.98
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-bath-tub",
+        "catalog_id": "model:bath_tub",
+        "position": [
+          11,
+          3.1,
+          -4.685
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-bath-vanity",
+        "catalog_id": "model:bath_vanity",
+        "position": [
+          13.6,
+          3.44,
+          -4.654
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-bath-wc",
+        "catalog_id": "model:bath_wc",
+        "position": [
+          15.22,
+          3.1,
+          -5.6
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-bath-towel",
+        "catalog_id": "model:bath_towel",
+        "position": [
+          9.85,
+          4,
+          -5.5
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-bed4-bed",
+        "catalog_id": "model:bed4_bed",
+        "position": [
+          12.6,
+          3.1,
+          -7.942
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-bed4-ns0",
+        "catalog_id": "model:bed4_ns0",
+        "position": [
+          11.5,
+          3.1,
+          -7.391
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-bed4-ns1",
+        "catalog_id": "model:bed4_ns1",
+        "position": [
+          13.7,
+          3.1,
+          -7.391
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-bed4-wr",
+        "catalog_id": "model:bed4_wr",
+        "position": [
+          14.825,
+          3.1,
+          -10.257
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-bed4-rug",
+        "catalog_id": "model:bed4_rug",
+        "position": [
+          12.6,
+          3.104,
+          -9.4
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-potted-plant-04001",
+        "catalog_id": "model:potted_plant_04001",
+        "position": [
+          10.106,
+          3.1,
+          -10.096
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-classicnightstand-01",
+        "catalog_id": "model:ClassicNightstand_01",
+        "position": [
+          6.3,
+          3.1,
+          -9.891
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-ceramic-vase-02",
+        "catalog_id": "model:ceramic_vase_02",
+        "position": [
+          6.3,
+          3.8,
+          -9.9
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-hanging-picture-frame-03",
+        "catalog_id": "model:hanging_picture_frame_03",
+        "position": [
+          6.05,
+          4.7,
+          -6.5
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-loft-rug",
+        "catalog_id": "model:loft_rug",
+        "position": [
+          6,
+          6.054,
+          -7.1
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-loft-sofa",
+        "catalog_id": "model:loft_sofa",
+        "position": [
+          6.1351,
+          6.066,
+          -5.932
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-coffee-table-round-01",
+        "catalog_id": "model:coffee_table_round_01",
+        "position": [
+          6,
+          6.05,
+          -7.3
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-television-02001",
+        "catalog_id": "model:television_02001",
+        "position": [
+          6.002,
+          6.611,
+          -8.667
+        ],
+        "rotation": 180,
+        "scale": 1
+      },
+      {
+        "id": "m-loft-tvunit",
+        "catalog_id": "model:loft_tvunit",
+        "position": [
+          6,
+          6.039,
+          -8.724
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-loft-bed",
+        "catalog_id": "model:loft_bed",
+        "position": [
+          10.9,
+          6.05,
+          -3.317
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-loft-ns",
+        "catalog_id": "model:loft_ns",
+        "position": [
+          9.85,
+          6.05,
+          -2.791
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-loft-shelves",
+        "catalog_id": "model:loft_shelves",
+        "position": [
+          12.1,
+          6.039,
+          -2.203
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-potted-plant-01001",
+        "catalog_id": "model:potted_plant_01001",
+        "position": [
+          4.11,
+          6.05,
+          -8.49
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-modern-arm-chair-01001",
+        "catalog_id": "model:modern_arm_chair_01001",
+        "position": [
+          4.268,
+          6.066,
+          -6.853
+        ],
+        "rotation": 180,
+        "scale": 1
+      },
+      {
+        "id": "m-loftbath-shower",
+        "catalog_id": "model:loftbath_shower",
+        "position": [
+          4.06,
+          6.049,
+          -2.522
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-loftbath-vanity",
+        "catalog_id": "model:loftbath_vanity",
+        "position": [
+          5.55,
+          6.39,
+          -2.374
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-loftbath-wc",
+        "catalog_id": "model:loftbath_wc",
+        "position": [
+          5.55,
+          6.05,
+          -4.28
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "f-muekdvwkyu",
+        "catalog_id": "wardrobe",
+        "position": [
+          12.2313,
+          0,
+          4.2573
+        ],
+        "rotation": -165,
+        "scale": 0.7873
+      },
+      {
+        "id": "f-muekgzi1lf",
+        "catalog_id": "desk",
+        "position": [
+          10.4584,
+          0,
+          7.3754
+        ],
+        "rotation": 0,
+        "scale": 1.1
+      },
+      {
+        "id": "f-muekhqe32u",
+        "catalog_id": "washing-machine",
+        "position": [
+          3.74,
+          0,
+          2.9522
+        ],
+        "rotation": 0,
+        "scale": 1.1
+      },
+      {
+        "id": "f-mueki3dlc",
+        "catalog_id": "bed-double",
+        "position": [
+          8.2259,
+          0,
+          12.2547
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "f-muekiu0zj0",
+        "catalog_id": "fridge",
+        "position": [
+          14.1675,
+          0,
+          10.7765
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-kit-hob",
+        "catalog_id": "model:kit_hob",
+        "position": [
+          7.7756,
+          0.959,
+          -7.765
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "m-kit-island",
+        "catalog_id": "model:kit_island",
+        "position": [
+          8.1756,
+          0.002,
+          -8.085
+        ],
+        "rotation": 0,
+        "scale": 1
+      }
+    ],
+    "finishes": {
+      "wall:g-ext-0:a": "paint_warm_white",
+      "wall:f-ext-1:b": "paint_white",
+      "stairs:flight-b": "walnut_boards"
+    },
     "spawns": [
       {
         "position": [

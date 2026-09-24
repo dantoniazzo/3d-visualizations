@@ -8,8 +8,6 @@ import { Server } from "socket.io";
 
 import { PORT } from "./config.js";
 import { scenesRouter } from "./api/scenes.js";
-import { generateRouter } from "./api/generate.js";
-import { hasCredentials, credentialSource } from "./ai/credentials.js";
 import { storageBackend } from "./store/sceneStore.js";
 import { registerChat } from "./sockets/chat.js";
 import { registerPresence } from "./sockets/presence.js";
@@ -26,8 +24,6 @@ app.use(express.json({ limit: "8mb" }));
 app.get("/api/health", (_req, res) => {
     res.json({
         ok: true,
-        ai: hasCredentials(),
-        auth: credentialSource(),
         // Worth surfacing: a deployment that meant to use object storage but
         // is silently on the container's own disk will lose every scene on
         // the next restart, and this is the cheapest way to notice.
@@ -36,7 +32,6 @@ app.get("/api/health", (_req, res) => {
 });
 
 app.use("/api/scenes", scenesRouter);
-app.use("/api/generate", generateRouter);
 
 app.use((error, _req, res, _next) => {
     console.error("[api]", error);

@@ -1,6 +1,7 @@
 import * as THREE from "three";
 
 import TextureLibrary from "./TextureLibrary.js";
+import { applyReflection } from "../../Utils/reflections.js";
 import { FINISHES, TRIM_MATERIALS, DEFAULT_FINISH } from "../../../../shared/catalog.js";
 
 /** How shiny each generator's output should read. */
@@ -78,6 +79,7 @@ export default class MaterialLibrary {
             : new THREE.MeshStandardMaterial(common);
 
         material.name = key;
+        applyReflection(material);
         this.trims.set(key, material);
         return material;
     }

@@ -1,7 +1,7 @@
 import { Router } from "express";
 
 import { listScenes, readScene, writeScene, deleteScene } from "../store/sceneStore.js";
-import { validateScene } from "../ai/validate.js";
+import { validateScene } from "../scene/validate.js";
 
 export const scenesRouter = Router();
 
@@ -17,7 +17,9 @@ scenesRouter.get("/:id", async (req, res, next) => {
     try {
         const record = await readScene(req.params.id);
         if (!record) return res.status(404).json({ error: "Scene not found." });
-        res.json(record);
+        // Normalise on the way out too, so a spec saved by an older build
+        // reaches the editor already migrated.
+        res.json({ ...record, scene: validateScene(record.scene).scene });
     } catch (error) {
         next(error);
     }
