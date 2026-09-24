@@ -12,21 +12,27 @@ import {
 } from "../../shared/catalog.js";
 
 /**
- * Structured outputs guarantee the shape but not the semantics: array
+ * Every scene that reaches the builders passes through here: hand-authored
+ * JSON, the seed script, and each save from the in-app editor. Array
  * lengths, sane dimensions, unique ids and openings that actually fit are
- * all still on us. This normalises a spec into something the builders can
- * trust and returns the repairs so the caller can surface them.
+ * all checked, and the repairs are returned so the caller can surface them.
  *
- * It also carries the parts the model never writes — imported models,
- * furniture placements and per-surface finish overrides — through untouched
- * but validated, so authored and generated scenes share one code path.
+ * It also migrates older specs forward. Stairwells used to be drawn as
+ * `voids` on room polygons; they are now `floor_openings`, which the editor
+ * can move, resize and tie to the flight they serve.
  */
 
 const OPENING_SET = new Set(OPENING_TYPES);
 const SWING_SET = new Set(DOOR_SWINGS);
 const DIRECTION_SET = new Set(STAIR_DIRECTIONS);
+const TRIM_SIDES = new Set(["a", "b", "both"]);
+const BALUSTRADE_SIDES = new Set(["left", "right", "both"]);
+const RAIL_SIDES = new Set(["x-", "x+", "z-", "z+"]);
 
 const clamp = (n, min, max) => Math.min(max, Math.max(min, n));
+
+/** Stair headings the older specs used, as a yaw in degrees. */
+const DIRECTION_YAW = { north: 0, south: 180, east: 90, west: -90 };
 
 function num(value, fallback) {
     return typeof value === "number" && Number.isFinite(value) ? value : fallback;
@@ -130,7 +136,20 @@ export function validateScene(raw) {
                     ? raw.model.collision_exclude
                     : []
                 ).filter((n) => typeof n === "string" && n.trim()).map((n) => n.trim()),
+                // Node-name prefixes that make up the fixed building. When
+                // present, every other top-level node in the model is lifted
+                // out as a movable piece; when absent the whole model is fixed.
+                fixed_nodes: (Array.isArray(raw.model.fixed_nodes) ? raw.model.fixed_nodes : [])
+                    .filter((n) => typeof n === "string" && n.trim())
+                    .map((n) => n.trim()),
+                // Set once those pieces have been written into `furniture`, so
+                // one the editor deleted stays deleted.
+                parts_extracted: raw.model.parts_extracted === true,
             };
+            // "furnishings": the model brings only furniture, every node of
+            // which becomes a movable piece; the building is the spec's own
+            // rooms, walls and roofs, built — and editable — like any other.
+            if (raw.model.role === "furnishings") scene.model.role = "furnishings";
 
             const override = raw.model.material;
             if (override && typeof override === "object") {
@@ -256,6 +275,12 @@ export function validateScene(raw) {
             }
             if (type === "window") {
                 entry.frame = trim(o?.frame, "trim_white");
+                // Glazing bars dividing it into panes across and up, and a
+                // cill board under it inside and out.
+                if (Array.isArray(o?.panes)) {
+                    entry.panes = [0, 1].map((k) => Math.round(clamp(num(o.panes[k], 1), 1, 8)));
+                }
+                if (o?.cill === true) entry.cill = true;
             }
 
             return [entry];
@@ -275,6 +300,9 @@ export function validateScene(raw) {
                 reveal: trim(w.reveal, "trim_white"),
                 base_height: clamp(num(w.base_height, 0), -20, 60),
                 openings,
+                // Skirting, and casings round its doors: on side A, side B or
+                // both, in the reveal's trim.
+                ...(TRIM_SIDES.has(w.trims) ? { trims: w.trims } : {}),
             },
         ];
     });
@@ -325,11 +353,16 @@ export function validateScene(raw) {
         // keeps a bad step count from producing a ladder or a ramp.
         const steps = Math.round(clamp(num(s?.steps, (top - base) / 0.19), 2, 60));
 
+        const direction = DIRECTION_SET.has(s?.direction) ? s.direction : "north";
+
         return [
             {
                 id: uniqueId(s?.id, "stair", stairIds, i),
                 start: vec(s?.start, 2, [0, 0]),
-                direction: DIRECTION_SET.has(s?.direction) ? s.direction : "north",
+                direction,
+                // Free heading in degrees; the editor turns flights to any
+                // angle. `direction` is kept for older readers.
+                yaw: num(s?.yaw, DIRECTION_YAW[direction]),
                 width: clamp(num(s?.width, 1.05), 0.6, 6),
                 base_height: base,
                 top_height: top,
@@ -337,9 +370,41 @@ export function validateScene(raw) {
                 steps,
                 finish: finish(s?.finish, "floor", notes, `stairs[${i}]`),
                 riser: trim(s?.riser, "trim_white"),
+                // One of an imported model's own flights: it draws the treads,
+                // the spec only makes them walkable.
+                ...(s?.model === true ? { model: true } : {}),
+                // Which side, climbing, has newels, spindles and a handrail.
+                ...(BALUSTRADE_SIDES.has(s?.balustrade) ? { balustrade: s.balustrade } : {}),
             },
         ];
     });
+
+    // --- floor openings --------------------------------------------------
+    // Rectangular holes through every slab at `elevation`: the floors of
+    // the rooms standing there and the ceilings of the rooms below.
+    const openingIdsFloor = new Set();
+    const stairIdSet = new Set(scene.stairs.map((st) => st.id));
+    scene.floor_openings = (Array.isArray(raw.floor_openings) ? raw.floor_openings : []).flatMap(
+        (o, i) => {
+            const entry = {
+                id: uniqueId(o?.id, "hole", openingIdsFloor, i),
+                position: vec(o?.position, 2, [0, 0]),
+                elevation: clamp(num(o?.elevation, 2.6), -20, 60),
+                width: clamp(num(o?.width, 1.2), 0.2, 30),
+                depth: clamp(num(o?.depth, 2), 0.2, 30),
+                yaw: num(o?.yaw, 0),
+            };
+            if (typeof o?.stair_id === "string" && stairIdSet.has(o.stair_id)) {
+                entry.stair_id = o.stair_id;
+            }
+            // Sides guarded by a landing rail, in the opening's own frame.
+            const rails = (Array.isArray(o?.rails) ? o.rails : []).filter((side) => RAIL_SIDES.has(side));
+            if (rails.length) entry.rails = [...new Set(rails)];
+            return [entry];
+        }
+    );
+
+    if (!scene.model || scene.model.role === "furnishings") migrateStairVoids(scene, openingIdsFloor, notes);
 
     // --- standalone doors (authored, for imported-model scenes) ----------
     // A model brings its walls as baked mesh, so its doors cannot ride on
@@ -443,4 +508,84 @@ export function validateScene(raw) {
     }
 
     return { scene, notes };
+}
+
+// ---------------------------------------------------------------------
+// Migration: room voids -> floor openings
+// ---------------------------------------------------------------------
+
+/** World-space corners of a flight's plan footprint. */
+export function stairFootprint(stair) {
+    const yaw = (stair.yaw * Math.PI) / 180;
+    const cos = Math.cos(yaw);
+    const sin = Math.sin(yaw);
+    const half = stair.width / 2;
+    return [
+        [-half, 0],
+        [half, 0],
+        [half, stair.run],
+        [-half, stair.run],
+    ].map(([x, z]) => [
+        stair.start[0] + x * cos + z * sin,
+        stair.start[1] - x * sin + z * cos,
+    ]);
+}
+
+function bounds(points) {
+    const xs = points.map((p) => p[0]);
+    const zs = points.map((p) => p[1]);
+    return { x0: Math.min(...xs), x1: Math.max(...xs), z0: Math.min(...zs), z1: Math.max(...zs) };
+}
+
+function overlapArea(a, b) {
+    const w = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0);
+    const d = Math.min(a.z1, b.z1) - Math.max(a.z0, b.z0);
+    return w > 0 && d > 0 ? w * d : 0;
+}
+
+/**
+ * A stairwell used to be a `void` repeated on the room below (for its
+ * ceiling) and the room above (for its floor). Each one that sits over a
+ * flight becomes a single floor opening at the flight's head, linked to it,
+ * so moving the stair carries its opening along. Voids that serve no flight
+ * are left as they were.
+ */
+function migrateStairVoids(scene, usedIds, notes) {
+    let migrated = 0;
+
+    for (const stair of scene.stairs) {
+        const footprint = bounds(stairFootprint(stair));
+
+        for (const room of scene.rooms) {
+            room.voids = room.voids.filter((hole) => {
+                const box = bounds(hole);
+                const area = (box.x1 - box.x0) * (box.z1 - box.z0);
+                if (area <= 0 || overlapArea(box, footprint) < area * 0.5) return true;
+
+                const existing = scene.floor_openings.find(
+                    (o) =>
+                        Math.abs(o.elevation - stair.top_height) < 0.02 &&
+                        Math.abs(o.position[0] - (box.x0 + box.x1) / 2) < 0.3 &&
+                        Math.abs(o.position[1] - (box.z0 + box.z1) / 2) < 0.3
+                );
+                if (!existing) {
+                    scene.floor_openings.push({
+                        id: uniqueId(`hole-${stair.id}`, "hole", usedIds, scene.floor_openings.length),
+                        position: [(box.x0 + box.x1) / 2, (box.z0 + box.z1) / 2],
+                        elevation: stair.top_height,
+                        width: box.x1 - box.x0,
+                        depth: box.z1 - box.z0,
+                        yaw: 0,
+                        stair_id: stair.id,
+                    });
+                    migrated++;
+                }
+                return false;
+            });
+        }
+    }
+
+    if (migrated) {
+        notes.push(`floor_openings: migrated ${migrated} stairwell void(s) from room polygons.`);
+    }
 }

@@ -1,0 +1,150 @@
+/* Editing from the walkthrough: the crosshair is the cursor.
+   See frontend/Experience/Editor/FieldEdit.js. */
+
+/* The crosshair says what a click would do: a ring on a piece that can be
+   selected, orange on a gizmo handle, and solid orange while something is
+   being moved. */
+.walkthrough-active.pointer-locked {
+    &.field-aim-piece .experience-wrapper::after,
+    &.field-aim-handle .experience-wrapper::after {
+        width: 12px;
+        height: 12px;
+        margin: -6px 0 0 -6px;
+        background: transparent;
+        border: 1.5px solid rgba(255, 255, 255, 0.9);
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+    }
+
+    &.field-aim-handle .experience-wrapper::after {
+        border-color: #ffaa33;
+    }
+
+    &.field-moving .experience-wrapper::after {
+        width: 6px;
+        height: 6px;
+        margin: -3px 0 0 -3px;
+        background: #ffaa33;
+        border: none;
+        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+    }
+}
+
+.field-edit {
+    position: fixed;
+    left: 50%;
+    bottom: 1.4rem;
+    z-index: 20;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    max-width: calc(100vw - 2rem);
+    pointer-events: none;
+    font-size: 0.8rem;
+    color: var(--text);
+
+    &[hidden] {
+        display: none;
+    }
+}
+
+.field-edit-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.6rem 0.95rem 0.65rem;
+    background: rgba(12, 14, 18, 0.78);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    backdrop-filter: blur(10px);
+    box-shadow: var(--shadow);
+
+    &[hidden] {
+        display: none;
+    }
+}
+
+.field-edit-title {
+    display: flex;
+    align-items: baseline;
+    gap: 0.65rem;
+    white-space: nowrap;
+
+    b {
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+    }
+
+    span {
+        color: var(--text-muted);
+    }
+
+    .is-warn {
+        color: #e8b04a;
+    }
+
+    .is-bad {
+        color: var(--danger);
+    }
+}
+
+.field-edit-keys {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.3rem 0.85rem;
+    color: var(--text-muted);
+
+    span {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        white-space: nowrap;
+    }
+
+    kbd {
+        padding: 0.05rem 0.35rem;
+        border: 1px solid var(--border-strong);
+        border-radius: 4px;
+        font-family: inherit;
+        font-size: 0.72rem;
+        color: var(--text);
+        background: rgba(255, 255, 255, 0.06);
+    }
+}
+
+.field-edit-toasts {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.field-edit-toast {
+    padding: 0.35rem 0.8rem;
+    background: rgba(12, 14, 18, 0.82);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    backdrop-filter: blur(8px);
+    transition: opacity 0.4s ease;
+
+    &.is-warn {
+        border-color: rgba(232, 176, 74, 0.55);
+    }
+
+    &.is-error {
+        border-color: rgba(224, 122, 106, 0.6);
+    }
+
+    &.is-leaving {
+        opacity: 0;
+    }
+}
+
+/* The walkthrough's Add menu (Shift A) borrows edit mode's popup, and only
+   that: the rest of the editor stays hidden behind it. */
+.ed.is-field > :not(.ed-popup) {
+    display: none;
+}

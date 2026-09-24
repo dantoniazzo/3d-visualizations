@@ -18,6 +18,10 @@ import { OrbitControls } from "./Utils/CustomOrbitControls.js";
  *
  * Emits: "lockchange" (boolean) whenever pointer lock is gained or lost, so
  * the UI can show its click-to-look prompt and crosshair.
+ *
+ * In edit mode none of that runs: the editor registers its own viewport
+ * controller as `editorView`, which then owns the perspective camera (and
+ * an orthographic one) until the walkthrough resumes.
  */
 
 const _offset = new THREE.Vector3();
@@ -153,6 +157,7 @@ export default class Camera extends EventEmitter {
     requestLock() {
         if (this.scheme !== "pointerLock") return;
         if (!this.pointerLockEnabled || this.locked) return;
+        if (this.editorView?.active) return;
 
         // Browsers reject a lock request made too soon after an Escape exit,
         // and reject it as a rejected promise rather than an exception.
@@ -243,9 +248,15 @@ export default class Camera extends EventEmitter {
         return Math.atan2(-_forward.x, -_forward.z);
     }
 
+    /** The camera the frame is rendered with — orthographic in some editor views. */
+    get activeCamera() {
+        return this.editorView?.active ? this.editorView.camera : this.perspectiveCamera;
+    }
+
     onResize() {
         this.perspectiveCamera.aspect = this.sizes.aspect;
         this.perspectiveCamera.updateProjectionMatrix();
+        this.editorView?.onResize();
     }
 
     // ------------------------------------------------------------------
@@ -253,6 +264,11 @@ export default class Camera extends EventEmitter {
     // ------------------------------------------------------------------
 
     update() {
+        if (this.editorView?.active) {
+            this.editorView.update();
+            return;
+        }
+
         // Driving overrides both schemes: on touch the orbit branch returns
         // early, so checking this second would freeze the camera in the car.
         if (this.vehicleMode && this.vehicle) {

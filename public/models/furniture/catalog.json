@@ -203,9 +203,9 @@
             "scale": 1,
             "yaw": 0,
             "size": [
-                1.02,
-                2.07,
-                1.02
+                0.98,
+                2.11,
+                0.9
             ],
             "anchor": "floor",
             "credit": "Built procedurally by blender/export_furniture.py",
@@ -320,6 +320,406 @@
                 1.7
             ],
             "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "sofa",
+            "name": "Sofa, 3-seat",
+            "category": "seating",
+            "url": "/models/furniture/sofa.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.1,
+                0.78,
+                0.92
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "sofa-2",
+            "name": "Sofa, 2-seat",
+            "category": "seating",
+            "url": "/models/furniture/sofa-2.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.6,
+                0.78,
+                0.92
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "armchair",
+            "name": "Armchair",
+            "category": "seating",
+            "url": "/models/furniture/armchair.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.86,
+                0.78,
+                0.86
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "lounge-chair",
+            "name": "Lounge chair",
+            "category": "seating",
+            "url": "/models/furniture/lounge-chair.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.82,
+                0.96,
+                0.77
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "desk-chair",
+            "name": "Desk chair",
+            "category": "seating",
+            "url": "/models/furniture/desk-chair.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.57,
+                1.04,
+                0.59
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "dining-chair",
+            "name": "Dining chair",
+            "category": "seating",
+            "url": "/models/furniture/dining-chair.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.44,
+                0.88,
+                0.48
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "bar-stool",
+            "name": "Bar stool",
+            "category": "seating",
+            "url": "/models/furniture/bar-stool.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.38,
+                0.77,
+                0.38
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ottoman",
+            "name": "Ottoman",
+            "category": "seating",
+            "url": "/models/furniture/ottoman.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.8,
+                0.42,
+                0.6
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "dining-table",
+            "name": "Dining table, 6-seat",
+            "category": "tables",
+            "url": "/models/furniture/dining-table.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.8,
+                0.76,
+                0.9
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "dining-table-4",
+            "name": "Dining table, 4-seat",
+            "category": "tables",
+            "url": "/models/furniture/dining-table-4.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.2,
+                0.76,
+                0.8
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "coffee-table",
+            "name": "Coffee table",
+            "category": "tables",
+            "url": "/models/furniture/coffee-table.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.1,
+                0.4,
+                0.6
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "coffee-table-round",
+            "name": "Round coffee table",
+            "category": "tables",
+            "url": "/models/furniture/coffee-table-round.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.9,
+                0.4,
+                0.9
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "side-table",
+            "name": "Side table",
+            "category": "tables",
+            "url": "/models/furniture/side-table.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.48,
+                0.55,
+                0.48
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "console-table",
+            "name": "Console table",
+            "category": "tables",
+            "url": "/models/furniture/console-table.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.1,
+                0.8,
+                0.36
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "bookcase",
+            "name": "Bookcase",
+            "category": "storage",
+            "url": "/models/furniture/bookcase.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.9,
+                1.9,
+                0.32
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "tv",
+            "name": "Television",
+            "category": "decor",
+            "url": "/models/furniture/tv.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.1,
+                0.71,
+                0.22
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "laptop",
+            "name": "Laptop",
+            "category": "decor",
+            "url": "/models/furniture/laptop.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.33,
+                0.23,
+                0.29
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "desk-lamp",
+            "name": "Desk lamp",
+            "category": "lighting",
+            "url": "/models/furniture/desk-lamp.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.16,
+                0.45,
+                0.34
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "plant",
+            "name": "Potted plant",
+            "category": "decor",
+            "url": "/models/furniture/plant.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.46,
+                0.98,
+                0.44
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "plant-small",
+            "name": "Small plant",
+            "category": "decor",
+            "url": "/models/furniture/plant-small.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.3,
+                0.56,
+                0.29
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "vase",
+            "name": "Vase",
+            "category": "decor",
+            "url": "/models/furniture/vase.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.18,
+                0.3,
+                0.18
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "bowl",
+            "name": "Bowl",
+            "category": "decor",
+            "url": "/models/furniture/bowl.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.32,
+                0.07,
+                0.32
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "books",
+            "name": "Books",
+            "category": "decor",
+            "url": "/models/furniture/books.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.3,
+                0.26,
+                0.2
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "picture",
+            "name": "Picture",
+            "category": "decor",
+            "url": "/models/furniture/picture.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.8,
+                0.6,
+                0.04
+            ],
+            "anchor": "wall",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "mirror",
+            "name": "Mirror",
+            "category": "decor",
+            "url": "/models/furniture/mirror.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.7,
+                1.0,
+                0.05
+            ],
+            "anchor": "wall",
             "credit": "Built procedurally by blender/export_furniture.py",
             "enabled": true
         }

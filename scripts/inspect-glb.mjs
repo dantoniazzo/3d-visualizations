@@ -1,7 +1,7 @@
 /**
  * Inspect a GLB before importing it as a scene.
  *
- *   node scripts/inspect-glb.mjs public/models/apartment_2.glb
+ *   node scripts/inspect-glb.mjs public/models/wrenfield_furnishings.glb
  *
  * Reports what you need to fill in a scene's `model` block: the world-space
  * extents, a scale factor derived from objects of known real size, whether

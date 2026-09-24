@@ -20,6 +20,3 @@ services:
       # Only for Cloudflare R2 / MinIO; leave unset for AWS S3.
       - key: S3_ENDPOINT
         sync: false
-      # Optional: needed only for AI generation.
-      - key: ANTHROPIC_API_KEY
-        sync: false

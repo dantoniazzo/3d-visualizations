@@ -6,55 +6,30 @@
         <title>Space Walkthrough</title>
         <meta
             name="description"
-            content="Walk clients through AI-generated furnished spaces together, in the browser."
+            content="Lay out a property in a Blender-style editor, then walk through it together in the browser."
         />
     </head>
     <body>
         <!-- ============================================================
-             Launcher — pick or generate a space (before the 3D loads)
+             Launcher — pick a space (before the 3D loads)
              ============================================================ -->
         <div class="launcher">
             <div class="launcher-inner">
                 <header class="launcher-header">
                     <h1>Space Walkthrough</h1>
                     <p>
-                        Describe a space and walk through it with your client.
-                        Everyone in the same space sees each other.
+                        Arrange a property in the editor, then walk through it
+                        with your client. Everyone in the same space sees each
+                        other.
                     </p>
                 </header>
 
-                <section class="launcher-create">
-                    <label for="brief-input">Create a new space</label>
-                    <textarea
-                        id="brief-input"
-                        rows="3"
-                        placeholder="A furnished two-bedroom apartment, 78 m², open-plan kitchen and living room, warm oak floors, Scandinavian furniture, balcony doors on the south wall"
-                    ></textarea>
-                    <div class="launcher-actions">
-                        <button id="generate-button" class="primary">
-                            Generate space
-                        </button>
-                        <span class="launcher-status" id="generate-status"></span>
-                    </div>
-                    <div class="launcher-examples">
-                        <span>Try:</span>
-                        <button class="chip" data-example="A wedding reception for 80 guests in a garden marquee: round tables of eight, a dancefloor, a floral arch at the aisle end, a bar along one side, warm string lights overhead">
-                            Wedding reception
-                        </button>
-                        <button class="chip" data-example="A one-bedroom show apartment for an interior design pitch: 55 m², minimalist Japandi styling, muted greens, a reading nook by the window, integrated kitchen">
-                            Show apartment
-                        </button>
-                        <button class="chip" data-example="A small design studio office for six people: hot desks, a meeting room with a glass partition, a kitchenette, exposed brick, plants throughout">
-                            Studio office
-                        </button>
-                    </div>
-                </section>
-
                 <section class="launcher-library">
-                    <h2>Saved spaces</h2>
+                    <h2>Spaces</h2>
                     <div class="scene-list" id="scene-list">
                         <p class="empty">Loading…</p>
                     </div>
+                    <p class="launcher-status" id="launcher-status"></p>
                 </section>
             </div>
         </div>
@@ -99,8 +74,8 @@
                     <p class="controls-hint">
                         <b>Mouse</b> look · <b>WASD</b> move · <b>Shift</b> run ·
                         <b>Space</b> jump · <b>E</b> open doors · <b>T</b> change
-                        finish · <b>V</b> first / third person · <b>G</b> edit · <b>M</b> menu ·
-                        <b>Enter</b> chat · <b>Esc</b> free cursor
+                        finish · <b>V</b> first / third person · <b>Tab</b> edit mode ·
+                        <b>M</b> menu · <b>Enter</b> chat · <b>Esc</b> free cursor
                     </p>
                 </div>
             </div>
@@ -121,10 +96,10 @@
                     <kbd>V</kbd>
                 </button>
                 <button class="view-toggle" id="editor-toggle"
-                        title="Move, add and delete furniture (G)">
+                        title="Open the editor: move furniture, stairs, doors and more (Tab)">
                     <span class="editor-toggle-icon" aria-hidden="true"></span>
-                    <span class="view-toggle-label">Edit</span>
-                    <kbd>G</kbd>
+                    <span class="view-toggle-label">Edit mode</span>
+                    <kbd>Tab</kbd>
                 </button>
                 <div class="room-readout" id="room-readout"></div>
             </div>
@@ -145,31 +120,20 @@
                 <div class="finish-grid" id="finish-grid"></div>
             </div>
 
-            <!-- Shown while editor mode is on. -->
-            <div class="editor-bar" id="editor-bar" hidden>
-                <span class="editor-tag">Editing</span>
-                <span id="editor-hint">Click a piece to move it · X deletes · M adds</span>
-            </div>
-
-            <!-- Shown while placing a piece of furniture. -->
-            <div class="placement-bar" id="placement-bar" hidden>
-                <span id="placement-name"></span>
-                <span class="placement-keys">
-                    <kbd>Click</kbd> place · <kbd>[</kbd><kbd>]</kbd> rotate ·
-                    <kbd>Esc</kbd> cancel
-                </span>
-            </div>
-
             <!-- Shown on desktop whenever the pointer isn't captured. -->
             <div class="lock-hint">
                 <span class="lock-hint-main">Click to look around</span>
                 <span class="lock-hint-sub">
                     <b>V</b> first / third person · <b>E</b> opens a door ·
-                    <b>T</b> changes a finish
+                    <b>T</b> changes a finish · <b>Tab</b> edit mode
                 </span>
                 <span class="lock-hint-sub">
                     <b>Esc</b> frees the cursor · <b>M</b> opens the menu ·
                     <b>Enter</b> to chat
+                </span>
+                <span class="lock-hint-sub">
+                    <b>Click</b> furniture to select it, then <b>G</b> <b>R</b> <b>S</b>
+                    as in Blender
                 </span>
             </div>
 
@@ -185,35 +149,11 @@
                 </div>
 
                 <div class="hud-panel-section">
-                    <h5>Furnish</h5>
-                    <div class="furniture-list" id="furniture-list">
-                        <p class="hud-note">Loading catalogue…</p>
-                    </div>
+                    <h5>Arrange</h5>
                     <p class="hud-note">
-                        Add models to <code>public/models/furniture/</code> and list
-                        them in <code>catalog.json</code>.
-                    </p>
-                </div>
-
-                <div class="hud-panel-section">
-                    <h5>Placed items</h5>
-                    <div class="placed-list" id="placed-list">
-                        <p class="hud-note">Nothing placed yet.</p>
-                    </div>
-                </div>
-
-                <div class="hud-panel-section">
-                    <h5>Ask for a change</h5>
-                    <textarea
-                        id="prompt-input"
-                        rows="2"
-                        placeholder="Swap the sofa for a darker one and add a rug"
-                    ></textarea>
-                    <button id="revise-button" class="primary small">
-                        Apply change
-                    </button>
-                    <p class="hud-note" id="revise-status">
-                        Rebuilds the space and reloads the walkthrough.
+                        Press <kbd>Tab</kbd> for edit mode to move, add or remove
+                        furniture, stairs and floor openings, and to slide doors
+                        and windows along their walls.
                     </p>
                 </div>
 

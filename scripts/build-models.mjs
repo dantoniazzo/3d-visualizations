@@ -1,12 +1,17 @@
 /**
- * Regenerate the Blender-authored property and its GLB.
+ * Regenerate every model the app uses, from the scripts in blender/.
  *
- * The .blend and the exported model are build outputs, not sources: they run
- * to well over a hundred megabytes and are fully determined by the scripts in
- * blender/. This drives Blender headlessly to rebuild both.
+ * Nothing is downloaded: the house, its furniture, the furniture catalogue,
+ * the car and the kit of parts generated buildings are dressed with are all
+ * built from primitives, at real-world size, so the collisions in the app
+ * match what is drawn. The .blend and the GLBs are build outputs, fully
+ * determined by those scripts.
  *
- *   npm run models            # build the house, export the GLB
- *   npm run models -- --shell # shell only, skipping the furniture downloads
+ *   npm run models               # everything below, and the house
+ *   npm run models -- --shell    # the house's shell only, unfurnished
+ *   npm run furniture            # the catalogue only
+ *   npm run models -- --car      # the car only
+ *   npm run models -- --kit      # the doors, windows and stairs kit only
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
@@ -62,11 +67,23 @@ mkdirSync(join(BLENDER_DIR, "out"), { recursive: true });
 
 const shellOnly = process.argv.includes("--shell");
 const furnitureOnly = process.argv.includes("--furniture");
+const carOnly = process.argv.includes("--car");
+const kitOnly = process.argv.includes("--kit");
 const steps = furnitureOnly
     ? [["export_furniture.py", []]]
-    : shellOnly
-      ? [["build_house.py", ["--shell-only"]]]
-      : [["build_house.py", []], ["export_app.py", []], ["export_furniture.py", []]];
+    : carOnly
+      ? [["export_car.py", []]]
+      : kitOnly
+        ? [["export_kit.py", []]]
+        : shellOnly
+          ? [["build_house.py", ["--shell-only"]]]
+          : [
+                ["build_house.py", []],
+                ["export_app.py", []],
+                ["export_furniture.py", []],
+                ["export_car.py", []],
+                ["export_kit.py", []],
+            ];
 
 for (const [script, args] of steps) {
     console.log(`> ${script} ${args.join(" ")}`.trim());
@@ -78,9 +95,9 @@ for (const [script, args] of steps) {
 }
 
 const glb = join(ROOT, "public", "models",
-    furnitureOnly ? "furniture/catalog.json" : "wrenfield_house.glb");
+    furnitureOnly ? "furniture/catalog.json" : carOnly ? "car-chassis.glb" : kitOnly ? "kit.glb" : "wrenfield_furnishings.glb");
 console.log(
     existsSync(glb)
         ? "\nDone. Run `npm run seed` to register the property."
-        : "\nFinished, but public/models/wrenfield_house.glb is missing — check the log above."
+        : `\nFinished, but ${glb} is missing — check the log above.`
 );

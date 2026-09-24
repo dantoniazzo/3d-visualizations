@@ -2,6 +2,7 @@ import * as THREE from "three";
 
 import Experience from "../Experience.js";
 import { ENVIRONMENT_PRESETS } from "../../../shared/catalog.js";
+import { applyReflections } from "../Utils/reflections.js";
 
 /**
  * Ambient lighting, sky and fog, driven entirely by the scene spec's
@@ -20,6 +21,9 @@ export default class Environment {
             ENVIRONMENT_PRESETS.interior_day;
 
         this.setEnvironment();
+        // What the scene builder made so far. Furniture, which it adds
+        // later, is handled as the library registers or loads each piece.
+        applyReflections(this.scene);
     }
 
     setEnvironment() {

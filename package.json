@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "AI-generated 3D furnished space walkthrough visualizer with multiplayer presence and chat",
+  "description": "3D property editor and walkthrough with multiplayer presence and chat",
   "scripts": {
     "frontend-dev": "vite --host",
     "frontend-build": "vite build --watch",
@@ -24,7 +24,6 @@
     "vite": "^7.3.6"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.115.0",
     "@aws-sdk/client-s3": "^3.1113.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",

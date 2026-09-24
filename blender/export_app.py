@@ -1,14 +1,19 @@
-"""Export Wrenfield House for the walkthrough app.
+"""Export Wrenfield House for the walkthrough app, as a hybrid.
 
-Rebuilds the house from scratch (fast: assets are cached), then:
-  - deletes every door leaf, leaving the cased openings in the walls;
-  - strips the cosmetic bevel modifiers, whose 2 mm rounds multiply the
-    triangle count for no visible gain at walkthrough scale;
-  - decimates the heaviest imported assets until the whole model fits the
-    app's 500k-triangle collision budget;
-  - exports public/models/wrenfield_house.glb;
-  - writes scripts/wrenfield-meta.json with doors, stairs and rooms already
-    converted to app coordinates.
+The app builds the house's structure itself — walls and what is in them,
+floors, ceilings, roofs, stairs, stairwells, the site — from a scene spec,
+so its editor can slide doors and windows along their walls and cut floors
+for stairs. Blender contributes what is worth modelling: the furniture, the
+fitted kitchen and bathrooms, the pictures on the walls. This script
+
+  - builds the furnishings alone, from furnish.py, exactly as build_house.py
+    places them in the full Blender house;
+  - bakes their tiling textures and strips the cosmetic bevel modifiers,
+    whose 2 mm rounds multiply the triangle count for no visible gain;
+  - exports public/models/wrenfield_furnishings.glb, every top-level node of
+    which becomes a movable piece in the app, named as it always was;
+  - writes scripts/wrenfield-spec.json: the structure from structure.py and
+    plan.py, the same data shell.py builds the Blender house from.
 
 Coordinate note: Blender is Z-up, glTF is Y-up, so a plan point (x, y)
 lands at (x, -y) on the app's XZ ground plane. Elevations carry over.
@@ -25,10 +30,8 @@ sys.path.insert(0, HERE)
 
 import bpy
 
-from lib import architecture as arch
-from lib import furnish, geometry as g, materials as m, plan as P, shell
-
-BUDGET = 470_000  # headroom under the app's 500k octree budget
+from lib import furnish, geometry as g, materials as m, plan as P
+from lib import structure as S
 
 
 def clean():
@@ -180,16 +183,6 @@ def flatten_procedural_materials():
     print(f"MATERIALS_FLATTENED {flattened}")
 
 
-def delete_doors():
-    holders = [o for o in bpy.data.objects if o.get("is_door")]
-    doomed = []
-    for h in holders:
-        doomed += [c for c in h.children_recursive] + [h]
-    for o in doomed:
-        bpy.data.objects.remove(o, do_unlink=True)
-    print(f"DOORS_REMOVED {len(holders)}")
-
-
 def strip_bevels():
     n = 0
     for o in bpy.data.objects:
@@ -219,64 +212,11 @@ def evaluated_tris():
     return per_mesh
 
 
-# Names of things that are imported assets rather than scripted architecture.
-# Decimation is safe on these; collapse-decimating a box-built wall or worktop
-# produces slivers, so the architecture is never touched.
-ASSET_HINT = ("asset_", "sofa", "Sofa", "dchair", "barstool", "potted",
-              "loft_sofa", "snug_chair", "bed1_lamp", "hanging_picture",
-              "book_", "ceramic", "wooden_bo", "ornate", "Classic", "Ottoman",
-              "ArmChair", "modern_", "mid_century", "side_table", "Television",
-              "television", "desk_lamp", "classic_laptop", "dining_",
-              "coffee_table", "liv_art")
-
-
-def _is_asset(obj):
-    return obj.name.startswith(ASSET_HINT)
-
-
-def decimate_to_budget():
-    """Cap every imported asset's mesh so the whole model fits the budget.
-
-    Uses the modifier-apply OPERATOR rather than a hand-rolled depsgraph
-    bake: the first version of this read evaluated geometry before the
-    depsgraph had caught up, reported success, and exported the original
-    dense meshes anyway. The operator path keeps Blender's own update
-    ordering, and the result is verified from the mesh data itself.
-    """
-    for _pass in range(3):
-        bpy.context.view_layer.update()
-        per_mesh = evaluated_tris()
-        total = sum(t * len(o) for t, o in per_mesh.values())
-        print(f"TRIS_PASS{_pass} {total}")
-        if total <= BUDGET:
-            break
-
-        for mesh, (tris, objs) in sorted(per_mesh.items(),
-                                         key=lambda kv: -kv[1][0] * len(kv[1][1])):
-            if not _is_asset(objs[0]):
-                continue
-            cap = min(10_000, max(2_500, 30_000 // len(objs)))
-            if tris <= cap:
-                continue
-
-            host = objs[0]
-            # modifier_apply refuses multi-user data, so split it first; every
-            # copy is pointed at the decimated result afterwards.
-            host.data = host.data.copy()
-            mod = host.modifiers.new("shrink", "DECIMATE")
-            mod.ratio = cap / tris
-            with bpy.context.temp_override(object=host, active_object=host,
-                                           selected_editable_objects=[host]):
-                bpy.ops.object.modifier_apply(modifier=mod.name)
-
-            done = sum(len(p.vertices) - 2 for p in host.data.polygons)
-            for o in objs:
-                o.data = host.data
-            print(f"DECIMATED {host.name} {tris}->{done} x{len(objs)}")
-
+def triangle_count():
+    """Triangles as the exporter will see them, modifiers applied."""
     bpy.context.view_layer.update()
     total = sum(t * len(o) for t, o in evaluated_tris().values())
-    print(f"TRIS_AFTER {total}")
+    print(f"TRIS {total}")
     return total
 
 
@@ -290,74 +230,215 @@ FLOOR_MAP = {"oak": "oak_parquet", "walnut": "walnut_boards",
              "tile_slate": "slate_tile", "carpet_grey": "carpet_grey",
              "carpet_beige": "carpet_beige", "concrete": "polished_concrete"}
 
+WALL_MAP = {"wall_white": "paint_white", "wall_warm": "paint_warm_white",
+            "wall_sage": "paint_sage", "wall_clay": "paint_clay",
+            "wall_charcoal": "paint_charcoal"}
 
-def app_rooms():
-    """Room metadata in app coordinates — the app only uses it for the room
-    readout, the jump list and its per-room lights; geometry comes from the
-    GLB."""
-    out = []
-    storeys = [
-        (P.GROUND_ROOMS, P.G, P.H_G, {"landing": None}),
-        (P.FIRST_ROOMS, P.F1, P.H_F1, None),
-        (P.ATTIC_ROOMS, P.F2, P.H_F2, None),
-    ]
-    voids = {("first", "landing"): [P.VOID_A, P.VOID_B],
-             ("attic", "loft"): [P.VOID_B]}
-    names = {"wc": "Cloakroom", "bed1": "Principal Bedroom", "loftbath": "Loft Shower Room"}
+GROUND_MAP = {"grass": "lawn", "tarmac": "tarmac_surface", "paving": "paving_slab"}
 
-    for label, (rooms, elev, height) in zip(
-            ("ground", "first", "attic"),
-            [(r, e, h) for r, e, h, _ in storeys]):
-        for rid, (poly, floor, _wall) in rooms.items():
-            entry = {
+ROOM_NAMES = {"wc": "Cloakroom", "bed1": "Principal Bedroom", "loftbath": "Loft Shower Room",
+              "ensuite1": "En-suite 1", "ensuite2": "En-suite 2", "bed2": "Bedroom 2",
+              "bed3": "Bedroom 3", "bed4": "Bedroom 4", "bath": "Family Bathroom"}
+
+LEVEL_KEY = {"ground": "g", "first": "f", "attic": "a"}
+
+
+def xz(point):
+    """A plan point on the app's ground plane."""
+    return [round(point[0], 4), round(-point[1], 4)]
+
+
+def app_opening(o, wall_id, index):
+    entry = {
+        "id": f"{wall_id}-{index}",
+        "offset": round(o.offset, 4),
+        "width": round(o.width, 4),
+        "height": round(o.height, 4),
+        "sill": round(o.sill, 4),
+    }
+    if o.kind == "door":
+        entry["type"] = "door"
+        entry["door"] = {
+            "type": "hinged",
+            "swing": "inward_left" if o.opts.get("swing", 0) < 0 else "inward_right",
+            "leaf": LEAF_TRIMS.get(o.opts.get("leaf", "door_leaf"), "trim_white"),
+            "frame": "trim_white",
+            "handle": HANDLE_TRIMS.get(o.opts.get("handle", "brass"), "metal_brass"),
+        }
+    elif o.kind == "doorway":
+        entry["type"] = "doorway"
+    else:
+        # Windows and French windows, which are windows down to the floor.
+        entry["type"] = "window"
+        entry["frame"] = "trim_white"
+        entry["panes"] = [o.opts.get("panes_x", 2), o.opts.get("panes_z", 2)]
+        entry["cill"] = o.sill > 0.2
+    return entry
+
+
+def app_wall(wall_id, spec, group, external, trims):
+    """One wall of structure.py in the app's terms.
+
+    The app's side A is a wall's right-hand face, going from start to end —
+    its +Z once flipped onto the XZ plane — which is Blender's side B, and
+    the other way round. External rings run anticlockwise, so their left,
+    the app's side B, is indoors.
+    """
+    start, end, openings = spec[0], spec[1], spec[2]
+    if external:
+        # Smooth render outside — the app's plaster texture is a rough
+        # mottle, far from Blender's render — and painted walls within.
+        finish, back = "paint_warm_white", "paint_white"
+    else:
+        left = spec[3] if len(spec) > 3 else "wall_white"
+        right = spec[4] if len(spec) > 4 else left
+        finish, back = WALL_MAP[right], WALL_MAP[left]
+    wall = {
+        "id": wall_id,
+        "start": xz(start),
+        "end": xz(end),
+        "height": round(group["height"], 4),
+        "thickness": P.EXT if external else P.INT,
+        "finish": finish,
+        "finish_back": back,
+        "reveal": "trim_white",
+        "base_height": round(group["base"], 4),
+        "openings": [app_opening(o, wall_id, j)
+                     for j, o in enumerate(sorted(openings, key=lambda o: o.offset))],
+    }
+    if trims:
+        wall["trims"] = trims
+    return wall
+
+
+def rail_sides(points, void):
+    """Which sides of a stairwell a landing rail runs along, in the app's
+    frame for the opening: x-/x+ across it, z-/z+ along it, +z being south."""
+    xs = [p[0] for p in void]
+    ys = [p[1] for p in void]
+    cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
+    sides = []
+    for a, b in zip(points, points[1:]):
+        if abs(a[0] - b[0]) < 1e-3:
+            sides.append("x+" if a[0] > cx else "x-")
+        else:
+            sides.append("z+" if a[1] < cy else "z-")
+    return sides
+
+
+def app_spec():
+    """The structure, as the app's scene spec: rooms, walls, roofs, stairs
+    and stairwells. Furniture, spawns and the car are the seed's."""
+    rooms = []
+    storeys = [("ground", P.GROUND_ROOMS, P.G, P.H_G),
+               ("first", P.FIRST_ROOMS, P.F1, P.H_F1),
+               ("attic", P.ATTIC_ROOMS, P.F2, P.H_F2)]
+    for label, table, elevation, height in storeys:
+        for rid, (poly, floor, _wall) in table.items():
+            rooms.append({
                 "id": f"{label}-{rid}",
-                "name": names.get(rid, rid.replace("_", " ").title()),
-                "polygon": [[x, -y] for x, y in poly],
-                "voids": [[[x, -y] for x, y in v] for v in voids.get((label, rid), [])],
+                "name": ROOM_NAMES.get(rid, rid.replace("_", " ").title()),
+                "polygon": [xz(p) for p in poly],
+                "voids": [],
                 "floor_finish": FLOOR_MAP.get(floor, "oak_parquet"),
-                "ceiling_finish": "none",
+                "ceiling_finish": "ceiling_white",
                 "height": height,
-                "elevation": elev,
-            }
-            out.append(entry)
-    return out
+                "elevation": elevation,
+            })
+    rooms.append({
+        "id": "ground-garage", "name": "Garage",
+        "polygon": [xz(p) for p in S.GARAGE["floor"]], "voids": [],
+        "floor_finish": "polished_concrete", "ceiling_finish": "ceiling_white",
+        "height": S.GARAGE["height"], "elevation": S.GARAGE["base"],
+    })
+    for name, label, rect, finish in S.SITE_TILES:
+        rooms.append({
+            "id": f"site-{name}", "name": label,
+            "polygon": [xz(p) for p in rect], "voids": [],
+            "floor_finish": GROUND_MAP[finish], "ceiling_finish": "none",
+            "height": 0.05, "elevation": 0,
+        })
+
+    walls = []
+    for group in S.RINGS:
+        key = LEVEL_KEY[group["level"]]
+        # Skirting and casings indoors — though not round the eaves, which
+        # face the roof void behind the loft's knee walls.
+        trims = None if group["level"] == "attic" else "b"
+        for i, spec in enumerate(group["walls"]):
+            walls.append(app_wall(f"{key}-ext-{i}", spec, group, True, trims))
+    for group in S.PARTITIONS:
+        key = LEVEL_KEY[group["level"]]
+        for i, spec in enumerate(group["walls"]):
+            walls.append(app_wall(f"{key}-wall-{i}", spec, group, False, "both"))
+    for i, spec in enumerate(S.GARAGE["walls"]):
+        walls.append(app_wall(f"garage-ext-{i}", spec, S.GARAGE, True, None))
+
+    roofs = []
+    for r in S.ROOFS:
+        roofs.append({
+            "id": f"roof-{r['id']}",
+            "type": "gable",
+            "footprint": [xz(p) for p in P.rect(r["x0"], r["y0"], r["x1"], r["y1"])],
+            "base_height": r["eaves"],
+            "ridge_height": r["ridge"],
+            # Blender's Y is the app's Z.
+            "ridge_axis": "x" if r["ridge_axis"] == "x" else "z",
+            "finish": "roof_terracotta",
+            "gable_finish": "paint_warm_white",
+            "overhang": r["overhang"],
+            "thickness": r["thickness"],
+            "soffit": "trim_white",
+        })
+
+    stairs, holes = [], []
+    for f in S.FLIGHTS:
+        # Every flight climbs Blender +Y, the app's -Z: a heading of 180.
+        # Climbing that way, east is on the right.
+        stairs.append({
+            "id": f["id"],
+            "start": [round((f["x0"] + f["x1"]) / 2, 4), round(-f["y0"], 4)],
+            "direction": "south",
+            "yaw": 180,
+            "width": round(f["x1"] - f["x0"], 4),
+            "base_height": f["base"],
+            "top_height": f["top"],
+            "run": round(f["y1"] - f["y0"], 4),
+            "steps": f["steps"],
+            "finish": "oak_parquet",
+            "riser": "trim_white",
+            "balustrade": {"east": "right", "west": "left", "both": "both"}[f["balustrade"]],
+        })
+        xs = [p[0] for p in f["void"]]
+        ys = [p[1] for p in f["void"]]
+        rail = next(r for r in S.LANDING_RAILS if r["flight"] == f["id"])
+        holes.append({
+            "id": f"hole-{f['id']}",
+            "position": xz(((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2)),
+            "elevation": f["top"],
+            "width": round(max(xs) - min(xs), 4),
+            "depth": round(max(ys) - min(ys), 4),
+            "yaw": 0,
+            "stair_id": f["id"],
+            "rails": rail_sides(rail["points"], f["void"]),
+        })
+
+    return {"rooms": rooms, "walls": walls, "roofs": roofs, "stairs": stairs,
+            "floor_openings": holes}
 
 
 def main():
     clean()
     mats = m.library()
-    cols, _ = shell.build(mats)
+    # The furnishings alone: the structure is the app's to build.
+    cols = {k: g.collection(k) for k in ("ground", "first", "attic")}
     furnish.build(cols, mats)
 
-    # The exporter's use_visible does not reliably exclude the hidden import
-    # masters, and an invisible master in Blender is a very visible pile of
-    # furniture at the origin in the GLB. The placed copies own the mesh data
-    # too, so the masters can simply go.
-    masters = bpy.data.collections.get("_assets")
-    if masters:
-        for o in list(masters.objects):
-            bpy.data.objects.remove(o, do_unlink=True)
-        print("MASTERS_REMOVED")
-
-    # Name the flights so the app can keep them out of its collision octree.
-    # Their treads are drawn by the model but walked on via the ramp colliders
-    # the scene spec adds; leaving the risers in the octree catches the
-    # player's capsule a metre up. Balustrades keep colliding, deliberately.
-    flights = sorted((o for o in bpy.data.objects if o.name.startswith("flight")),
-                     key=lambda o: o.location.z)
-    for i, o in enumerate(flights):
-        # Rename the mesh data as well: three.js names a GLTF mesh object from
-        # the glTF *mesh*, not the node, so renaming only the object leaves the
-        # app matching against "flight" and excluding nothing.
-        o.name = o.data.name = f"stairtreads_{i}"
-    print("FLIGHTS_TAGGED", [o.name for o in flights])
-
     bake_tiling_textures()
-    delete_doors()
     strip_bevels()
-    total = decimate_to_budget()
+    total = triangle_count()
 
-    out_glb = os.path.join(REPO, "public", "models", "wrenfield_house.glb")
+    out_glb = os.path.join(REPO, "public", "models", "wrenfield_furnishings.glb")
     bpy.ops.export_scene.gltf(
         filepath=out_glb,
         export_format="GLB",
@@ -371,43 +452,15 @@ def main():
     )
     print("GLB_SAVED", out_glb, f"{os.path.getsize(out_glb)/1e6:.1f}MB")
 
-    doors = []
-    for i, d in enumerate(arch.DOOR_REGISTRY):
-        doors.append({
-            "id": f"wd-{i}",
-            "position": [round(d["x"], 3), round(-d["y"], 3)],
-            "elevation": round(d["base"], 3),
-            "yaw": round(d["yaw"], 2),
-            "width": round(d["width"], 3),
-            "height": round(d["height"], 3),
-            "thickness": round(d["thickness"], 3),
-            "door": {
-                "type": "hinged",
-                "swing": "inward_left" if d["swing"] < 0 else "inward_right",
-                "leaf": LEAF_TRIMS.get(d["leaf"], "trim_white"),
-                "frame": "trim_white",
-                "handle": HANDLE_TRIMS.get(d["handle"], "metal_brass"),
-                "lining": "none",   # the GLB already carries the casings
-            },
-        })
-
-    sa, sb = P.STAIR_A, P.STAIR_B
-    stairs = [
-        {"id": "flight-a", "start": [(sa["x0"] + sa["x1"]) / 2, -sa["y0"]],
-         "direction": "south", "width": sa["x1"] - sa["x0"],
-         "base_height": sa["base"], "top_height": sa["top"],
-         "run": sa["y1"] - sa["y0"], "steps": sa["steps"], "finish": "oak_parquet"},
-        {"id": "flight-b", "start": [(sb["x0"] + sb["x1"]) / 2, -sb["y0"]],
-         "direction": "south", "width": sb["x1"] - sb["x0"],
-         "base_height": sb["base"], "top_height": sb["top"],
-         "run": sb["y1"] - sb["y0"], "steps": sb["steps"], "finish": "oak_parquet"},
-    ]
-
-    meta = {"triangles": total, "doors": doors, "stairs": stairs, "rooms": app_rooms()}
-    out_meta = os.path.join(REPO, "scripts", "wrenfield-meta.json")
-    with open(out_meta, "w") as f:
-        json.dump(meta, f, indent=1)
-    print("META_SAVED", out_meta, f"doors={len(doors)} rooms={len(meta['rooms'])}")
+    spec = app_spec()
+    spec["triangles"] = total
+    out_spec = os.path.join(REPO, "scripts", "wrenfield-spec.json")
+    with open(out_spec, "w") as f:
+        json.dump(spec, f, indent=1)
+    print("SPEC_SAVED", out_spec, {k: len(v) for k, v in spec.items() if isinstance(v, list)})
 
 
-main()
+# Guarded: export_furniture.py imports the texture helpers above, and an
+# unguarded call rebuilt and re-exported the whole house on every import.
+if __name__ == "__main__":
+    main()

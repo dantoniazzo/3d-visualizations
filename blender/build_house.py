@@ -39,22 +39,6 @@ def main():
 
     out = os.path.join(HERE, "out", "wrenfield_house.blend")
 
-    # Pack the Poly Haven textures into the file. They live in blender/cache,
-    # which is a build artefact rather than something to ship alongside the
-    # .blend, so the deliverable has to carry them.
-    missing = [i.name for i in bpy.data.images
-               if i.source == "FILE" and not os.path.exists(bpy.path.abspath(i.filepath))]
-    if missing:
-        print("UNRESOLVED", len(missing), missing[:5])
-    for img in bpy.data.images:
-        if img.source != "FILE" or img.packed_file:
-            continue
-        try:
-            img.pack()
-        except RuntimeError as exc:
-            print("PACK_SKIP", img.name, exc)
-    print("PACKED", sum(1 for i in bpy.data.images if i.packed_file))
-
     bpy.ops.wm.save_as_mainfile(filepath=out)
     print("SAVED", out)
 

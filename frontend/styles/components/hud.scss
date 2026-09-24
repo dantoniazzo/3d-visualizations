@@ -280,69 +280,6 @@ kbd {
     text-align: center;
 }
 
-/* Furniture */
-.furniture-group {
-    margin-bottom: 0.6rem;
-
-    h6 {
-        font-size: 0.7rem;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-        color: var(--text-faint);
-        margin-bottom: 0.35rem;
-    }
-}
-
-.furniture-items {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.35rem;
-}
-
-.placed-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.2rem;
-}
-
-.placed-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    font-size: 0.82rem;
-    color: var(--text-muted);
-    padding: 0.15rem 0 0.15rem 0.1rem;
-}
-
-/* Placement mode */
-.placement-bar {
-    position: absolute;
-    left: 50%;
-    bottom: 2.2rem;
-    transform: translateX(-50%);
-    display: flex;
-    align-items: center;
-    gap: 0.9rem;
-    padding: 0.55rem 1.1rem;
-    background: rgba(12, 14, 18, 0.78);
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    font-size: 0.85rem;
-    backdrop-filter: blur(10px);
-    pointer-events: none;
-    white-space: nowrap;
-
-    &[hidden] {
-        display: none;
-    }
-}
-
-.placement-keys {
-    color: var(--text-faint);
-    font-size: 0.76rem;
-}
-
 /* First / third person switch.
    The `V` key has always done this, but with nothing on screen saying so the
    app read as third-person-only — so the mode gets a visible, clickable
@@ -417,50 +354,6 @@ kbd {
         justify-content: center;
         padding: 0;
     }
-}
-
-/* Editor mode: a persistent banner, because it changes what a click does and
-   that should never be a surprise. */
-.editor-bar {
-    position: absolute;
-    left: 50%;
-    bottom: 5.5rem;
-    transform: translateX(-50%);
-    display: flex;
-
-    /* `display: flex` here outranks the user-agent rule for [hidden], so
-       without this the bar is on permanently. Every other panel in this file
-       carries the same guard. */
-    &[hidden] {
-        display: none;
-    }
-
-    align-items: center;
-    gap: 0.7rem;
-    padding: 0.5rem 0.95rem;
-    border-radius: var(--radius-sm);
-    background: rgba(12, 14, 18, 0.72);
-    border: 1px solid var(--border);
-    backdrop-filter: blur(10px);
-    font-size: 0.8rem;
-    white-space: nowrap;
-    pointer-events: none;
-}
-
-.editor-tag {
-    padding: 0.12rem 0.42rem;
-    border-radius: 3px;
-    background: #ffc86e;
-    color: #1a1408;
-    font-weight: 600;
-    font-size: 0.68rem;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-}
-
-#editor-toggle.is-on {
-    border-color: #ffc86e;
-    color: #ffc86e;
 }
 
 .editor-toggle-icon {

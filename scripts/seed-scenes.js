@@ -1,21 +1,22 @@
 /**
  * Writes the bundled example properties.
  *
- * These exist so the app is walkable straight after `npm install`, with no
- * API key — and as worked examples of what a well-formed shell spec looks
- * like. Run with `npm run seed`.
+ * These exist so the app is walkable straight after `npm install`, and as
+ * worked examples of what a well-formed shell spec looks like. Run with
+ * `npm run seed`.
  */
 import { existsSync, readFileSync } from "node:fs";
 
-import { validateScene } from "../server/ai/validate.js";
+import { validateScene } from "../server/scene/validate.js";
 import { writeScene } from "../server/store/sceneStore.js";
 
-// Doors, stairs and room metadata for Wrenfield House, emitted in app
-// coordinates by blender/export_app.py alongside the GLB itself.
-const wrenfieldMetaPath = new URL("./wrenfield-meta.json", import.meta.url);
-const wrenfieldMeta = existsSync(wrenfieldMetaPath)
-    ? JSON.parse(readFileSync(wrenfieldMetaPath))
-    : { doors: [], stairs: [], rooms: [] };
+// Wrenfield House's structure — rooms, walls and what is in them, roofs,
+// stairs and stairwells — written in app coordinates by blender/export_app.py
+// from the same data the Blender house is built from.
+const wrenfieldSpecPath = new URL("./wrenfield-spec.json", import.meta.url);
+const wrenfieldSpec = existsSync(wrenfieldSpecPath)
+    ? JSON.parse(readFileSync(wrenfieldSpecPath))
+    : { rooms: [], walls: [], roofs: [], stairs: [], floor_openings: [] };
 
 // ---------------------------------------------------------------------
 // Helpers
@@ -106,9 +107,8 @@ const stair = (id, start, direction, base, top, opts = {}) => ({
 });
 
 /**
- * A placed catalogue piece. These make the bundled house editable out of the
- * box: without any, editor mode has nothing to act on and the visible
- * furniture in a GLB-imported property is part of the mesh, not a placement.
+ * A placed catalogue piece. These give the bundled house something to
+ * arrange out of the box; the editor moves, duplicates and deletes them.
  */
 let placedCount = 0;
 const place = (catalogId, x, z, rotation = 0, y = 0) => ({
@@ -157,7 +157,9 @@ const roof = (id, footprint, base, ridge, opts = {}) => ({
 //
 // Two straight flights run up the hall: ground->first against its west
 // wall, first->attic against its east. Each needs the storey above open
-// where it arrives, which is what the rooms' `voids` are for.
+// where it arrives. They are drawn here as the rooms' `voids`; the
+// validator turns each into a floor opening tied to its flight, which the
+// editor then moves along with the stair.
 // =====================================================================
 
 // Stairwell footprints, inset a hair from the hall walls so the holes stay
@@ -571,30 +573,28 @@ const house = {
 };
 
 // =====================================================================
-// 2. Wrenfield House — imported GLB, built in Blender, fully furnished.
+// 2. Wrenfield House — a hybrid: the app builds the structure from its spec,
+//    Blender models everything in it.
 //
-// The model was exported WITHOUT its door leaves: every doorway is a cased
-// hole in the mesh, and the `doors` list below (from wrenfield-meta.json)
-// hangs a working, openable Door in each one. The `stairs` entries likewise
-// add only the invisible ramps that make the baked treads walkable.
+// The walls, floors, ceilings, roofs, stairs and stairwells come from
+// wrenfield-spec.json and are built like Ashgrove's, so the editor can slide
+// doors and windows along their walls and cut floors for stairs. The
+// furnishings GLB holds only what Blender is better at — the fitted kitchen
+// and bathrooms, beds, sofas, pictures — and every node in it becomes a
+// piece the editor can move, placed where it was modelled.
 // =====================================================================
 
 const wrenfield = {
     name: "Wrenfield House",
     summary:
-        "A detached three-storey family house of about 380 m², modelled and furnished in Blender: open-plan kitchen-diner, living room, study and snug on the ground floor, four bedrooms with two en-suites and the family bathroom on the first, and a loft room with its own shower room above. Every internal door works, and both stair flights are walkable.",
+        "A detached three-storey family house of about 380 m², furnished in Blender: open-plan kitchen-diner, living room, study and snug on the ground floor, four bedrooms with two en-suites and the family bathroom on the first, and a loft room with its own shower room above. Every internal door works, and both stair flights are walkable.",
     environment: { preset: "exterior_day", ground: "grass", ground_size: 300 },
     model: {
-        url: "/models/wrenfield_house.glb",
+        url: "/models/wrenfield_furnishings.glb",
         scale: 1.0,
         offset: [0, 0, 0],
         rotation: 0,
-        // Exported under the 500k budget precisely so the stairs and upper
-        // floors keep exact mesh collision.
-        collision: "mesh",
-        // The model draws the flights; they are walked on via the ramps in
-        // `stairs`, so their treads stay out of the octree.
-        collision_exclude: ["stairtreads_"],
+        role: "furnishings",
     },
     spawns: [
         { position: [8.4, 0, 8.0], yaw: 180, label: "Front path" },
@@ -613,88 +613,11 @@ const wrenfield = {
     vehicles: [
         { id: "car", position: [19.2, -3.4], elevation: 0, yaw: 180 },
     ],
-    rooms: wrenfieldMeta.rooms,
-    walls: [],
-    stairs: wrenfieldMeta.stairs,
-    doors: wrenfieldMeta.doors,
-    furniture: [],
-    finishes: {},
-};
-
-// =====================================================================
-// 3. Studio loft — imported GLB, untextured white model.
-// =====================================================================
-
-const studio = {
-    name: "Studio Loft",
-    summary:
-        "A 40 m² double-height studio loft. Living area and record corner to the west, kitchen and pantry to the east, a straight stair up to a mezzanine holding the bed, wardrobe and bathroom.",
-    environment: { preset: "interior_white_model", ground: "none", ground_size: 0 },
-    model: {
-        url: "/models/studio_apartment.glb",
-        scale: 0.39,
-        offset: [0, 0, 0],
-        rotation: 0,
-        // The export carries a single untextured white material. Toning the
-        // albedo off pure white is what stops every surface clipping flat.
-        material: { color: "#cfcac2", roughness: 0.85, metalness: 0 },
-        // Pinned rather than left to "auto": the stairs and mezzanine deck
-        // only work with exact mesh collision.
-        collision: "mesh",
-    },
-    // The ported capsule physics has no step-up assist, so the stair blocks
-    // a walking visitor — the mezzanine entries are the way upstairs.
-    spawns: [
-        { position: [-0.24, 0, 2.0], yaw: 250, label: "Living area" },
-        { position: [-0.24, 0, -0.2], yaw: 90, label: "Kitchen" },
-        { position: [-3.2, 0, 2.5], yaw: 135, label: "By the TV" },
-        { position: [1.4, 2.62, 1.6], yaw: 180, label: "Mezzanine" },
-        { position: [2.2, 2.62, 2.0], yaw: 100, label: "Upstairs bathroom" },
-    ],
-    rooms: [
-        room("living", "Living Area", [[-4.19, -1.68], [-0.6, -1.68], [-0.6, 3.76], [-4.19, 3.76]], "oak_parquet", "none", 2.6),
-        room("kitchen", "Kitchen", [[0.6, -1.68], [3.24, -1.68], [3.24, 1.6], [0.6, 1.6]], "oak_parquet", "none", 2.6),
-        room("study", "Study Nook", [[1.8, 1.6], [3.24, 1.6], [3.24, 3.76], [1.8, 3.76]], "oak_parquet", "none", 2.6),
-        room("stair", "Stair & Entry", [[-0.6, -1.68], [0.6, -1.68], [0.6, 3.76], [-0.6, 3.76]], "oak_parquet", "none", 4.96),
-    ],
-    walls: [],
-    furniture: [],
-    finishes: {},
-};
-
-// =====================================================================
-// 3. Scanned apartment — imported GLB with baked textures.
-// =====================================================================
-
-const scanned = {
-    name: "Scanned Apartment",
-    summary:
-        "A capture of a real 101 m² two-bedroom apartment, imported unmodified. Textures are baked from the original photography, and the model was clipped at 2 m so the ceiling is open.",
-    environment: { preset: "studio", ground: "none", ground_size: 0 },
-    model: {
-        url: "/models/apartment_2.glb",
-        scale: 1.0,
-        offset: [42.5, 0, -41.4],
-        rotation: 0,
-    },
-    spawns: [
-        { position: [0.9, 0, -3.2], yaw: 80, label: "Living & dining" },
-        { position: [-1.4, 0, -2.2], yaw: 280, label: "Kitchen" },
-        { position: [0.1, 0, 1.0], yaw: 0, label: "Hall" },
-        { position: [-1.4, 0, 4.6], yaw: 231, label: "Bedroom 1" },
-        { position: [1.0, 0, 5.4], yaw: 148, label: "Bedroom 2" },
-    ],
-    rooms: [
-        room("living", "Living Room", [[0.3, -6.6], [3.59, -6.6], [3.59, -0.6], [0.3, -0.6]], "pale_ash_boards", "none", 2.0),
-        room("dining", "Dining Area", [[-3.56, -6.6], [0.3, -6.6], [0.3, -3.4], [-3.56, -3.4]], "pale_ash_boards", "none", 2.0),
-        room("kitchen", "Kitchen", [[-3.56, -3.4], [0.3, -3.4], [0.3, -0.6], [-3.56, -0.6]], "ceramic_tile_white", "none", 2.0),
-        // Runs the full depth: it is also the corridor between the bedrooms.
-        room("hall", "Hall", [[-0.6, -0.6], [0.9, -0.6], [0.9, 7.03], [-0.6, 7.03]], "pale_ash_boards", "none", 2.0),
-        room("bathroom", "Bathroom", [[0.9, -0.6], [3.59, -0.6], [3.59, 2.3], [0.9, 2.3]], "ceramic_tile_white", "none", 2.0),
-        room("bed1", "Bedroom 1", [[-3.56, -0.6], [-0.6, -0.6], [-0.6, 7.03], [-3.56, 7.03]], "pale_ash_boards", "none", 2.0),
-        room("bed2", "Bedroom 2", [[0.9, 2.3], [3.59, 2.3], [3.59, 7.03], [0.9, 7.03]], "pale_ash_boards", "none", 2.0),
-    ],
-    walls: [],
+    rooms: wrenfieldSpec.rooms,
+    walls: wrenfieldSpec.walls,
+    roofs: wrenfieldSpec.roofs,
+    stairs: wrenfieldSpec.stairs,
+    floor_openings: wrenfieldSpec.floor_openings,
     furniture: [],
     finishes: {},
 };
@@ -702,10 +625,10 @@ const scanned = {
 // =====================================================================
 
 /**
- * A scene that points at a GLB needs that file present. Models are build
- * outputs or third-party imports rather than repository content, so a fresh
- * clone will not have them — skip those scenes with a note rather than
- * seeding a property that loads as an empty void.
+ * A scene that points at a GLB needs that file present. The house model is a
+ * build output rather than repository content, so a fresh clone will not have
+ * it until `npm run models` — skip it with a note rather than seeding a
+ * property that loads as an empty void.
  */
 function modelPresent(raw) {
     if (!raw.model?.url) return true;
@@ -715,14 +638,9 @@ function modelPresent(raw) {
 for (const [id, raw] of [
     ["ashgrove-house", house],
     ["wrenfield-house", wrenfield],
-    ["studio-loft", studio],
-    ["scanned-apartment", scanned],
 ]) {
     if (!modelPresent(raw)) {
-        const how = id === "wrenfield-house"
-            ? "run `npm run models` to build it"
-            : `supply public${raw.model.url}`;
-        console.log(`Skipped ${id}: ${raw.model.url} is missing — ${how}.`);
+        console.log(`Skipped ${id}: ${raw.model.url} is missing — run \`npm run models\` to build it.`);
         continue;
     }
     const { scene, notes } = validateScene(raw);

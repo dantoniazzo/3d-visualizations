@@ -37,44 +37,14 @@
     }
 }
 
-.launcher-create {
-    background: var(--bg-panel);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 1.5rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.9rem;
-
-    label {
-        font-weight: 600;
-        font-size: 0.9rem;
-    }
-}
-
-.launcher-actions {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    flex-wrap: wrap;
-}
-
 .launcher-status {
     font-size: 0.85rem;
     color: var(--text-muted);
+    margin-top: 0.8rem;
 
-    &.error {
-        color: var(--danger);
+    &:empty {
+        display: none;
     }
-}
-
-.launcher-examples {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-    font-size: 0.82rem;
-    color: var(--text-faint);
 }
 
 .launcher-library {

@@ -38,9 +38,15 @@ export default class Renderer {
     onResize() {
         this.renderer.setSize(this.sizes.width, this.sizes.height);
         this.renderer.setPixelRatio(this.sizes.pixelRatio);
+        this.experience.world?.editor?.onResize(this.sizes);
     }
 
     update() {
-        this.renderer.render(this.scene, this.camera.perspectiveCamera);
+        const camera = this.camera.activeCamera;
+        // The editor draws its own frame: selection outline and gizmo on top —
+        // in edit mode, and in the walkthrough while something is selected.
+        const editor = this.experience.world?.editor;
+        if (editor?.draws && editor.render(this.renderer, this.scene, camera)) return;
+        this.renderer.render(this.scene, camera);
     }
 }
