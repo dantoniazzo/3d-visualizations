@@ -162,40 +162,51 @@ export default class Door {
             // included — may treat them as a fixed obstacle.
             leaf.userData.doorLeaf = true;
 
-            // Handle on both faces, on the lock rail near the free edge.
-            // They hang off the leaf, so a sliding leaf takes them with it.
+            // Handle on both faces, on the lock rail near the free edge, as
+            // one mesh. It hangs off the leaf, so a sliding leaf takes it along.
             const handleX = -hingeSide * (leafWidth / 2 - 0.005 - BACKSET);
+            const handles = [];
             for (const face of [1, -1]) {
-                let handle;
                 if (kit?.has(handleName)) {
-                    handle = addMesh(kit.part(handleName), handleMaterial, leaf);
-                    handle.rotation.y = face > 0 ? 0 : Math.PI;
+                    const geometry = kit.part(handleName);
                     // A lever points back towards the hinge, on both faces.
-                    if (swings) handle.scale.x = -hingeSide * face;
-                    handle.position.set(handleX, HANDLE_Y - this.height / 2, (face * LEAF_T) / 2);
+                    if (swings && hingeSide * face > 0) mirror(geometry, "x");
+                    if (face < 0) geometry.rotateY(Math.PI);
+                    handles.push(geometry.translate(handleX, HANDLE_Y - this.height / 2, (face * LEAF_T) / 2));
                 } else {
-                    handle = addMesh(new THREE.BoxGeometry(0.11, 0.025, 0.025), handleMaterial, leaf);
-                    handle.position.set(-hingeSide * (leafWidth / 2 - 0.14), HANDLE_Y - this.height / 2, face * 0.03);
+                    handles.push(
+                        new THREE.BoxGeometry(0.11, 0.025, 0.025).translate(
+                            -hingeSide * (leafWidth / 2 - 0.14),
+                            HANDLE_Y - this.height / 2,
+                            face * 0.03
+                        )
+                    );
                 }
-                handle.userData.doorLeaf = true;
             }
+            addMesh(this.merged(handles), handleMaterial, leaf).userData.doorLeaf = true;
 
-            // Three butt hinges' knuckles, on the pivot line: 15 cm down from
-            // the top, 22.5 cm up from the bottom, and one halfway.
+            // Three butt hinges' knuckles on the pivot line, as one mesh: 15 cm
+            // down from the top, 22.5 cm up from the bottom, and one halfway.
             if (hinges) {
                 const knuckle = kit.size("door_hinge").y;
                 const low = 0.225 + knuckle / 2;
                 const high = this.height - 0.15 - knuckle / 2;
-                for (const y of [low, (low + high) / 2, high]) {
-                    const mesh = addMesh(kit.part("door_hinge"), handleMaterial, hinge);
-                    mesh.position.set(-hingeSide * 0.003, y, 0);
-                    mesh.userData.doorLeaf = true;
-                }
+                const knuckles = [low, (low + high) / 2, high].map((y) =>
+                    kit.part("door_hinge").translate(-hingeSide * 0.003, y, 0)
+                );
+                addMesh(this.merged(knuckles), handleMaterial, hinge).userData.doorLeaf = true;
             }
 
             this.group.add(hinge);
             this.leaves.push({ hinge, leaf, hingeSide, leafWidth });
         }
+    }
+
+    /** Several geometries as one, the originals freed. */
+    merged(geometries) {
+        const geometry = mergeParts(geometries);
+        for (const part of geometries) part.dispose();
+        return geometry;
     }
 
     /**
@@ -225,8 +236,7 @@ export default class Door {
                 .translate(0, this.height - 0.001 - stand / 2, z)
         );
 
-        const stops = new THREE.Mesh(mergeParts(parts), material);
-        for (const part of parts) part.dispose();
+        const stops = new THREE.Mesh(this.merged(parts), material);
         stops.name = "door-stops";
         stops.castShadow = true;
         stops.receiveShadow = true;
@@ -250,6 +260,11 @@ export default class Door {
 
     get isOpen() {
         return this.open > 0.5;
+    }
+
+    /** Open, or on its way: what toggling it would undo. */
+    get isOpening() {
+        return this.target > 0.5;
     }
 
     get isMoving() {

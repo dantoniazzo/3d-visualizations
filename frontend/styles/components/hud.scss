@@ -199,6 +199,106 @@ kbd {
     }
 }
 
+/* On a touch screen the key hint means nothing: the button below does it. */
+.input-touch .action-prompt {
+    display: none;
+}
+
+/* The action on offer, on a touch screen: on the right edge, a little below
+   the middle, where the right thumb reaches it from turning the camera. */
+.touch-action {
+    position: absolute;
+    right: calc(env(safe-area-inset-right, 0px) + 1rem);
+    top: 55%;
+    transform: translateY(-50%);
+    width: 72px;
+    height: 72px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    border-radius: 50%;
+    background: rgba(12, 14, 18, 0.72);
+    border: 1.5px solid var(--accent);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 0.72rem;
+    font-weight: 600;
+    backdrop-filter: blur(8px);
+    pointer-events: auto;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    transition: transform 0.12s ease, background 0.12s ease;
+
+    &:active {
+        transform: translateY(-50%) scale(0.93);
+        background: var(--accent-soft);
+    }
+
+    &[hidden],
+    body:not(.input-touch) & {
+        display: none;
+    }
+}
+
+.touch-action-icon {
+    position: relative;
+    flex: none;
+    color: var(--accent);
+
+    // A door, with its handle.
+    &[data-icon="door"] {
+        width: 14px;
+        height: 20px;
+        border: 2px solid currentColor;
+        border-bottom-width: 0;
+        border-radius: 2px 2px 0 0;
+
+        &::after {
+            content: "";
+            position: absolute;
+            right: 2px;
+            top: 9px;
+            width: 3px;
+            height: 3px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+    }
+
+    // A car, side on.
+    &[data-icon="car"] {
+        width: 24px;
+        height: 9px;
+        margin-top: 6px;
+        border: 2px solid currentColor;
+        border-radius: 3px;
+
+        &::before {
+            content: "";
+            position: absolute;
+            left: 4px;
+            right: 6px;
+            bottom: 100%;
+            height: 6px;
+            border: 2px solid currentColor;
+            border-bottom: 0;
+            border-radius: 4px 6px 0 0;
+        }
+    }
+
+    // A swatch.
+    &[data-icon="finish"] {
+        width: 18px;
+        height: 18px;
+        border: 2px solid currentColor;
+        border-radius: 3px;
+        background: linear-gradient(135deg, currentColor 50%, transparent 50%);
+    }
+}
+
 /* Finish picker */
 .finish-picker {
     position: absolute;
@@ -356,6 +456,28 @@ kbd {
     }
 }
 
+// Day or night, in a public view whose lighting has been baked: a sun, or
+// a crescent moon.
+.lighting-toggle[hidden] {
+    display: none;
+}
+
+.lighting-toggle-icon {
+    width: 14px;
+    height: 14px;
+    flex: none;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 0 0 0 2px rgba(255, 214, 110, 0.35);
+    color: #ffd66e;
+
+    .is-night & {
+        color: #cfd8ff;
+        background: transparent;
+        box-shadow: inset 4px -2px 0 0 currentColor;
+    }
+}
+
 .editor-toggle-icon {
     width: 14px;
     height: 14px;
@@ -374,5 +496,115 @@ kbd {
         bottom: -3px;
         background: currentColor;
         border-radius: 1px;
+    }
+}
+
+// A public link walks round and talks; nothing in it edits or saves, so
+// nothing offering to is shown.
+.public-view [data-edit-only],
+.public-view .finish-picker {
+    display: none !important;
+}
+
+// Only a public link has the bird's-eye view.
+body:not(.public-view) [data-public-only] {
+    display: none !important;
+}
+
+// Each floor from above: a floor plan seen at an angle.
+.bird-toggle[hidden] {
+    display: none;
+}
+
+.bird-toggle-icon {
+    width: 13px;
+    height: 13px;
+    flex: none;
+    border: 1.5px solid currentColor;
+    border-radius: 2px;
+    transform: scaleY(0.62) rotate(45deg);
+    opacity: 0.85;
+    box-shadow: inset 0 0 0 2px transparent, 2px 2px 0 -0.5px currentColor;
+
+    .is-active & {
+        background: currentColor;
+        opacity: 1;
+    }
+}
+
+.bird-toggle.is-active {
+    border-color: var(--accent, rgba(255, 255, 255, 0.35));
+}
+
+// Which floor is shown from above: under the buttons along the top, where
+// it has the width to itself.
+.floor-picker {
+    position: absolute;
+    top: calc(1.1rem + 50px);
+    left: 1.1rem;
+    display: flex;
+    gap: 0.2rem;
+    padding: 0.2rem;
+    border-radius: 999px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    backdrop-filter: blur(10px);
+    pointer-events: auto;
+
+    &[hidden] {
+        display: none;
+    }
+
+    button {
+        height: 32px;
+        padding: 0 0.85rem;
+        border-radius: 999px;
+        color: var(--text-muted);
+        font-size: 0.8rem;
+        white-space: nowrap;
+        cursor: pointer;
+        transition: background 0.15s ease, color 0.15s ease;
+
+        &:hover {
+            color: var(--text);
+        }
+
+        &.is-active {
+            background: var(--accent-soft, rgba(255, 255, 255, 0.12));
+            color: var(--text);
+        }
+    }
+
+    .floor-short {
+        display: none;
+    }
+}
+
+@media (max-width: 640px) {
+    .floor-picker {
+        .floor-long {
+            display: none;
+        }
+        .floor-short {
+            display: inline;
+        }
+    }
+}
+
+// Looking down on a floor there is nothing to aim at, and the cursor turns
+// the view instead of being captured.
+.bird-view {
+    .experience-wrapper::after,
+    .lock-hint,
+    .inspect-label {
+        display: none !important;
+    }
+
+    .experience-canvas {
+        cursor: grab;
+
+        &:active {
+            cursor: grabbing;
+        }
     }
 }

@@ -3,6 +3,7 @@ import * as THREE from "three";
 import Sizes from "./Utils/Sizes.js";
 import Time from "./Utils/Time.js";
 import Resources from "./Utils/Resources.js";
+import { lightmapURL } from "./Utils/device.js";
 import assets from "./Utils/assets.js";
 
 import Camera from "./Camera.js";
@@ -18,8 +19,13 @@ export default class Experience {
      * @param {HTMLCanvasElement} canvas
      * @param {import("socket.io-client").Socket} socket  Presence namespace.
      * @param {object} sceneSpec  Validated scene spec to build the world from.
+     * @param {object} [options]
+     * @param {boolean} [options.publicView]  a shared link: walk round and
+     *        talk, nothing that edits or saves — and drawn as cheaply as it can be
+     * @param {object} [options.published]  the published version it opens:
+     *        `view` is the URL of its snapshot
      */
-    constructor(canvas, socket, sceneSpec) {
+    constructor(canvas, socket, sceneSpec, { publicView = false, published = null } = {}) {
         if (Experience.instance) {
             return Experience.instance;
         }
@@ -28,6 +34,8 @@ export default class Experience {
         this.canvas = canvas;
         this.socket = socket;
         this.sceneSpec = sceneSpec;
+        this.publicView = publicView;
+        this.published = published;
 
         this.sizes = new Sizes();
         this.time = new Time();
@@ -77,7 +85,10 @@ export default class Experience {
             );
         }
 
-        const sceneAssets = this.sceneSpec.model
+        // A published version with a runtime file builds none of the house,
+        // so an imported model — drawn by the snapshot — is not needed.
+        const runtime = this.published?.runtime;
+        const sceneAssets = this.sceneSpec.model && !runtime
             ? [
                   {
                       name: "sceneModel",
@@ -86,6 +97,13 @@ export default class Experience {
                   },
               ]
             : [];
+
+        // A published public view draws its static scene from the snapshot,
+        // lit — once baked — by its day lightmap to start with.
+        if (this.published?.view) extra.push({ name: "publishedView", type: "glbModel", path: this.published.view });
+        if (runtime) extra.push({ name: "publishedRuntime", type: "glbModel", path: runtime });
+        const day = this.published?.lighting?.variants?.day;
+        if (day) extra.push({ name: "lightmap:day", type: "imageTexture", path: lightmapURL(day) });
 
         this.resources = new Resources([...assets, ...sceneAssets, ...extra]);
     }
@@ -111,7 +129,8 @@ export default class Experience {
         // two in lockstep instead of a frame apart.
         if (this.world) this.world.update();
         if (this.camera) this.camera.update();
-        if (this.renderer) this.renderer.update();
+        // Publishing borrows the renderer for a while (Publish/Snapshot.js).
+        if (this.renderer && !this.suspended) this.renderer.update();
         if (this.time) this.time.update();
 
         window.requestAnimationFrame(() => this.update());

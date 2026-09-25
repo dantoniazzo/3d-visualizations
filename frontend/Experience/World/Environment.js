@@ -3,6 +3,22 @@ import * as THREE from "three";
 import Experience from "../Experience.js";
 import { ENVIRONMENT_PRESETS } from "../../../shared/catalog.js";
 import { applyReflections } from "../Utils/reflections.js";
+import { SHADOW_MAP_SIZE } from "../Utils/device.js";
+
+/**
+ * Night, for a public view whose lighting has been baked: the house is lit
+ * by its night lightmap; this is only the sky and the moonlight on what
+ * moves — people, doors, the car.
+ */
+const NIGHT = {
+    background: "#0d1018",
+    hemi: { sky: "#2b3552", ground: "#0b0b0e", intensity: 0.45 },
+    sun: { color: "#b8c8ff", intensity: 0.3, position: [-9, 16, -6] },
+    fog: { color: "#0d1018" },
+    exposure: 1.1,
+    /** What metals and glass reflect is a lit studio; at night, far less of it. */
+    reflections: 0.03,
+};
 
 /**
  * Ambient lighting, sky and fog, driven entirely by the scene spec's
@@ -60,7 +76,7 @@ export default class Environment {
         this.sun.position.set(...preset.sun.position);
         this.sun.castShadow = true;
 
-        this.sun.shadow.mapSize.set(2048, 2048);
+        this.sun.shadow.mapSize.set(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
         this.sun.shadow.camera.near = 0.5;
         this.sun.shadow.camera.far = 120;
         this.sun.shadow.bias = -0.0006;
@@ -99,6 +115,45 @@ export default class Environment {
         }
 
         return Math.min(max, 90);
+    }
+
+    /**
+     * The house's light is baked into it; live lights are left only for
+     * what moves, and without shadows, so no shadow map is drawn at all.
+     */
+    useBaked() {
+        this.baked = true;
+        this.ambient.intensity = 0;
+        // Unshadowed, the sun would light people indoors as if outdoors.
+        this.sunScale = 0.5;
+        this.sun.castShadow = false;
+        this.renderer.renderer.shadowMap.enabled = false;
+    }
+
+    /** Sky, fog and the light on what moves, for day or night. */
+    setVariant(variant) {
+        const preset = variant === "night" ? NIGHT : this.preset;
+        this.scene.background = new THREE.Color(preset.background);
+        if (this.scene.fog && this.preset.fog) this.scene.fog.color.set(preset.fog?.color ?? this.preset.fog.color);
+        this.hemisphere.color.set(preset.hemi.sky);
+        this.hemisphere.groundColor.set(preset.hemi.ground);
+        this.hemisphere.intensity = preset.hemi.intensity;
+        this.sun.color.set(preset.sun.color);
+        this.sun.intensity = preset.sun.intensity * (this.sunScale ?? 1);
+        this.sun.position.set(...preset.sun.position);
+        this.renderer.setExposure(preset.exposure ?? 1);
+
+        const reflections = preset.reflections ?? 1;
+        this.scene.traverse((node) => {
+            if (!node.isMesh) return;
+            for (const material of Array.isArray(node.material) ? node.material : [node.material]) {
+                if (!material?.envMap) continue;
+                if (material.userData.envMapIntensity === undefined) {
+                    material.userData.envMapIntensity = material.envMapIntensity;
+                }
+                material.envMapIntensity = material.userData.envMapIntensity * reflections;
+            }
+        });
     }
 
     dispose() {

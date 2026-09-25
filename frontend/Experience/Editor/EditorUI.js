@@ -45,6 +45,7 @@ const ICONS = {
     roof: '<path d="M8 1.5l7 6.2-1 1.2-1-.9V14H3V8l-1 .9-1-1.2zm0 2.1L4.6 6.6V12.5h6.8V6.6z"/>',
     outside: '<path d="M8 1l4 5h-2l3 4H9v5H7v-5H3l3-4H4z"/>',
     close: '<path d="M3.6 2.5L8 6.9l4.4-4.4 1.1 1.1L9.1 8l4.4 4.4-1.1 1.1L8 9.1l-4.4 4.4-1.1-1.1L6.9 8 2.5 3.6z"/>',
+    publish: '<path d="M8 1l4.2 4.2-1.1 1.1-2.3-2.3V10H7.2V4L4.9 6.3 3.8 5.2zM2 9h1.6v4.4h8.8V9H14v6H2z"/>',
 };
 
 const icon = (name, size = 16) =>
@@ -130,6 +131,7 @@ export default class EditorUI {
                     </label>
                     <button class="ed-toggle" data-action="xray" title="X-ray: see through walls, ceilings and roof (Alt Z)">${icon("xray")}</button>
                     <button class="ed-btn ed-walk" data-action="walk-here" title="Stand where the view is pointing and start walking">${icon("walk")}<span>Walk from here</span></button>
+                    <button class="ed-btn ed-walk" data-action="publish" title="Publish the public view: a link to send clients, drawn as cheaply as it can be">${icon("publish")}<span>Publish</span></button>
                     <span class="ed-save" data-save>Saved</span>
                 </div>
             </header>
@@ -256,6 +258,8 @@ export default class EditorUI {
                     return editor.setXray(!editor.xray);
                 case "walk-here":
                     return editor.walkFromHere();
+                case "publish":
+                    return editor.world.emit("publish");
                 case "add": {
                     const rect = editor.canvas.getBoundingClientRect();
                     return this.showAddMenu(rect.left + rect.width / 2, rect.top + rect.height / 2, target);
@@ -999,6 +1003,7 @@ export default class EditorUI {
         const menus = {
             file: [
                 { label: "Save now", hint: "⌘ S", action: () => editor.world.emit("save-now") },
+                { label: "Publish public view…", action: () => editor.world.emit("publish") },
                 { separator: true },
                 { label: "Walkthrough", hint: "Tab", action: () => editor.leave() },
                 { label: "Back to all spaces", action: () => editor.world.emit("leave-space") },

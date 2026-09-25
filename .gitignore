@@ -14,6 +14,9 @@ blender/out/
 public/models/wrenfield_furnishings.glb
 public/models/kit.glb
 
+# Published public views — written by the editor's Publish, one folder a space.
+published/
+
 # Generated furniture catalogue — `npm run furniture` rebuilds it.
 public/models/furniture/*.glb
 

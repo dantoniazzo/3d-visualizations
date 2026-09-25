@@ -1,6 +1,8 @@
 import * as THREE from "three";
 
 import Experience from "./Experience.js";
+import Stats from "./Utils/Stats.js";
+import { LOW_POWER } from "./Utils/device.js";
 
 export default class Renderer {
     constructor() {
@@ -11,6 +13,9 @@ export default class Renderer {
         this.camera = this.experience.camera;
 
         this.setRenderer();
+        if (Stats.enabled()) {
+            this.stats = new Stats(this.renderer, this.sizes, () => this.experience.published, () => this.experience.world?.readyIn);
+        }
     }
 
     setRenderer() {
@@ -25,7 +30,8 @@ export default class Renderer {
         this.renderer.toneMappingExposure = 1.05;
 
         this.renderer.shadowMap.enabled = true;
-        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        // Soft filtering takes several times the shadow samples per pixel.
+        this.renderer.shadowMap.type = LOW_POWER ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
 
         this.renderer.setSize(this.sizes.width, this.sizes.height);
         this.renderer.setPixelRatio(this.sizes.pixelRatio);
@@ -42,6 +48,12 @@ export default class Renderer {
     }
 
     update() {
+        this.stats?.begin();
+        this.render();
+        this.stats?.end();
+    }
+
+    render() {
         const camera = this.camera.activeCamera;
         // The editor draws its own frame: selection outline and gizmo on top —
         // in edit mode, and in the walkthrough while something is selected.

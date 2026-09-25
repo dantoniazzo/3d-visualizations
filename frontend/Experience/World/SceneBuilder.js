@@ -4,12 +4,14 @@ import Experience from "../Experience.js";
 import MaterialLibrary from "./Builders/MaterialLibrary.js";
 import StructureBuilder from "./Builders/StructureBuilder.js";
 import KitLibrary from "./Builders/KitLibrary.js";
+import batchStatic, { hideOriginals, listStatic, materialKeys } from "./StaticBatcher.js";
 import FurnitureLibrary from "./Builders/FurnitureLibrary.js";
 import Door from "./Door.js";
 import Car from "./Vehicle/Car.js";
 import { buildOctree, isTransient } from "./Collision.js";
 import { GROUND_TYPES, FINISHES } from "../../../shared/catalog.js";
 import { pointInPolygon, rectCorners } from "../Utils/geometry.js";
+import { applyReflections } from "../Utils/reflections.js";
 
 /**
  * Builds a property from a scene spec, and rebuilds the parts of it the
@@ -33,11 +35,19 @@ export default class SceneBuilder {
     /** Anything flatter than this is a rug: walked over, placed under. */
     static FLAT_HEIGHT = 0.035;
 
-    constructor(spec) {
+    /**
+     * @param {object} spec
+     * @param {object} [options]
+     * @param {object} [options.runtime]  a published version's runtime file
+     *        (Publish/Runtime.js): the house is then not built at all
+     *        (buildFromRuntime)
+     */
+    constructor(spec, { runtime = null } = {}) {
         this.experience = new Experience();
         this.scene = this.experience.scene;
         this.collision = this.experience.world.collision;
         this.spec = spec;
+        this.runtime = runtime;
 
         this.spec.floor_openings = this.spec.floor_openings || [];
         this.spec.furniture = this.spec.furniture || [];
@@ -88,6 +98,7 @@ export default class SceneBuilder {
     }
 
     build() {
+        if (this.runtime) return this.buildFromRuntime();
         this.buildGround();
         this.buildRooms();
         this.buildRails();
@@ -127,8 +138,8 @@ export default class SceneBuilder {
     // Collision
     // ------------------------------------------------------------------
 
-    /** The building: shell, ground, and an imported model's own mesh. */
-    buildStaticCollision() {
+    /** What the building collides as: shell, ground, and an imported model's own mesh. */
+    staticCollisionRoots() {
         const roots = [this.staticColliders];
         if (this.groundPlane) roots.push(this.groundPlane);
 
@@ -137,8 +148,11 @@ export default class SceneBuilder {
         } else {
             roots.push(this.shell);
         }
+        return roots;
+    }
 
-        this.collision.setStatic(buildOctree(roots, isTransient));
+    buildStaticCollision() {
+        this.collision.setStatic(buildOctree(this.staticCollisionRoots(), isTransient));
         this.shellDirty = false;
     }
 
@@ -146,9 +160,10 @@ export default class SceneBuilder {
      * Everything movable, as the player should meet it: stair ramps, and
      * each piece of furniture as its own mesh when that is cheap enough or
      * its bounding box when it is not. Rugs are left out — they are walked
-     * over, not into.
+     * over, not into. The boxes are made for the asking: dispose of
+     * `proxies` once done.
      */
-    buildDynamicCollision() {
+    dynamicCollisionRoots() {
         const proxies = new THREE.Group();
         const roots = [this.colliders, proxies];
 
@@ -178,15 +193,109 @@ export default class SceneBuilder {
                 proxy.position.applyMatrix4(group.matrixWorld);
                 proxy.quaternion.copy(group.quaternion);
                 proxy.scale.copy(group.scale);
+                proxy.userData.label = group.userData.label;
                 proxies.add(proxy);
             }
         }
+        return { roots, proxies };
+    }
 
-        this.collision.setDynamic(
-            buildOctree(roots, (o) => isTransient(o) || o.name === "missing-model")
-        );
+    buildDynamicCollision() {
+        const { roots, proxies } = this.dynamicCollisionRoots();
+        this.collision.setDynamic(buildOctree(roots, skipDynamic));
         for (const proxy of proxies.children) proxy.geometry.dispose();
         this.objectsDirty = false;
+    }
+
+    // ------------------------------------------------------------------
+    // A published view's runtime file
+    // ------------------------------------------------------------------
+
+    /**
+     * A public view of a version published with its runtime file
+     * (Publish/Runtime.js) builds none of the house: the snapshot draws it,
+     * and the file carries the rest — what to collide with, each triangle
+     * saying what it is for the crosshair's label; the materials; the glass.
+     * So no wall, slab, stair or piece of furniture is made, and no piece
+     * of furniture downloaded. What moves is built as ever: the doors, in
+     * stand-ins for their walls, the car, and the room lights.
+     */
+    buildFromRuntime() {
+        this.shell = new THREE.Group();
+        this.shell.name = "shell";
+        this.root.add(this.shell);
+        this.rooms = new Map(this.spec.rooms.map((room) => [room.id, room]));
+
+        for (const wall of this.spec.walls || []) {
+            const openings = (wall.openings || []).filter((opening) => opening.type === "door");
+            if (!openings.length) continue;
+            // Where StructureBuilder.buildWall puts a wall: X along it, Z through it.
+            const [x1, z1] = wall.start;
+            const [x2, z2] = wall.end;
+            const group = new THREE.Group();
+            group.name = `wall:${wall.id}`;
+            group.userData = { kind: "wall", id: wall.id };
+            group.position.set((x1 + x2) / 2, wall.base_height, (z1 + z2) / 2);
+            group.rotation.y = Math.atan2(x2 - x1, z2 - z1) - Math.PI / 2;
+            this.shell.add(group);
+            const half = Math.hypot(x2 - x1, z2 - z1) / 2;
+            const doors = openings.map((opening) => {
+                const door = new Door(opening, wall, opening.offset - half, this.materials, this.kit);
+                door.wallGroup = group;
+                return door;
+            });
+            this.doors.push(...doors);
+            this.wallGroups.set(wall.id, { group, doors });
+        }
+        this.buildFreeDoors();
+        this.buildLights();
+
+        this.scene.add(this.root);
+        this.scene.add(this.colliders);
+        this.scene.add(this.staticColliders);
+
+        const roots = { static: [], dynamic: [] };
+        this.runtime.scene.updateMatrixWorld(true);
+        this.runtime.scene.traverse((node) => {
+            if (node.isMesh && roots[node.userData.collision]) roots[node.userData.collision].push(node);
+        });
+        this.collision.setStatic(buildOctree(roots.static));
+        this.collision.setDynamic(buildOctree(roots.dynamic));
+        for (const mesh of [...roots.static, ...roots.dynamic]) mesh.geometry.dispose();
+
+        for (const door of this.doors) {
+            door.wallGroup.add(door.group);
+            door.group.updateMatrixWorld(true);
+            // The frame is the snapshot's; only what swings is drawn here.
+            hideFixedParts(door.group);
+        }
+        this.buildVehicles();
+        this.furnitureReady = Promise.resolve();
+    }
+
+    /** The runtime file's materials, by the key the snapshot names each by. */
+    runtimeMaterials() {
+        const byKey = new Map();
+        this.runtime.scene.traverse((node) => {
+            const key = node.userData?.materialKey;
+            if (!node.isMesh || key === undefined) return;
+            const material = node.material;
+            // A finish's texture is drawn here, as the editor draws it.
+            if (material.userData.finish) material.map = this.materials.getSurface(material.userData.finish).map;
+            if (material.userData.vertexColors) material.vertexColors = true;
+            material.needsUpdate = true;
+            byKey.set(key, material);
+        });
+        return byKey;
+    }
+
+    /** The runtime file's glass, each pane saying which floor it is on. */
+    addRuntimeGlass() {
+        const group = this.runtime.scene.getObjectByName("see-through");
+        if (!group) return;
+        this.root.add(group);
+        group.updateMatrixWorld(true);
+        applyReflections(group);
     }
 
     /** Called by the editor whenever it changes something. */
@@ -969,6 +1078,7 @@ export default class SceneBuilder {
         this.collisionInfo = { mode, triangles, requested };
 
         if (mode === "box") {
+            if (this.staticColliders.children.length) return [];
             console.info(
                 `[scene] ${triangles.toLocaleString()} triangles exceeds the ` +
                     `${SceneBuilder.COLLISION_TRIANGLE_BUDGET.toLocaleString()} budget — ` +
@@ -1080,13 +1190,287 @@ export default class SceneBuilder {
     }
 
     getCameraObstacles() {
+        // Built from a runtime file, the walls are only in the collision tree.
+        if (this.runtime) return [];
         return this.isModelScene ? [this.model] : [this.shell];
+    }
+
+    /**
+     * Make the finished scene as cheap to draw as it can be, for a public
+     * view nobody edits: plain glass, and everything static merged.
+     */
+    optimizeForViewing() {
+        this.simplifyGlass();
+        return this.batchStatic();
+    }
+
+    /**
+     * Swap refractive glass for plain see-through glass.
+     *
+     * A single transmissive material anywhere in view makes three render
+     * every opaque object a second time, into the texture the glass
+     * refracts — doubling the frame for a window pane. At the glass's own
+     * thinness the difference is hard to see; the reflection it carries
+     * from the environment map is what reads as glass, and that stays.
+     */
+    simplifyGlass() {
+        const done = new Set();
+        this.root.traverse((object) => {
+            if (!object.isMesh) return;
+            for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
+                if (!material || done.has(material) || !(material.transmission > 0)) continue;
+                done.add(material);
+                material.transmission = 0;
+                material.transparent = true;
+                material.opacity = Math.min(material.opacity ?? 1, 0.3);
+                material.depthWrite = false;
+                material.needsUpdate = true;
+            }
+        });
+    }
+
+    /**
+     * What merging, and the public-view snapshot, need to know about the
+     * static scene: what to leave out because it moves, which floor each
+     * piece is on, and which pieces a bird's-eye view of a floor takes away
+     * — its ceilings, and the roof.
+     *
+     * A piece's floor comes from what it belongs to (its room, its wall's
+     * base, its flight's foot, the height it stands at) rather than from
+     * how low it reaches: the slab under an upper floor reaches down below
+     * that floor's level, but it is that floor's.
+     */
+    staticOptions() {
+        const levels = [...new Set(this.spec.rooms.map((room) => room.elevation))].sort((a, b) => a - b);
+        if (!levels.length) levels.push(0);
+        const levelAt = (y) => {
+            let level = 0;
+            for (let i = 0; i < levels.length; i++) if (y >= levels[i] - 0.3) level = i;
+            return level;
+        };
+
+        const byId = (list) => new Map((list || []).map((item) => [item.id, item]));
+        const rooms = byId(this.spec.rooms);
+        const walls = byId(this.spec.walls);
+        const stairs = byId(this.spec.stairs);
+        const holes = byId(this.spec.floor_openings);
+        const OWNERS = new Set(["room", "wall", "roof", "stairs", "rail", "furniture"]);
+        const owner = (mesh) => {
+            for (let node = mesh; node; node = node.parent) if (OWNERS.has(node.userData?.kind)) return node;
+            return null;
+        };
+        const _position = new THREE.Vector3();
+
+        return {
+            levels,
+            skip: (object) =>
+                object === this.vehicleGroup ||
+                object.userData?.doorLeaf ||
+                object.userData?.hingeSide !== undefined ||
+                object.userData?.helper,
+            levelOf: (mesh, box) => {
+                const node = owner(mesh);
+                const id = node?.userData.id;
+                switch (node?.userData.kind) {
+                    case "room":
+                        return levelAt(rooms.get(id)?.elevation ?? box.min.y);
+                    case "wall":
+                        return levelAt(walls.get(id)?.base_height ?? box.min.y);
+                    case "stairs":
+                        return levelAt(stairs.get(id)?.base_height ?? box.min.y);
+                    case "rail":
+                        return levelAt(holes.get(node.userData.holeId)?.elevation ?? box.min.y);
+                    case "roof":
+                        return levels.length - 1;
+                    case "furniture":
+                        return levelAt(node.getWorldPosition(_position).y);
+                    default:
+                        return levelAt(box.min.y + 0.05);
+                }
+            },
+            kindOf: (mesh) => {
+                if (mesh.userData?.surfaceKind === "ceiling") return "ceiling";
+                return owner(mesh)?.userData.kind === "roof" ? "roof" : null;
+            },
+        };
+    }
+
+    /**
+     * Merge everything that will not move into one mesh per material and
+     * floor. Doors' leaves, the car and the people are left as they are, as
+     * is anything transparent.
+     *
+     * @returns {{ batches: number, merged: number }}
+     */
+    batchStatic() {
+        if (this.batches) return null;
+        const { group, batches, merged } = batchStatic(this.root, this.staticOptions());
+        this.batches = group;
+        this.scene.add(group);
+        return { batches, merged };
+    }
+
+    /**
+     * Draw a published snapshot (Publish/Snapshot.js) in place of the static
+     * scene: the same triangles, less every face nobody can see, with every
+     * face turned the way it is seen from. The scene built here stays
+     * underneath, hidden, for collision, doors and the crosshair, exactly
+     * as when it is merged at runtime.
+     *
+     * Each of the snapshot's meshes names the material it was made with; the
+     * live one is used, single-sided, since the snapshot already carries a
+     * reversed copy of every face that is seen from both sides.
+     *
+     * Once its lighting is baked (scripts/bake-public.mjs), each mesh is
+     * lit either by the lightmap or through its vertices, and is drawn
+     * unlit: its own colour and texture times the light baked for it. No
+     * live light touches it, and no shadow map is drawn for it — the
+     * difference, on a phone, between lighting the house every frame and
+     * not lighting it at all. Metals keep their live material, for the
+     * reflections that make them read as metal.
+     *
+     * @param {object} gltf  the loaded snapshot
+     * @param {object} [lighting]  the published version's baked lighting
+     * @param {object} [options]  what it was published with (shared/publishOptions.js):
+     *   without `cull`, its faces are as they are in the scene, and each
+     *   material is drawn single- or double-sided as it is live
+     */
+    usePublishedView(gltf, lighting = null, { glass = true, cull = true } = {}) {
+        if (this.batches) return null;
+
+        const options = this.staticOptions();
+        let meshes = [];
+        let byKey;
+        if (this.runtime) {
+            this.addRuntimeGlass();
+            byKey = this.runtimeMaterials();
+        } else {
+            const listed = listStatic(this.root, options);
+            meshes = listed.meshes;
+            byKey = new Map([...materialKeys(listed.materials)].map(([material, key]) => [key, material]));
+        }
+        if (glass) this.simplifyGlass();
+        const cache = new Map();
+        this.baked = Boolean(lighting?.variants);
+        this.bakedMaterials = [];
+        this.vertexLit = [];
+
+        const materialFor = (key, lit, fallback) => {
+            const cacheKey = `${key}|${this.baked ? lit : ""}`;
+            if (cache.has(cacheKey)) return cache.get(cacheKey);
+            const live = byKey.get(key) ?? fallback;
+            // A metal has next to no diffuse colour, so its baked light is
+            // next to nothing: it keeps its live material and reflections.
+            const bakedLight = this.baked && lit && !(live.metalness >= 0.5);
+            const side = cull ? THREE.FrontSide : live.side;
+            let material;
+            if (!bakedLight) {
+                material = live.clone();
+                material.side = side;
+            } else {
+                material = new THREE.MeshBasicMaterial({
+                    name: live.name,
+                    color: live.color ? live.color.clone() : 0xffffff,
+                    map: live.map ?? null,
+                    side,
+                    vertexColors: lit === "vertex",
+                });
+                this.bakedMaterials.push({ material, lit });
+            }
+            cache.set(cacheKey, material);
+            return material;
+        };
+
+        const group = new THREE.Group();
+        group.name = "published-view";
+        let triangles = 0;
+        gltf.scene.updateMatrixWorld(true);
+        gltf.scene.traverse((node) => {
+            if (!node.isMesh) return;
+            const { material: key, level = 0, kind = null, cast = true, receive = true, lighting: lit } = node.userData;
+            const mesh = new THREE.Mesh(node.geometry, materialFor(key, lit, node.material));
+            mesh.applyMatrix4(node.matrixWorld);
+            mesh.name = node.name;
+            // Baked, the shadows are in the light already.
+            mesh.castShadow = this.baked ? false : cast;
+            mesh.receiveShadow = this.baked ? false : receive;
+            mesh.userData = { batch: true, level, kind, lighting: lit };
+            mesh.raycast = () => {};
+            if (this.baked && lit === "vertex") this.vertexLit.push(mesh);
+            group.add(mesh);
+            triangles += (node.geometry.index?.count ?? node.geometry.attributes.position.count) / 3;
+        });
+
+        hideOriginals(meshes);
+        this.batches = group;
+        this.scene.add(group);
+        return { meshes: group.children.length, triangles, hidden: meshes.length };
+    }
+
+    /**
+     * Light the baked view with one variant — day or night: its lightmap
+     * on every lightmapped material, its vertex light on every vertex-lit
+     * mesh.
+     *
+     * The lightmap is stored scaled down so its brightest light fits in 8
+     * bits, and three divides a lightmap by π; `info.scale` and π restore
+     * it, so what is drawn is the surface's colour times the light Blender
+     * baked for it.
+     */
+    setLightingVariant(texture, info) {
+        if (!texture.userData.lightmap) {
+            texture.userData.lightmap = true;
+            texture.flipY = false;
+            texture.colorSpace = THREE.SRGBColorSpace;
+            texture.channel = 1;
+            texture.needsUpdate = true;
+        }
+        for (const { material, lit } of this.bakedMaterials) {
+            if (lit !== "lightmap") continue;
+            if (!material.lightMap) material.needsUpdate = true;
+            material.lightMap = texture;
+            material.lightMapIntensity = Math.PI * info.scale;
+        }
+        const name = info.attribute.toLowerCase();
+        for (const mesh of this.vertexLit) {
+            const light = mesh.geometry.getAttribute(name);
+            if (light) mesh.geometry.setAttribute("color", light);
+        }
+        this.tintDoors(info.doors || {});
+    }
+
+    /**
+     * Door leaves move, so their light cannot be baked; instead each is lit
+     * like the air around it, from the probes baked each side of it. Most
+     * of the leaf's brightness is that light, given as emission; a quarter
+     * is left to the live lights, so its panels still catch some relief.
+     */
+    tintDoors(probes) {
+        const light = new THREE.Color();
+        for (const door of this.doors) {
+            const probe = probes[door.spec.id];
+            if (!probe) continue;
+            light.setRGB(...probe);
+            for (const { leaf } of door.leaves) {
+                if (!leaf.userData.baseColor) {
+                    leaf.userData.baseColor = leaf.material.color.clone();
+                    leaf.material = leaf.material.clone();
+                }
+                const base = leaf.userData.baseColor;
+                leaf.material.color.copy(base).multiplyScalar(0.25);
+                leaf.material.emissive.copy(base).multiply(light).multiplyScalar(0.85);
+            }
+        }
     }
 
     dispose() {
         this.scene.remove(this.root);
         this.scene.remove(this.colliders);
         this.scene.remove(this.staticColliders);
+        if (this.batches) {
+            this.scene.remove(this.batches);
+            for (const batch of this.batches.children) batch.geometry.dispose();
+        }
 
         this.root.traverse((child) => {
             if (child.isMesh && child.geometry) child.geometry.dispose();
@@ -1109,6 +1493,18 @@ export default class SceneBuilder {
 // ---------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------
+
+/** What the dynamic octree leaves out: what isTransient does, and placeholders for missing pieces. */
+export function skipDynamic(object) {
+    return isTransient(object) || object.name === "missing-model";
+}
+
+/** Hide a door's frame, leaving its leaves, hinges and handles. */
+function hideFixedParts(node) {
+    if (node.userData?.doorLeaf || node.userData?.hingeSide !== undefined) return;
+    if (node.isMesh) node.visible = false;
+    for (const child of node.children) hideFixedParts(child);
+}
 
 const doubleSidedCache = new Map();
 function doubleSided(material) {

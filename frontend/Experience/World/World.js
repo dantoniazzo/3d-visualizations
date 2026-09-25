@@ -1,11 +1,13 @@
 import { EventEmitter } from "events";
+import * as THREE from "three";
 
 import Experience from "../Experience.js";
 import SceneBuilder from "./SceneBuilder.js";
 import Environment from "./Environment.js";
 import Collision from "./Collision.js";
 import Player from "./Player/Player.js";
-import Editor from "../Editor/Editor.js";
+import BirdView from "./BirdView.js";
+import { lightmapURL } from "../Utils/device.js";
 
 export default class World extends EventEmitter {
     constructor() {
@@ -24,10 +26,45 @@ export default class World extends EventEmitter {
         this.resources.on("ready", () => {
             if (this.player) return;
 
-            this.sceneBuilder = new SceneBuilder(this.spec);
+            // A published version's runtime file stands in for building the house.
+            const runtime = this.experience.publicView ? this.resources.items.publishedRuntime : null;
+            this.sceneBuilder = new SceneBuilder(this.spec, { runtime });
             this.environment = new Environment(this.spec);
             this.player = new Player();
-            this.editor = new Editor();
+
+            if (this.experience.publicView) {
+                // Nothing will move but the doors, the car and the people, so
+                // everything else is drawn merged once the furniture is in —
+                // from the published snapshot when there is one.
+                this.sceneBuilder.furnitureReady.then(() => {
+                    const published = this.experience.published;
+                    const snapshot = this.resources.items.publishedView;
+                    const lighting = published?.lighting;
+                    if (!snapshot) {
+                        this.sceneBuilder.optimizeForViewing();
+                    } else {
+                        this.sceneBuilder.usePublishedView(snapshot, lighting, published.options);
+                        if (lighting) {
+                            // The room lights are in the lightmaps now.
+                            if (this.sceneBuilder.lights) this.sceneBuilder.lights.visible = false;
+                            this.environment.useBaked();
+                            this.setLighting("day");
+                        }
+                    }
+                    // From opening the page, for the ?stats readout.
+                    this.readyIn = { ms: performance.now(), built: !runtime };
+                    // Each floor from above, once its meshes say which floor they are.
+                    this.birdView = new BirdView(this, published?.birdView, published?.levels);
+                    this.experience.camera.birdView = this.birdView;
+                    this.emit("bird-ready", this.birdView.floors.length);
+                });
+            } else {
+                // The editor is a chunk of its own, so a public view never
+                // downloads it.
+                import("../Editor/Editor.js").then(({ default: Editor }) => {
+                    if (!this.disposed) this.editor = new Editor();
+                });
+            }
 
             this.player.setInteractionObjects(this.sceneBuilder.getInteractiveObjects());
 
@@ -36,6 +73,8 @@ export default class World extends EventEmitter {
             this.experience.camera.setCollisionObjects(
                 this.sceneBuilder.getCameraObstacles()
             );
+            // Without the house built, the walls are only in the collision tree.
+            if (runtime) this.experience.camera.setCollisionTree(this.collision);
 
             this.emit("ready", {
                 rooms: this.spec.rooms,
@@ -72,6 +111,34 @@ export default class World extends EventEmitter {
         });
     }
 
+    /**
+     * Day or night, in a public view whose lighting has been baked. The
+     * night lightmap is only downloaded the first time it is asked for.
+     *
+     * @returns {Promise<boolean>} whether it changed
+     */
+    async setLighting(variant) {
+        const info = this.experience.published?.lighting?.variants?.[variant];
+        if (!info || !this.sceneBuilder?.baked) return false;
+        this.lightmaps ??= new Map();
+        if (!this.lightmaps.has(variant)) {
+            const preloaded = this.resources.items[`lightmap:${variant}`];
+            this.lightmaps.set(variant, preloaded ? Promise.resolve(preloaded) : new THREE.TextureLoader().loadAsync(lightmapURL(info)));
+        }
+        const texture = await this.lightmaps.get(variant);
+        this.sceneBuilder.setLightingVariant(texture, info);
+        this.environment.setVariant(variant);
+        this.lighting = variant;
+        this.emit("lighting", variant);
+        return true;
+    }
+
+    /** The bird's-eye view of a floor, on or off. */
+    toggleBirdView() {
+        if (!this.birdView || this.player?.inVehicle) return false;
+        return this.birdView.toggle();
+    }
+
     /** Swap a surface's finish and persist it to the spec. */
     setFinish(surfaceId, finishId) {
         const changed = this.sceneBuilder?.setFinish(surfaceId, finishId);
@@ -88,6 +155,8 @@ export default class World extends EventEmitter {
     }
 
     dispose() {
+        this.disposed = true;
+        this.birdView?.dispose();
         this.editor?.dispose();
         this.sceneBuilder?.dispose();
         this.environment?.dispose();
