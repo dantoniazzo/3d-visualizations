@@ -127,7 +127,7 @@ export default class TransformSession {
                 this.gravity = true;
             } else {
                 const bottom = editable.bottom(this.startPose);
-                const support = editor.snapper.supportUnder(editable.footprint(this.startPose), bottom, this.exclude);
+                const support = editor.snapper.supportUnder(editable.footprint(this.startPose), bottom, this.exclude, editable.caps.gravity === "floor");
                 this.gravity = support !== null && Math.abs(support - bottom) < 0.03;
             }
         }
@@ -396,7 +396,7 @@ export default class TransformSession {
             } else if (vertical && editable.caps.gravity) {
                 // Lifting: settle onto a surface within reach.
                 const bottom = editable.bottom(candidate);
-                const support = this.editor.snapper.supportUnder(editable.footprint(candidate), bottom - 0.1, this.exclude);
+                const support = this.editor.snapper.supportUnder(editable.footprint(candidate), bottom - 0.1, this.exclude, editable.caps.gravity === "floor");
                 if (support !== null && Math.abs(support - bottom) < 0.1) {
                     candidate.position.y += support - bottom;
                 }
@@ -417,7 +417,7 @@ export default class TransformSession {
     /** Drop onto the highest surface under the piece. */
     rest(pose) {
         const bottom = this.editable.bottom(pose);
-        const support = this.editor.snapper.supportUnder(this.editable.footprint(pose), bottom, this.exclude);
+        const support = this.editor.snapper.supportUnder(this.editable.footprint(pose), bottom, this.exclude, this.editable.caps.gravity === "floor");
         if (support !== null) pose.position.y += support - bottom;
     }
 

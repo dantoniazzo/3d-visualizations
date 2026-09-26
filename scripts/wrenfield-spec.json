@@ -1057,8 +1057,8 @@
      "id": "g-ext-2-1",
      "offset": 8.0,
      "width": 1.6,
-     "height": 1.5,
-     "sill": 0.9,
+     "height": 1.4,
+     "sill": 1.0,
      "type": "window",
      "frame": "trim_white",
      "panes": [
@@ -1513,14 +1513,14 @@
    "openings": [
     {
      "id": "g-wall-0-0",
-     "offset": 0.43,
+     "offset": 0.53,
      "width": 0.76,
      "height": 2.04,
      "sill": 0.0,
      "type": "door",
      "door": {
       "type": "hinged",
-      "swing": "inward_right",
+      "swing": "inward_left",
       "leaf": "trim_white",
       "frame": "trim_white",
       "handle": "metal_brass"
@@ -1583,7 +1583,7 @@
      "type": "door",
      "door": {
       "type": "hinged",
-      "swing": "inward_right",
+      "swing": "outward_left",
       "leaf": "trim_white",
       "frame": "trim_white",
       "handle": "metal_brass"
@@ -1598,7 +1598,7 @@
      "type": "door",
      "door": {
       "type": "hinged",
-      "swing": "inward_right",
+      "swing": "outward_left",
       "leaf": "trim_white",
       "frame": "trim_white",
       "handle": "metal_brass"
@@ -1638,8 +1638,8 @@
    ],
    "height": 2.85,
    "thickness": 0.1,
-   "finish": "paint_white",
-   "finish_back": "paint_charcoal",
+   "finish": "paint_charcoal",
+   "finish_back": "paint_white",
    "reveal": "trim_white",
    "base_height": 0.0,
    "openings": [],
@@ -1664,14 +1664,22 @@
    "openings": [
     {
      "id": "g-wall-5-0",
-     "offset": 2.05,
-     "width": 1.6,
+     "offset": 0.65,
+     "width": 1.1,
      "height": 2.1,
      "sill": 0.0,
      "type": "doorway"
     },
     {
      "id": "g-wall-5-1",
+     "offset": 3.05,
+     "width": 1.1,
+     "height": 2.1,
+     "sill": 0.0,
+     "type": "doorway"
+    },
+    {
+     "id": "g-wall-5-2",
      "offset": 4.55,
      "width": 0.8,
      "height": 2.04,
@@ -1686,7 +1694,7 @@
      }
     },
     {
-     "id": "g-wall-5-2",
+     "id": "g-wall-5-3",
      "offset": 7.55,
      "width": 0.85,
      "height": 2.04,
@@ -1729,7 +1737,7 @@
      "type": "door",
      "door": {
       "type": "hinged",
-      "swing": "inward_right",
+      "swing": "inward_left",
       "leaf": "trim_white",
       "frame": "trim_white",
       "handle": "metal_brass"
@@ -1737,21 +1745,6 @@
     },
     {
      "id": "f-wall-0-1",
-     "offset": 4.15,
-     "width": 0.8,
-     "height": 2.04,
-     "sill": 0.0,
-     "type": "door",
-     "door": {
-      "type": "hinged",
-      "swing": "inward_right",
-      "leaf": "trim_white",
-      "frame": "trim_white",
-      "handle": "metal_brass"
-     }
-    },
-    {
-     "id": "f-wall-0-2",
      "offset": 7.85,
      "width": 0.86,
      "height": 2.04,
@@ -1794,7 +1787,7 @@
      "type": "door",
      "door": {
       "type": "hinged",
-      "swing": "inward_right",
+      "swing": "outward_left",
       "leaf": "trim_white",
       "frame": "trim_white",
       "handle": "metal_brass"
@@ -1809,7 +1802,7 @@
      "type": "door",
      "door": {
       "type": "hinged",
-      "swing": "inward_right",
+      "swing": "outward_right",
       "leaf": "trim_white",
       "frame": "trim_white",
       "handle": "metal_brass"
@@ -1824,7 +1817,7 @@
      "type": "door",
      "door": {
       "type": "hinged",
-      "swing": "inward_right",
+      "swing": "outward_right",
       "leaf": "trim_white",
       "frame": "trim_white",
       "handle": "metal_brass"
@@ -1864,8 +1857,8 @@
    ],
    "height": 2.7,
    "thickness": 0.1,
-   "finish": "paint_white",
-   "finish_back": "paint_warm_white",
+   "finish": "paint_warm_white",
+   "finish_back": "paint_white",
    "reveal": "trim_white",
    "base_height": 3.1,
    "openings": [],
@@ -1897,7 +1890,7 @@
      "type": "door",
      "door": {
       "type": "hinged",
-      "swing": "inward_right",
+      "swing": "inward_left",
       "leaf": "trim_white",
       "frame": "trim_white",
       "handle": "metal_brass"
@@ -1905,8 +1898,8 @@
     },
     {
      "id": "f-wall-4-1",
-     "offset": 4.25,
-     "width": 0.8,
+     "offset": 5.05,
+     "width": 0.76,
      "height": 2.04,
      "sill": 0.0,
      "type": "door",
@@ -2289,72 +2282,92 @@
   {
    "id": "flight-a",
    "start": [
-    6.675,
-    -1.2
+    7.8,
+    -1.5
    ],
    "direction": "south",
    "yaw": 180,
    "width": 1.15,
    "base_height": 0.0,
    "top_height": 3.1,
-   "run": 4.2,
+   "run": 3.9,
    "steps": 17,
    "finish": "oak_parquet",
    "riser": "trim_white",
-   "balustrade": "right"
+   "balustrade": "both",
+   "closet": {
+    "to": 4.1,
+    "door": {
+     "side": "right",
+     "at": 3.35,
+     "width": 0.72,
+     "height": 1.9
+    }
+   }
   },
   {
    "id": "flight-b",
    "start": [
-    9.025,
-    -3.0
+    7.8,
+    -9.5
    ],
-   "direction": "south",
-   "yaw": 180,
+   "direction": "north",
+   "yaw": 0,
    "width": 1.15,
    "base_height": 3.1,
    "top_height": 6.05,
-   "run": 4.6,
+   "run": 4.3,
    "steps": 16,
    "finish": "oak_parquet",
    "riser": "trim_white",
-   "balustrade": "left"
+   "balustrade": "both",
+   "closet": {
+    "to": 3.25,
+    "door": {
+     "side": "end",
+     "width": 0.72,
+     "height": 1.9
+    }
+   }
   }
  ],
  "floor_openings": [
   {
    "id": "hole-flight-a",
    "position": [
-    6.675,
-    -3.175
+    7.8,
+    -3.4
    ],
    "elevation": 3.1,
-   "width": 1.45,
-   "depth": 4.45,
+   "width": 1.16,
+   "depth": 4.0,
    "yaw": 0,
    "stair_id": "flight-a",
-   "rails": [
-    "x+",
-    "z+"
-   ]
-  },
-  {
-   "id": "hole-flight-b",
-   "position": [
-    9.0,
-    -5.125
-   ],
-   "elevation": 6.05,
-   "width": 1.4,
-   "depth": 4.95,
-   "yaw": 0,
-   "stair_id": "flight-b",
    "rails": [
     "x-",
     "z+",
     "x+"
-   ]
+   ],
+   "rail_offset_x": 0.12
+  },
+  {
+   "id": "hole-flight-b",
+   "position": [
+    7.8,
+    -6.86
+   ],
+   "elevation": 6.05,
+   "width": 1.16,
+   "depth": 3.32,
+   "yaw": 0,
+   "stair_id": "flight-b",
+   "rails": [
+    "x-",
+    "z-",
+    "x+"
+   ],
+   "rail_offset_x": 0.12
   }
  ],
- "triangles": 91808
+ "triangles": 103204
 }

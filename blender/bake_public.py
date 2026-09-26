@@ -64,6 +64,11 @@ settings.json (written by scripts/bake-public.mjs, which runs this) carries
 the spec's lighting preset, the room lights, the portals and which
 materials are outdoor ground. Writes, into --out: lit.glb, <variant>.webp
 (and <variant>-phone.webp) for each variant, and bake.json describing them.
+
+Colour management is Blender's Filmic (VIEW), as the public view draws it:
+the light is baked scene-linear and unclipped, highlights kept in the top
+of each lightmap's range (encode), and Filmic applied once, in the browser,
+after the light has met the surfaces' colours.
 """
 import argparse
 import json
@@ -707,8 +712,34 @@ def prepare_materials(objects, image):
             prepare_materials([obj], image)
 
 
+#: How the public view draws the light baked here: Blender's Filmic view
+#: transform, at Blender's exposure (in stops) — the app does the same
+#: (frontend/Experience/Utils/filmic.js). A bake is light alone, scene-linear
+#: and unclipped, whatever the view: Filmic is applied once, when the light
+#: has met the surfaces' colours, never baked in.
+VIEW = dict(transform="Filmic", look="None", exposure=0.0)
+
+#: How far over its scale a lightmap keeps light (encode). Filmic reaches
+#: white at 16 times white, well short of it.
+HEADROOM = 64.0
+#: The name the public view knows that encoding by.
+ENCODING = "reinhard"
+
+
+def use_view(scene):
+    """Colour-manage the scene as the public view draws it, so anything
+    rendered from this file — a debug render, the unwrapped .blend opened
+    to look at — shows the light as the public view will."""
+    scene.display_settings.display_device = "sRGB"
+    scene.view_settings.view_transform = VIEW["transform"]
+    scene.view_settings.look = VIEW["look"]
+    scene.view_settings.exposure = VIEW["exposure"]
+    scene.view_settings.gamma = 1.0
+
+
 def cycles(samples):
     scene = bpy.context.scene
+    use_view(scene)
     scene.render.engine = "CYCLES"
     scene.cycles.samples = samples
     scene.cycles.use_denoising = False
@@ -1646,6 +1677,7 @@ def denoise(rgb, normal):
     tmp = os.path.join(bpy.app.tempdir, "denoised.exr")
     bpy.data.images["Render Result"].save_render(tmp)
     scene.render.engine = engine
+    use_view(scene)
     scene.compositing_node_group = None
     bpy.data.node_groups.remove(tree)
     result = bpy.data.images.load(tmp)
@@ -1658,17 +1690,23 @@ def denoise(rgb, normal):
 
 
 def encode(rgb, path, scale=None, quality=90):
-    """Save a lightmap as an 8-bit WebP the browser can load: scaled so the
-    brightest light in it (bar the odd hot pixel) is 1, then sRGB encoded,
-    which keeps the precision in the shadows where the eye wants it.
-    Returns the scale the public view multiplies back by."""
+    """Save a lightmap as an 8-bit WebP the browser can load. Scaled so its
+    bright light — all but the brightest three texels in a thousand — comes
+    to 1, then squeezed as x / (1 + x), which leaves the rest much as it was
+    but keeps what is brighter still — a sun patch's core, up to HEADROOM
+    times the scale — in the top of the range, for Filmic to roll off rather
+    than flattened; then sRGB encoded, which keeps the precision in the
+    shadows where the eye wants it. The public view opens it back out
+    (ENCODING; SceneBuilder's decodeLightmap). Returns the scale it
+    multiplies back by."""
     h, w, _ = rgb.shape
     if scale is None:
         lum = rgb.max(axis=2).ravel()
         lit = lum[lum > 1e-5]
         scale = float(np.percentile(lit, 99.7)) if lit.size else 1.0
         scale = max(scale, 0.05)
-    v = np.clip(rgb / scale, 0, 1)
+    x = np.clip(rgb / scale, 0, HEADROOM)
+    v = x / (1.0 + x)
     v = np.where(v <= 0.0031308, v * 12.92, 1.055 * np.power(v, 1 / 2.4) - 0.055)
     img = bpy.data.images.new(os.path.basename(path), w, h, alpha=False, float_buffer=False)
     img.colorspace_settings.name = "Non-Color"
@@ -1817,6 +1855,7 @@ def main():
         variants[variant] = {
             "lightmap": f"{variant}.webp",
             "scale": scale,
+            "encoding": ENCODING,
             "attribute": VERTEX_ATTRIBUTES[variant],
             "doors": read_probes(probes, variant),
         }
@@ -1836,7 +1875,7 @@ def main():
     # What the baked view draws: more meshes than the snapshot, each split
     # into its lightmapped and vertex-lit parts, and the vertices added
     # along long thin edges.
-    json.dump({"size": args.size, "samples": args.samples, "texel": texel, "variants": variants,
+    json.dump({"size": args.size, "samples": args.samples, "texel": texel, "view": VIEW, "variants": variants,
                "meshes": len(objects), "triangles": sum(len(o.data.polygons) for o in objects)},
               open(os.path.join(args.out, "bake.json"), "w"), indent=2)
 

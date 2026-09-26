@@ -47,7 +47,7 @@ export default class World extends EventEmitter {
                         if (lighting) {
                             // The room lights are in the lightmaps now.
                             if (this.sceneBuilder.lights) this.sceneBuilder.lights.visible = false;
-                            this.environment.useBaked();
+                            this.environment.useBaked(lighting.view);
                             this.setLighting("day");
                         }
                     }

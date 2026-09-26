@@ -124,6 +124,7 @@ export default class SceneBuilder {
             door.wallGroup.add(door.group);
             door.group.updateMatrixWorld(true);
         }
+        this.doorsHung = true;
 
         // Cars come after the octree is closed for the same reason doors do:
         // they move, so they must not be baked into the static collision tree.
@@ -246,6 +247,18 @@ export default class SceneBuilder {
             });
             this.doors.push(...doors);
             this.wallGroups.set(wall.id, { group, doors });
+        }
+        // The cupboard doors under the flights, in stand-ins for the flights.
+        for (const stair of this.spec.stairs) {
+            if (!stair.closet) continue;
+            const group = new THREE.Group();
+            group.name = `stairs:${stair.id}`;
+            group.userData = { kind: "stairs", id: stair.id };
+            group.position.set(stair.start[0], stair.base_height, stair.start[1]);
+            group.rotation.y = THREE.MathUtils.degToRad(stair.yaw ?? 0);
+            this.shell.add(group);
+            const door = this.hangClosetDoor(stair, group);
+            if (door) this.doors.push(door);
         }
         this.buildFreeDoors();
         this.buildLights();
@@ -424,11 +437,29 @@ export default class SceneBuilder {
         }
         this.railGroups = new Map();
         for (const hole of this.spec.floor_openings) {
-            const group = this.structure.buildRails(hole);
+            const group = this.structure.buildRails(hole, this.liningFor(hole));
             if (!group) continue;
             this.shell.add(group);
             this.railGroups.set(hole.id, group);
         }
+    }
+
+    /**
+     * The lining an opening needs: from the ceiling of the room beneath it
+     * up to the floor it is cut through, in that ceiling's finish. Null
+     * with no ceiling there.
+     */
+    liningFor(hole) {
+        const [x, z] = hole.position;
+        let below = null;
+        for (const room of this.spec.rooms) {
+            if (!SceneBuilder.openingCuts(room, hole.elevation).ceiling) continue;
+            if (!room.ceiling_finish || room.ceiling_finish === "none") continue;
+            if (!pointInPolygon(x, z, room.polygon)) continue;
+            if (!below || room.elevation + room.height > below.elevation + below.height) below = room;
+        }
+        const depth = below ? hole.elevation - (below.elevation + below.height) : 0;
+        return depth > 0.01 ? { depth, finish: below.ceiling_finish } : null;
     }
 
     buildWalls() {
@@ -507,7 +538,17 @@ export default class SceneBuilder {
         this.colliders.add(collider);
 
         const modelFlight = this.isModelFlight(stair);
-        const entry = { spec: stair, group, collider, locked: modelFlight };
+        const entry = { spec: stair, group, collider, locked: modelFlight, doors: [] };
+        const door = this.hangClosetDoor(stair, group);
+        if (door) {
+            entry.doors.push(door);
+            this.doors.push(door);
+            // Hung at once after the build; during it, with the rest.
+            if (this.doorsHung) {
+                door.wallGroup.add(door.group);
+                door.group.updateMatrixWorld(true);
+            }
+        }
         if (modelFlight) {
             // The model's mesh already draws the treads; its flight's spec
             // contributes only the invisible ramp, which is what makes those
@@ -521,6 +562,34 @@ export default class SceneBuilder {
 
         this.stairs.set(stair.id, entry);
         return entry;
+    }
+
+    /**
+     * The door of the cupboard under a flight, if it has one, hung in the
+     * flight's `group` where StructureBuilder.closetDoor says: opening out,
+     * in a panel a few centimetres thick. Not yet in the graph; the caller
+     * adds it, as the walls' doors are.
+     */
+    hangClosetDoor(stair, group) {
+        const place = StructureBuilder.closetDoor(stair);
+        if (!place) return null;
+        const holder = new THREE.Group();
+        holder.name = `closet:${stair.id}`;
+        holder.position.copy(place.position);
+        holder.rotation.y = place.rotation;
+        group.add(holder);
+        const opening = {
+            id: `${stair.id}-closet`,
+            type: "door",
+            offset: 0,
+            width: place.width,
+            height: place.height,
+            sill: 0,
+            door: { type: "hinged", swing: "outward_left", leaf: "trim_white", frame: "trim_white", handle: "metal_brass" },
+        };
+        const door = new Door(opening, { id: `${stair.id}-closet`, thickness: 0.04, height: place.height + 0.2 }, 0, this.materials, this.kit);
+        door.wallGroup = holder;
+        return door;
     }
 
     /**
@@ -586,6 +655,8 @@ export default class SceneBuilder {
     }
 
     disposeStair(entry) {
+        for (const door of entry.doors || []) door.dispose();
+        this.doors = this.doors.filter((door) => !entry.doors?.includes(door));
         if (entry.group) {
             this.fittings.remove(entry.group);
             this.structure.release(entry.group);
@@ -1412,10 +1483,13 @@ export default class SceneBuilder {
      * on every lightmapped material, its vertex light on every vertex-lit
      * mesh.
      *
-     * The lightmap is stored scaled down so its brightest light fits in 8
-     * bits, and three divides a lightmap by π; `info.scale` and π restore
-     * it, so what is drawn is the surface's colour times the light Blender
-     * baked for it.
+     * The lightmap is stored scaled so its bright light (all but the
+     * brightest few texels in a thousand) comes to 1, and three divides a
+     * lightmap by π; `info.scale` and π restore it, so what is drawn is the
+     * surface's colour times the light Blender baked for it. A lightmap
+     * encoded "reinhard" (blender/bake_public.py) keeps what is brighter
+     * than that as well, squeezed into the top of its range, and is opened
+     * back out here.
      */
     setLightingVariant(texture, info) {
         if (!texture.userData.lightmap) {
@@ -1430,6 +1504,7 @@ export default class SceneBuilder {
             if (!material.lightMap) material.needsUpdate = true;
             material.lightMap = texture;
             material.lightMapIntensity = Math.PI * info.scale;
+            decodeLightmap(material, info.encoding);
         }
         const name = info.attribute.toLowerCase();
         for (const mesh of this.vertexLit) {
@@ -1513,6 +1588,28 @@ function doubleSided(material) {
     clone.side = THREE.DoubleSide;
     doubleSidedCache.set(material.name, clone);
     return clone;
+}
+
+/** How a lightmap texel is opened back out to light, by encoding. */
+const LIGHTMAP_DECODE = {
+    // e = x / (1 + x), so x = e / (1 - e): up to 64 times the lightmap's
+    // scale, the most it was encoded with.
+    reinhard: "( lightMapTexel.rgb / max( vec3( 1.0 ) - lightMapTexel.rgb, vec3( 1.0 / 65.0 ) ) ) * lightMapIntensity",
+};
+
+/** Draw a baked material's lightmap as it was encoded (setLightingVariant). */
+function decodeLightmap(material, encoding) {
+    const decode = LIGHTMAP_DECODE[encoding] ?? null;
+    if ((material.userData.lightmapDecode ?? null) === decode) return;
+    material.userData.lightmapDecode = decode;
+    material.onBeforeCompile = (shader) => {
+        if (!decode) return;
+        const plain = "lightMapTexel.rgb * lightMapIntensity";
+        if (!shader.fragmentShader.includes(plain)) console.warn("Lightmap not decoded: three's shader has changed");
+        shader.fragmentShader = shader.fragmentShader.replace(plain, decode);
+    };
+    material.customProgramCacheKey = () => encoding ?? "";
+    material.needsUpdate = true;
 }
 
 /** Undo a previous world-UV tiling so a new tile size can be applied. */

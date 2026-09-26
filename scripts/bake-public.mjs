@@ -280,6 +280,8 @@ await updateVersion(sceneId, version, {
         texel: bake.texel,
         meshes: bake.meshes,
         triangles: bake.triangles,
+        // How the light is drawn: Blender's Filmic, at the bake's exposure.
+        ...(bake.view && { view: bake.view }),
         variants: Object.fromEntries(
             Object.entries(bake.variants).map(([name, variant]) => [
                 name,
@@ -288,6 +290,8 @@ await updateVersion(sceneId, version, {
                     // Half the size or less, for phones.
                     ...(variant.lightmapPhone && { lightmapPhone: `${version}/${bakeName}/${variant.lightmapPhone}` }),
                     scale: variant.scale,
+                    // How the lightmap's 8 bits hold its light.
+                    ...(variant.encoding && { encoding: variant.encoding }),
                     attribute: variant.attribute,
                     doors: variant.doors,
                 },

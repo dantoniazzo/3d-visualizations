@@ -3,10 +3,10 @@ import { EventEmitter } from "events";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { OutlinePass } from "three/examples/jsm/postprocessing/OutlinePass.js";
-import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 
 import Experience from "../Experience.js";
 import EditorCamera from "./EditorCamera.js";
+import ToneMappedOutputPass from "./ToneMappedOutputPass.js";
 import EditorUI from "./EditorUI.js";
 import FieldEdit from "./FieldEdit.js";
 import FitChecker from "./FitChecker.js";
@@ -768,7 +768,7 @@ export default class Editor extends EventEmitter {
         const tryPose = (pose) => {
             if (editable.caps.gravity) {
                 const bottom = editable.bottom(pose);
-                const support = this.snapper.supportUnder(editable.footprint(pose), bottom + 0.3, exclude);
+                const support = this.snapper.supportUnder(editable.footprint(pose), bottom + 0.3, exclude, editable.caps.gravity === "floor");
                 if (support !== null) pose.position.y += support - bottom;
             }
             return this.fit.test(editable.hulls(pose), { exclude }).ok;
@@ -879,7 +879,7 @@ export default class Editor extends EventEmitter {
         const exclude = new Set([editable]);
         const bottom = editable.bottom(pose);
         // Look down from just above the base, so it drops rather than climbs.
-        const support = this.snapper.supportUnder(editable.footprint(pose), bottom - STEP_UP + 0.02, exclude);
+        const support = this.snapper.supportUnder(editable.footprint(pose), bottom - STEP_UP + 0.02, exclude, editable.caps.gravity === "floor");
         if (support === null) return this.ui.toast("Nothing under it to rest on", "warn");
         pose.position.y += support - bottom;
         this.applyPose(editable, pose, "Drop to surface");
@@ -1641,7 +1641,7 @@ export default class Editor extends EventEmitter {
 
         this.composer.addPass(this.renderPass);
         this.composer.addPass(this.outlinePass);
-        this.composer.addPass(new OutputPass());
+        this.composer.addPass(new ToneMappedOutputPass());
     }
 
     onResize(sizes) {

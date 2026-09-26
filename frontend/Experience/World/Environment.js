@@ -120,9 +120,12 @@ export default class Environment {
     /**
      * The house's light is baked into it; live lights are left only for
      * what moves, and without shadows, so no shadow map is drawn at all.
+     * Its exposure is the bake's — Blender's, in stops: at 0 the light is
+     * drawn as Blender shows it — not a preset's.
      */
-    useBaked() {
+    useBaked(view = null) {
         this.baked = true;
+        this.bakedExposure = 2 ** (view?.exposure ?? 0);
         this.ambient.intensity = 0;
         // Unshadowed, the sun would light people indoors as if outdoors.
         this.sunScale = 0.5;
@@ -141,7 +144,7 @@ export default class Environment {
         this.sun.color.set(preset.sun.color);
         this.sun.intensity = preset.sun.intensity * (this.sunScale ?? 1);
         this.sun.position.set(...preset.sun.position);
-        this.renderer.setExposure(preset.exposure ?? 1);
+        this.renderer.setExposure(this.baked ? this.bakedExposure : preset.exposure ?? 1);
 
         const reflections = preset.reflections ?? 1;
         this.scene.traverse((node) => {

@@ -121,7 +121,8 @@ def build(mats):
     # =================================================================
     for flight in S.FLIGHTS:
         a.build_stair(**{k: flight[k] for k in ("x0", "x1", "y0", "y1", "base", "top", "steps")},
-                      col=cols[flight["level"]], mats=mats, balustrade=flight["balustrade"])
+                      col=cols[flight["level"]], mats=mats, balustrade=flight["balustrade"],
+                      climb=flight.get("climb", 1))
 
     # Guard the open sides of each stairwell, and only those: a rail across
     # the head of a flight is a fence in front of the way down.
