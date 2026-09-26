@@ -3,6 +3,7 @@ import * as THREE from "three";
 import FitChecker from "./FitChecker.js";
 import { AXES, DEG, round, toBlender, yawQuaternion } from "./axes.js";
 import SceneBuilder, { localBox } from "../World/SceneBuilder.js";
+import StructureBuilder from "../World/Builders/StructureBuilder.js";
 import { DOOR_TYPES, DOOR_SWINGS } from "../../../shared/catalog.js";
 
 /**
@@ -287,7 +288,8 @@ export class StairEditable extends Editable {
             move: "free",
             rotate: true,
             scale: false,
-            gravity: true,
+            // Rests on floors only, not on what stands in its cupboard.
+            gravity: "floor",
             carry: false,
             fit: true,
             duplicate: true,
@@ -353,12 +355,34 @@ export class StairEditable extends Editable {
         // must clear walls, furniture and the floor they stand on; the
         // slabs they rise through are handled by the opening, below.
         const slabsBelow = pose.position.y + 0.3;
+        const closet = this.spec.closet ? StructureBuilder.closetShape(this.spec) : null;
         for (let i = 0; i < steps; i++) {
             const top = ((i + 1) * rise) / steps;
-            hulls.push({
-                ...localHull(pose, quat, [0, top / 2, i * going + going / 2], [width / 2, top / 2, going / 2]),
-                slabsBelow,
-            });
+            const z = i * going + going / 2;
+            if (!closet) {
+                hulls.push({ ...localHull(pose, quat, [0, top / 2, z], [width / 2, top / 2, going / 2]), slabsBelow });
+                continue;
+            }
+            // Over a cupboard, the steps go down only as far as its soffit,
+            // and its sides to the floor: what is kept in it is not in the way.
+            const under = Math.max(0, closet.underside(i * going));
+            hulls.push({ ...localHull(pose, quat, [0, (under + top) / 2, z], [width / 2, (top - under) / 2, going / 2]), slabsBelow });
+            if (i * going < closet.to && under > 0) {
+                for (const side of [-1, 1]) {
+                    hulls.push({ ...localHull(pose, quat, [side * (width / 2 - 0.02), under / 2, z], [0.02, under / 2, going / 2]), slabsBelow });
+                }
+            }
+        }
+        if (closet && closet.to > run) {
+            // On past the head to a wall, as high as the ceiling.
+            const length = closet.to - run - 0.01;
+            for (const side of [-1, 1]) {
+                hulls.push({ ...localHull(pose, quat, [side * (width / 2 - 0.02), closet.ceiling / 2, run + length / 2], [0.02, closet.ceiling / 2, length / 2]), slabsBelow });
+            }
+        } else if (closet) {
+            // Its end panel, where it stops short of the head.
+            const h = Math.min(closet.underside(closet.to), closet.ceiling);
+            hulls.push({ ...localHull(pose, quat, [0, h / 2, closet.to - 0.02], [width / 2, h / 2, 0.02]), slabsBelow });
         }
 
         const linked = this.linkedOpenings();
@@ -449,8 +473,10 @@ export class StairEditable extends Editable {
     }
 
     /**
-     * Change the flight's dimensions. Its linked openings are refitted to
-     * the new footprint; nothing is kept if the result does not fit.
+     * Change the flight's dimensions. A flight arriving through an opening
+     * keeps its head where it is — made shorter, its foot comes in — and
+     * the opening and the cupboard under it go with the head; otherwise the
+     * foot stays put. Nothing is kept if the result does not fit.
      */
     setParam(key, value) {
         const spec = this.spec;
@@ -463,7 +489,14 @@ export class StairEditable extends Editable {
         else if (key === "steps") spec.steps = Math.round(THREE.MathUtils.clamp(value, 2, 60));
         else return { ok: false };
 
-        this.fitOpenings();
+        const headFixed = holesBefore.length > 0;
+        if (key === "run" && headFixed) {
+            const yaw = spec.yaw * DEG;
+            const shift = before.run - spec.run;
+            spec.start = [round(spec.start[0] + Math.sin(yaw) * shift), round(spec.start[1] + Math.cos(yaw) * shift)];
+        }
+        if (key === "run") this.fitCloset(before, headFixed);
+        this.refitOpenings(before);
         const result = this.editor.fit.test(this.hulls(), { exclude: new Set([this]) });
         if (!result.ok) {
             Object.assign(spec, before);
@@ -479,15 +512,84 @@ export class StairEditable extends Editable {
         return { ok: true };
     }
 
-    /** Set every linked opening to the flight's footprint at its head. */
-    fitOpenings() {
+    /**
+     * Set every linked opening to the flight's footprint at its head. The
+     * opening takes the flight's heading, so its rails — named by side in
+     * its own frame — are renamed to stay on the sides of the stairwell
+     * they were on: turned half round, the rail along the open landing
+     * would otherwise land on the wall side and one across the head.
+     */
+    fitOpenings(holes = this.linkedOpenings()) {
         const f = this.footprint();
-        for (const hole of this.linkedOpenings()) {
+        for (const hole of holes) {
+            if (hole.rails?.length) hole.rails = turnRails(hole.rails, this.spec.yaw - (hole.yaw ?? 0));
             hole.position = [round(f.cx), round(f.cz)];
             hole.width = round(this.spec.width);
             hole.depth = round(this.spec.run);
             hole.yaw = this.spec.yaw;
             hole.elevation = this.spec.top_height;
+        }
+    }
+
+    /**
+     * Carry the linked openings with the flight after its size changed
+     * from `before`: the edge at the head stays where it was from the head,
+     * each opening's depth goes with the flight's length — which leaves the
+     * headroom at its far edge as it was, the rise being the same — and it
+     * keeps its margin either side. An opening not square to the flight is
+     * fitted to its footprint instead.
+     */
+    refitOpenings(before) {
+        const spec = this.spec;
+        const yaw = spec.yaw * DEG;
+        const up = [Math.sin(yaw), Math.cos(yaw)];
+        const across = [Math.cos(yaw), -Math.sin(yaw)];
+        const unfitted = [];
+        for (const hole of this.linkedOpenings()) {
+            const turn = Math.abs(normaliseDegrees((hole.yaw ?? 0) - spec.yaw)) % 180;
+            if (Math.min(turn, 180 - turn) > 1) {
+                unfitted.push(hole);
+                continue;
+            }
+            const dx = hole.position[0] - before.start[0];
+            const dz = hole.position[1] - before.start[1];
+            const along = dx * up[0] + dz * up[1];
+            const side = dx * across[0] + dz * across[1];
+            const headGap = before.run - (along + hole.depth / 2);
+            const depth = Math.max(0.2, (hole.depth * spec.run) / before.run);
+            const centre = spec.run - headGap - depth / 2;
+            hole.position = [
+                round(spec.start[0] + up[0] * centre + across[0] * side),
+                round(spec.start[1] + up[1] * centre + across[1] * side),
+            ];
+            hole.depth = round(depth);
+            hole.width = round(Math.max(0.2, hole.width + spec.width - before.width));
+            hole.elevation = spec.top_height;
+        }
+        if (unfitted.length) this.fitOpenings(unfitted);
+    }
+
+    /**
+     * Keep the cupboard under the flight where it was after the run changed
+     * from `before`. One running on past the head to a wall keeps its reach
+     * past the head; one stopping short keeps its end panel where it was
+     * from the head when the head stays put, and from the foot otherwise.
+     * A door in its side keeps its place along with it.
+     */
+    fitCloset(before, headFixed) {
+        const closet = this.spec.closet;
+        if (!closet) return;
+        const run = this.spec.run;
+        const change = run - before.run;
+        const to = closet.to ?? before.run;
+        const keepsHead = to >= before.run - 1e-6 || headFixed;
+        closet.to = round(Math.max(0.5, keepsHead ? to + change : Math.min(to, run)));
+        const door = closet.door;
+        if (door && door.side !== "end" && door.at != null) {
+            const w = door.width ?? 0.72;
+            const at = headFixed ? door.at + change : door.at;
+            const high = Math.min(closet.to, run) - w / 2 - 0.05;
+            door.at = round(THREE.MathUtils.clamp(at, Math.min(w / 2 + 0.05, high), high));
         }
     }
 
@@ -514,6 +616,23 @@ export class StairEditable extends Editable {
             },
         ];
     }
+}
+
+/**
+ * Rail sides ("x-", "x+", "z-", "z+", in an opening's own frame) renamed
+ * for the opening turned `degrees` further round, so each stays on the same
+ * side of the stairwell.
+ */
+export function turnRails(rails, degrees) {
+    const t = THREE.MathUtils.degToRad(degrees);
+    const vectors = { "x+": [1, 0], "x-": [-1, 0], "z+": [0, 1], "z-": [0, -1] };
+    return rails.map((side) => {
+        const [x, z] = vectors[side] ?? [0, 0];
+        // Into the new frame: the old side's direction turned back by t.
+        const nx = Math.round(x * Math.cos(t) - z * Math.sin(t));
+        const nz = Math.round(x * Math.sin(t) + z * Math.cos(t));
+        return nx ? (nx > 0 ? "x+" : "x-") : nz > 0 ? "z+" : "z-";
+    });
 }
 
 // ---------------------------------------------------------------------

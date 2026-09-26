@@ -212,8 +212,10 @@ export default class Snapper {
      * from STEP_UP above `bottom` — so a chair steps onto a rug but not
      * onto a sofa. Sampled at the centre and near each corner.
      */
-    supportUnder(footprint, bottom, exclude) {
-        const targets = this.supportTargets();
+    supportUnder(footprint, bottom, exclude, floorOnly = false) {
+        const targets = floorOnly ? this.floorTargets() : this.supportTargets();
+        // Slabs rebuilt since the last frame (an undo) are not placed yet.
+        for (const target of targets) target.updateMatrixWorld();
         let best = null;
 
         const samples = [[0, 0]];
@@ -244,6 +246,12 @@ export default class Snapper {
     supportTargets() {
         const b = this.builder;
         return [b.shell, b.groundPlane, b.fittings, b.furnitureGroup, b.model].filter(Boolean);
+    }
+
+    /** The building alone: what a staircase stands on, never what is kept under it. */
+    floorTargets() {
+        const b = this.builder;
+        return [b.shell, b.groundPlane].filter(Boolean);
     }
 
     // ------------------------------------------------------------------

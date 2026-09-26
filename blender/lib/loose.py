@@ -80,27 +80,57 @@ def armchair(col, mats, x, y, rot=0.0, fabric="fabric_cream", w=0.86, d=0.86):
 
 
 def lounge_chair(col, mats, x, y, rot=0.0, leather="leather_tan", wood="wood_walnut"):
-    """A low reclining lounge chair on a timber shell. Seat at 0.40."""
+    """A mid-century lounge chair: a walnut frame on four tapered, slightly
+    splayed legs, leather seat and back cushions, and flat walnut arms. The
+    back reclines away from the seat, as a lounge chair's does. Seat at
+    0.42; its front faces +Y."""
     wd, lt = mats[wood], mats[leather]
-    w, d = 0.82, 0.86
-    parts = [
-        g.box("shell_seat", (w, 0.62, 0.05), loc=(x, y + 0.08, 0.33), col=col, mat=wd,
-              bevel=0.01),
-        g.box("shell_back", (w, 0.05, 0.62), loc=(x, y - 0.28, 0.66),
-              rot=(-0.26, 0, 0), col=col, mat=wd, bevel=0.01),
-        g.box("seat", (w - 0.08, 0.58, 0.10), loc=(x, y + 0.08, 0.40), col=col, mat=lt,
-              bevel=0.03, shade_smooth=True),
-        g.box("back", (w - 0.08, 0.10, 0.54), loc=(x, y - 0.22, 0.68),
-              rot=(-0.26, 0, 0), col=col, mat=lt, bevel=0.03, shade_smooth=True),
-    ]
-    for s in (-1, 1):
-        parts.append(g.box("arm", (0.06, 0.62, 0.05), loc=(x + s * (w / 2 - 0.03), y + 0.05, 0.58),
-                           col=col, mat=wd, bevel=0.01))
-        parts.append(g.box("arm_post", (0.05, 0.05, 0.25),
-                           loc=(x + s * (w / 2 - 0.03), y + 0.30, 0.45), col=col, mat=wd))
-    parts.append(g.cylinder("stem", 0.03, 0.30, loc=(x, y, 0.16), col=col, mat=mats["black_metal"]))
-    parts.append(g.cylinder("foot", 0.30, 0.02, loc=(x, y, 0.01), col=col, mat=mats["black_metal"],
-                            segments=24))
+    w, d = 0.80, 0.84
+    recline = 0.26                      # radians back from upright
+    parts = []
+
+    # Legs: tapered cones, splayed a little outwards.
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            lx, ly = x + sx * (w / 2 - 0.07), y + sy * (d / 2 - 0.10)
+            parts.append(g.cone("leg", 0.018, 0.026, 0.24, loc=(lx, ly, 0.12),
+                                rot=(-sy * 0.08, sx * 0.08, 0), col=col, mat=wd, segments=12))
+    # Seat frame and cushion.
+    parts.append(g.box("seat_frame", (w - 0.06, d - 0.16, 0.045), loc=(x, y + 0.03, 0.255),
+                       col=col, mat=wd, bevel=0.008))
+    parts.append(g.box("seat", (w - 0.14, d - 0.26, 0.12), loc=(x, y + 0.07, 0.335), col=col,
+                       mat=lt, bevel=0.035, segments=3, shade_smooth=True))
+
+    # The back, hinged at the rear of the seat and leaning back: rotating
+    # +recline about X tips its top towards -Y, away from the seat.
+    import math as _m
+    up = (0.0, -_m.sin(recline), _m.cos(recline))
+    hinge = (x, y - d / 2 + 0.16, 0.27)
+
+    def along(dist, out=0.0):
+        # A point `dist` up the back from the hinge, `out` behind its face.
+        return (hinge[0], hinge[1] + up[1] * dist - out * _m.cos(recline),
+                hinge[2] + up[2] * dist - out * _m.sin(recline))
+
+    frame_h = 0.62
+    parts.append(g.box("back_frame", (w - 0.08, 0.035, frame_h), loc=along(frame_h / 2, 0.03),
+                       rot=(recline, 0, 0), col=col, mat=wd, bevel=0.008))
+    parts.append(g.box("back", (w - 0.16, 0.11, 0.50), loc=along(0.34, -0.035),
+                       rot=(recline, 0, 0), col=col, mat=lt, bevel=0.04, segments=3,
+                       shade_smooth=True))
+
+    # Arms: flat walnut boards on a post at the front, running back to the
+    # back frame, and a leather pad on each.
+    arm_z = 0.56
+    arm_y0, arm_y1 = y - d / 2 + 0.12, y + d / 2 - 0.05
+    for sx in (-1, 1):
+        ax = x + sx * (w / 2 - 0.035)
+        parts.append(g.box("arm", (0.06, arm_y1 - arm_y0, 0.028), loc=(ax, (arm_y0 + arm_y1) / 2, arm_z),
+                           col=col, mat=wd, bevel=0.006))
+        parts.append(g.box("arm_post", (0.04, 0.04, arm_z - 0.26), loc=(ax, arm_y1 - 0.05, (arm_z + 0.26) / 2),
+                           col=col, mat=wd, bevel=0.004))
+        parts.append(g.box("arm_rail", (0.035, arm_y1 - arm_y0 - 0.1, 0.035),
+                           loc=(ax, (arm_y0 + arm_y1) / 2 - 0.03, 0.30), col=col, mat=wd))
     return _rotate(parts, x, y, rot)
 
 
@@ -267,32 +297,67 @@ def tv(col, mats, x, y, w=1.10, h=0.64, rot=0.0, z=0.0):
     return _rotate(parts, x, y, rot)
 
 
-def laptop(col, mats, x, y, rot=0.0, z=0.0):
-    """Open, keyboard towards +Y, screen at the back."""
-    m, s = mats["steel"], mats["screen"]
-    w, d = 0.33, 0.23
+def laptop(col, mats, x, y, rot=0.0, z=0.0, open_=1.92):
+    """An open laptop on a surface at `z`: the keyboard towards +Y, where
+    the user sits, the lid hinged at the back and opened `open_` radians
+    from shut — a little past upright, leaning away from the keyboard —
+    with the screen on its face."""
+    import math as _m
+    body, dark, s = mats["steel"], mats["black_metal"], mats["screen"]
+    w, d, t = 0.32, 0.22, 0.014
     parts = [
-        g.box("base", (w, d, 0.018), loc=(x, y, z + 0.009), col=col, mat=m, bevel=0.003),
-        g.box("lid", (w, 0.008, d * 0.95), loc=(x, y - d / 2 - 0.03, z + 0.018 + d * 0.46),
-              rot=(-0.28, 0, 0), col=col, mat=m, bevel=0.002),
-        g.box("display", (w - 0.02, 0.002, d * 0.85), loc=(x, y - d / 2 - 0.024, z + 0.018 + d * 0.46),
-              rot=(-0.28, 0, 0), col=col, mat=s),
+        g.box("base", (w, d, t), loc=(x, y, z + t / 2), col=col, mat=body, bevel=0.004),
+        g.box("keys", (w - 0.04, d * 0.46, 0.0015), loc=(x, y - d * 0.14, z + t), col=col, mat=dark),
+        g.box("pad", (0.10, 0.06, 0.0012), loc=(x, y + d * 0.28, z + t), col=col, mat=dark),
     ]
+    # The lid: its bottom edge on the hinge at the back of the base, leaning
+    # back by (open - 90°). Rotating +a about X tips it towards -Y.
+    a = open_ - _m.pi / 2
+    lid_h, lid_t = d * 0.98, 0.006
+    up = (0.0, -_m.sin(a), _m.cos(a))
+    face = (0.0, _m.cos(a), _m.sin(a))              # the side the screen is on, towards +Y
+    hinge = (x, y - d / 2 + 0.004, z + t)
+
+    def at(dist, out):
+        return (hinge[0], hinge[1] + up[1] * dist + face[1] * out, hinge[2] + up[2] * dist + face[2] * out)
+
+    parts.append(g.box("lid", (w, lid_t, lid_h), loc=at(lid_h / 2, 0.0), rot=(a, 0, 0), col=col,
+                       mat=body, bevel=0.002))
+    parts.append(g.box("bezel", (w - 0.008, 0.001, lid_h - 0.008), loc=at(lid_h / 2, lid_t / 2 + 0.0004),
+                       rot=(a, 0, 0), col=col, mat=dark))
+    parts.append(g.box("display", (w - 0.026, 0.001, lid_h - 0.034), loc=at(lid_h / 2 + 0.004, lid_t / 2 + 0.0012),
+                       rot=(a, 0, 0), col=col, mat=s))
     return _rotate(parts, x, y, rot)
 
 
 def desk_lamp(col, mats, x, y, h=0.45, rot=0.0, z=0.0):
-    """An angled task lamp reaching towards +Y."""
+    """A two-armed task lamp reaching towards +Y: a weighted base, a lower
+    arm rising and leaning back, an upper arm reaching forward from the
+    elbow, and a shade at its end aimed down at the surface in front."""
+    import math as _m
     m = mats["black_metal"]
+    s = h / 0.45
+    base = (x, y - 0.03 * s, z + 0.03)
+    elbow = (x, y - 0.07 * s, z + 0.35 * s)
+    head = (x, y + 0.15 * s, z + 0.40 * s)
     parts = [
-        g.cylinder("base", 0.08, 0.02, loc=(x, y, z + 0.01), col=col, mat=m, segments=20),
-        g.cylinder("stem", 0.008, h * 0.62, loc=(x, y - 0.02, z + 0.02 + h * 0.31), col=col,
-                   mat=m, segments=8),
-        g.cylinder("arm", 0.007, 0.24, loc=(x, y + 0.09, z + h * 0.70),
-                   rot=(PI / 2 - 0.4, 0, 0), col=col, mat=m, segments=8),
-        g.cone("shade", 0.075, 0.03, 0.12, loc=(x, y + 0.19, z + h - 0.06), col=col,
-               mat=mats["shade"], segments=20),
+        g.cylinder("base", 0.075 * s, 0.025, loc=(x, y - 0.03 * s, z + 0.0125), col=col, mat=m, segments=24),
+        g.cylinder("pivot", 0.016, 0.03, loc=base, rot=(0, _m.pi / 2, 0), col=col, mat=m, segments=12),
+        g.sweep("arm_low", [base, elbow], 0.0075, sides=8, col=col, mat=m),
+        g.sphere("elbow", 0.016, loc=elbow, col=col, mat=m, subdivisions=1),
+        g.sweep("arm_high", [elbow, head], 0.0065, sides=8, col=col, mat=m),
+        g.sphere("knuckle", 0.014, loc=head, col=col, mat=m, subdivisions=1),
     ]
+    # The shade hangs from the head, its open end down and forward: its
+    # axis (the cone's +Z, towards the narrow end) leans back towards -Y.
+    tilt = 0.55
+    length = 0.13
+    axis = (0.0, -_m.sin(tilt), _m.cos(tilt))
+    centre = (head[0], head[1] - axis[1] * length / 2 + 0.01, head[2] - axis[2] * length / 2)
+    parts.append(g.cone("shade", 0.07, 0.025, length, loc=centre, rot=(tilt, 0, 0), col=col,
+                        mat=mats["shade"], segments=24))
+    parts.append(g.sphere("bulb", 0.022, loc=(centre[0], centre[1] + 0.02, centre[2] - 0.03), col=col,
+                          mat=mats["linen_white"], subdivisions=1))
     return _rotate(parts, x, y, rot)
 
 
@@ -377,3 +442,58 @@ def mirror(col, mats, x, y, w=0.70, h=1.00, rot=0.0, z=0.0):
                            loc=(x, y + s * (d / 2 + 0.001), z + h / 2), col=col,
                            mat=mats["mirror"]))
     return _rotate(parts, x, y, rot)
+
+
+
+def coat(col, mats, x, y, z, fabric="fabric_grey", rot=0.0, length=0.95):
+    """A coat on a hanger, its hook at height `z` on a rail running along X,
+    hanging with its shoulders along Y — seen end on, as coats on a rail
+    are."""
+    f = mats[fabric]
+    parts = [
+        g.box("hanger", (0.012, 0.42, 0.012), loc=(x, y, z - 0.07), col=col, mat=mats["wood_walnut"]),
+        g.box("shoulders", (0.07, 0.44, 0.12), loc=(x, y, z - 0.13), col=col, mat=f, bevel=0.03,
+              segments=3, shade_smooth=True),
+        g.box("body", (0.09, 0.46, length - 0.18), loc=(x, y, z - 0.19 - (length - 0.18) / 2), col=col,
+              mat=f, bevel=0.035, segments=3, shade_smooth=True),
+    ]
+    return _rotate(parts, x, y, rot)
+
+
+def closet_fittings(col, mats, x0, x1, y, depth=0.34, rail_z=1.72, shelf_z=1.98, coats=3,
+                    fabrics=("fabric_grey", "fabric_rust", "fabric_sage")):
+    """What makes a cupboard a cloaks cupboard: a shelf and a hanging rail
+    across its back wall at `y` (the wall on +Y), coats on the rail and
+    boxes on the shelf, and a rack of shoes on the floor. The rail stands
+    far enough off the wall for a coat's shoulders."""
+    parts = []
+    wd = mats["cab_white"]
+    w = x1 - x0
+    cy = y - depth / 2
+    ry = y - 0.28
+    parts.append(g.box("shelf", (w, depth, 0.022), loc=(x0 + w / 2, cy, shelf_z), col=col, mat=wd, bevel=0.003))
+    for sx in (x0 + 0.01, x1 - 0.01):
+        parts.append(g.box("bracket", (0.02, depth, 0.30), loc=(sx, cy, shelf_z - 0.15), col=col, mat=wd))
+    parts.append(g.cylinder("rail", 0.012, w - 0.04, loc=(x0 + w / 2, ry, rail_z), rot=(0, PI / 2, 0),
+                            col=col, mat=mats["chrome"], segments=12))
+    for sx in (x0 + 0.03, x1 - 0.03):
+        parts.append(g.box("rail_end", (0.02, 0.28, 0.03), loc=(sx, y - 0.14, rail_z), col=col, mat=mats["chrome"]))
+    for i in range(coats):
+        cx = x0 + (i + 0.7) * (w / (coats + 0.4))
+        parts += coat(col, mats, cx, ry, rail_z, fabric=fabrics[i % len(fabrics)])
+    for i, (bw, bh) in enumerate(((0.34, 0.20), (0.28, 0.16))):
+        parts.append(g.box("box", (bw, depth - 0.06, bh), loc=(x0 + 0.25 + i * 0.42, cy, shelf_z + 0.011 + bh / 2),
+                           col=col, mat=mats["linen_white"] if i else mats["cab_oak"], bevel=0.004))
+    # A low shoe rack, and two pairs of shoes on it.
+    rack_w = min(0.8, w - 0.1)
+    parts.append(g.box("rack", (rack_w, 0.28, 0.02), loc=(x0 + w / 2, cy - depth / 2 + 0.2, 0.14), col=col, mat=wd))
+    for sx in (-1, 1):
+        parts.append(g.box("rack_leg", (0.02, 0.28, 0.14), loc=(x0 + w / 2 + sx * rack_w / 2, cy - depth / 2 + 0.2, 0.07),
+                           col=col, mat=wd))
+    for i in range(2):
+        for k in (-1, 1):
+            parts.append(g.box("shoe", (0.09, 0.26, 0.08), loc=(x0 + w / 2 - 0.2 + i * 0.4 + k * 0.055,
+                                                                  cy - depth / 2 + 0.2, 0.19),
+                               col=col, mat=mats["black_metal"] if i else mats["leather_tan"], bevel=0.02,
+                               shade_smooth=True))
+    return parts

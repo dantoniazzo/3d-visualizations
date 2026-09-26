@@ -33,23 +33,27 @@ GAR_H = 3.10
 # --- stair hall ------------------------------------------------------
 HALL_X0, HALL_X1 = 6.00, 9.60         # 3.6 m wide: two flights plus a passage
 
-# Flight A, ground -> first, against the hall's west side, climbing +Y.
-# The foot stands 0.85 m clear of the entrance wall so there is somewhere to
-# stand at the bottom; the run shortens to suit, which the ramp handles.
-STAIR_A = dict(x0=6.10, x1=7.25, y0=1.20, y1=5.40, base=G, top=F1, steps=17)
-# Flight B, first -> attic, against the hall's east side, also climbing +Y,
-# far enough along Y that the two never block the passage between them.
-STAIR_B = dict(x0=8.45, x1=9.60, y0=3.00, y1=7.60, base=F1, top=F2, steps=16)
+# Flight A, ground -> first, up the middle of the hall, climbing +Y, with a
+# passage either side of it: the living room off the west one, the
+# cloakroom and utility off the east, and a doorway into the kitchen at the
+# end of each. Its foot stands 1.15 m clear of the entrance wall, clear of
+# the front door's swing, so the run is a steepish 3.9 m (17 risers of
+# 182 mm, goings of 229 mm).
+STAIR_A = dict(x0=7.225, x1=8.375, y0=1.50, y1=5.40, base=G, top=F1, steps=17)
+# Flight B, first -> attic, straight over flight A but climbing -Y: its foot
+# at the back of the landing, its head over flight A's, landing in the loft
+# clear of the roof slopes. On the first floor the landing is then a
+# gallery either side of flight A's stairwell, which every room opens off.
+# Its foot stands 1.15 m off the back wall, room to arrive at it from the
+# galleries: a 4.3 m run of 16 risers (184 mm rise, 269 mm going, 34°).
+STAIR_B = dict(x0=7.225, x1=8.375, y0=5.20, y1=9.50, base=F1, top=F2, steps=16, climb=-1)
 
-# Stairwell openings, cut generously past each flight: a void that stops at
-# the head of the stair leaves a slab edge exactly where a climber's head is,
-# which snags them on the way up and blocks the way back down.
-# A void runs from below the foot (for headroom on the way up) to exactly the
-# head of the flight — no further. Carrying it past the top leaves a stretch
-# with neither floor nor stair, which is a hole to fall through rather than a
-# way down.
-VOID_A = [(5.95, 0.95), (7.40, 0.95), (7.40, 5.40), (5.95, 5.40)]   # in the F1 slab
-VOID_B = [(8.30, 2.65), (9.70, 2.65), (9.70, 7.60), (8.30, 7.60)]   # in the F2 slab
+# Stairwell openings: from the head of each flight back as far as a
+# climber's head needs them — 2 m clear over the nosings — and no further,
+# so the floor goes on round them. Across, flush with the strings' outer
+# faces (5 mm outside the flight), so there is no slit to see up through.
+VOID_A = [(7.22, 1.40), (8.38, 1.40), (8.38, 5.40), (7.22, 5.40)]   # in the F1 slab
+VOID_B = [(7.22, 5.20), (8.38, 5.20), (8.38, 8.52), (7.22, 8.52)]   # in the F2 slab
 
 # --- attic footprint -------------------------------------------------
 # Inset from the external walls so the roof slopes clear its ceiling: at

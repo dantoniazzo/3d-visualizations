@@ -27,6 +27,31 @@ const SWING_SET = new Set(DOOR_SWINGS);
 const DIRECTION_SET = new Set(STAIR_DIRECTIONS);
 const TRIM_SIDES = new Set(["a", "b", "both"]);
 const BALUSTRADE_SIDES = new Set(["left", "right", "both"]);
+const CLOSET_DOOR_SIDES = new Set(["left", "right", "end"]);
+
+/**
+ * The cupboard under a flight (StructureBuilder.addCloset): how far up the
+ * run from the foot it goes — past the head, to a wall, or short of it —
+ * and its door, in a side panel ("left"/"right" climbing, its middle `at`
+ * metres up the run) or the end panel.
+ */
+function closetSpec(raw, run) {
+    const door = raw?.door;
+    const side = CLOSET_DOOR_SIDES.has(door?.side) ? door.side : null;
+    return {
+        to: clamp(num(raw?.to, run), 0.5, run + 3),
+        ...(side
+            ? {
+                  door: {
+                      side,
+                      width: clamp(num(door.width, 0.72), 0.4, 1.2),
+                      height: clamp(num(door.height, 1.9), 1.2, 2.4),
+                      ...(side !== "end" ? { at: clamp(num(door.at, run * 0.8), 0, run + 3) } : {}),
+                  },
+              }
+            : {}),
+    };
+}
 const RAIL_SIDES = new Set(["x-", "x+", "z-", "z+"]);
 
 const clamp = (n, min, max) => Math.min(max, Math.max(min, n));
@@ -375,6 +400,8 @@ export function validateScene(raw) {
                 ...(s?.model === true ? { model: true } : {}),
                 // Which side, climbing, has newels, spindles and a handrail.
                 ...(BALUSTRADE_SIDES.has(s?.balustrade) ? { balustrade: s.balustrade } : {}),
+                // A cupboard in the space under it, with a door.
+                ...(s?.closet ? { closet: closetSpec(s.closet, run) } : {}),
             },
         ];
     });
@@ -400,6 +427,9 @@ export function validateScene(raw) {
             // Sides guarded by a landing rail, in the opening's own frame.
             const rails = (Array.isArray(o?.rails) ? o.rails : []).filter((side) => RAIL_SIDES.has(side));
             if (rails.length) entry.rails = [...new Set(rails)];
+            // How far back from the edge the x- and x+ rails stand, when
+            // further than the usual 5 cm: clear of a flight's own balustrade.
+            if (o?.rail_offset_x != null) entry.rail_offset_x = clamp(num(o.rail_offset_x, 0.05), 0, 0.5);
             return [entry];
         }
     );

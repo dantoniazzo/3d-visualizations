@@ -768,7 +768,7 @@ export default class Editor extends EventEmitter {
         const tryPose = (pose) => {
             if (editable.caps.gravity) {
                 const bottom = editable.bottom(pose);
-                const support = this.snapper.supportUnder(editable.footprint(pose), bottom + 0.3, exclude);
+                const support = this.snapper.supportUnder(editable.footprint(pose), bottom + 0.3, exclude, editable.caps.gravity === "floor");
                 if (support !== null) pose.position.y += support - bottom;
             }
             return this.fit.test(editable.hulls(pose), { exclude }).ok;
@@ -879,7 +879,7 @@ export default class Editor extends EventEmitter {
         const exclude = new Set([editable]);
         const bottom = editable.bottom(pose);
         // Look down from just above the base, so it drops rather than climbs.
-        const support = this.snapper.supportUnder(editable.footprint(pose), bottom - STEP_UP + 0.02, exclude);
+        const support = this.snapper.supportUnder(editable.footprint(pose), bottom - STEP_UP + 0.02, exclude, editable.caps.gravity === "floor");
         if (support === null) return this.ui.toast("Nothing under it to rest on", "warn");
         pose.position.y += support - bottom;
         this.applyPose(editable, pose, "Drop to surface");

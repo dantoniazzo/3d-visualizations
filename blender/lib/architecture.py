@@ -354,12 +354,28 @@ def ceiling(name, points, z, col, mat, cornice_mat=None, walls=None):
 # ---------------------------------------------------------------------
 
 def build_stair(x0, x1, y0, y1, base, top, steps, col, mats,
-                balustrade="east", tread_mat="oak", trim="trim_white"):
-    """A straight flight climbing +Y, with closed strings and a balustrade.
+                balustrade="east", tread_mat="oak", trim="trim_white", climb=1):
+    """A straight flight climbing +Y — or with `climb` -1, -Y — with closed
+    strings and a balustrade.
 
     `balustrade` is which side gets the newels, spindles and handrail:
-    "east", "west", "both" or None. The other side is taken to be a wall.
+    "east", "west", "both" or None, as the flight stands; the other side is
+    taken to be a wall.
     """
+    if climb < 0:
+        # Built climbing +Y, then turned about its middle: the foot lands
+        # at y1 and the sides swap, so swap them first.
+        swapped = {"east": "west", "west": "east"}.get(balustrade, balustrade)
+        flight, rail = build_stair(x0, x1, y0, y1, base, top, steps, col, mats,
+                                   balustrade=swapped, tread_mat=tread_mat, trim=trim)
+        import mathutils
+        turn = (mathutils.Matrix.Translation(((x0 + x1) / 2, (y0 + y1) / 2, 0)) @
+                mathutils.Matrix.Rotation(math.pi, 4, "Z") @
+                mathutils.Matrix.Translation((-(x0 + x1) / 2, -(y0 + y1) / 2, 0)))
+        for obj in (flight, rail):
+            if obj is not None:
+                obj.matrix_basis = turn @ obj.matrix_basis
+        return flight, rail
     width = x1 - x0
     run = y1 - y0
     rise = (top - base) / steps

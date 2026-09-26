@@ -47,9 +47,33 @@ const STRING_T = 0.035;
 const STRING_DEPTH = 0.25;
 const STRING_ABOVE = 0.065;
 
+/** A cupboard under a flight: its panels' thickness, and the floor
+ *  structure over the storey it stands in. */
+const CLOSET_PANEL = 0.04;
+const CLOSET_SLAB = 0.25;
+
 /** A box, already moved to where it goes, ready to be merged. */
 function boxAt(w, h, d, x, y, z) {
     return new THREE.BoxGeometry(w, h, d).translate(x, y, z);
+}
+
+/**
+ * A flat panel `thickness` thick: `outline` a list of (u, v) points in its
+ * plane, `holes` a list of [u0, u1, height] door openings standing on its
+ * bottom edge. Extruded along +Z from 0.
+ */
+function panelGeometry(outline, holes, thickness) {
+    const shape = new THREE.Shape(outline.map(([u, v]) => new THREE.Vector2(u, v)));
+    for (const [u0, u1, height] of holes) {
+        // Just above the bottom edge, so the hole never shares it.
+        shape.holes.push(new THREE.Path([
+            new THREE.Vector2(u0, 0.001),
+            new THREE.Vector2(u0, height),
+            new THREE.Vector2(u1, height),
+            new THREE.Vector2(u1, 0.001),
+        ]));
+    }
+    return new THREE.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false, curveSegments: 1 });
 }
 
 /** BoxGeometry lays its UVs out in this face order. */
@@ -876,13 +900,17 @@ export default class StructureBuilder {
         // Without the kit, each step is one box, solid to the ground, so the
         // flight reads as a closed string rather than a floating ladder.
         if (!moulded) {
+            // Over a cupboard, a tread's thickness on the steps' fill.
+            const board = 0.03;
+            if (stair.closet) group.add(this.hollowSteps(stair, board, riser));
             for (let i = 0; i < steps; i++) {
                 const top = (i + 1) * stepRise;
-                const geometry = this.track(new THREE.BoxGeometry(stair.width, top, going));
+                const depth = stair.closet ? board : top;
+                const geometry = this.track(new THREE.BoxGeometry(stair.width, depth, going));
                 this.tileFace(geometry, FACE.py, stair.width, going, stair.finish);
 
                 const step = new THREE.Mesh(geometry, [riser, riser, tread, riser, riser, riser]);
-                step.position.set(0, top / 2, i * going + going / 2);
+                step.position.set(0, top - depth / 2, i * going + going / 2);
                 step.castShadow = true;
                 step.receiveShadow = true;
                 step.userData = {
@@ -937,7 +965,9 @@ export default class StructureBuilder {
             }
             group.add(this.mergedDecor(boxes, riser, "balustrade"));
         }
-        const slabDepth = 0.3;
+        // Over a cupboard, thin enough to stay above its soffit, so the
+        // headroom inside is what it looks.
+        const slabDepth = stair.closet ? 0.1 : 0.3;
 
         // The nosing line sits half a rise above the step corners, which puts
         // it through the middle of every tread. That leaves it half a rise
@@ -962,6 +992,9 @@ export default class StructureBuilder {
             midZ + (slabDepth / 2) * Math.sin(pitch)
         );
         collider.add(ramp);
+
+        // --- a cupboard under the flight -----------------------------------
+        if (stair.closet) this.addCloset(stair, sides, group, collider, riser);
 
         const surfaces = [
             {
@@ -994,13 +1027,19 @@ export default class StructureBuilder {
         const height = this.kit.size("stair_tread").y;
 
         const parts = [];
+        // Solid down to the floor, unless there is a cupboard under the
+        // flight: then the steps stand on its soffit.
+        if (stair.closet) group.add(this.hollowSteps(stair, board, riserMaterial));
         for (let i = 0; i < stair.steps; i++) {
             const top = (i + 1) * stepRise;
-            const step = new THREE.Mesh(this.track(new THREE.BoxGeometry(stair.width, top - board, going)), riserMaterial);
-            step.position.set(0, (top - board) / 2, i * going + going / 2);
-            step.castShadow = true;
-            step.receiveShadow = true;
-            group.add(step);
+            if (!stair.closet) {
+                const depth = top - board;
+                const step = new THREE.Mesh(this.track(new THREE.BoxGeometry(stair.width, depth, going)), riserMaterial);
+                step.position.set(0, top - board - depth / 2, i * going + going / 2);
+                step.castShadow = true;
+                step.receiveShadow = true;
+                group.add(step);
+            }
 
             parts.push(
                 this.kit
@@ -1024,6 +1063,142 @@ export default class StructureBuilder {
         };
         group.add(treads);
         return [treads];
+    }
+
+    /**
+     * The steps of a flight with a cupboard under it, as one piece: risers
+     * and the underside of the treads (`board` below each tread's top) over
+     * a bottom that follows the soffit, so nothing hangs below it.
+     */
+    hollowSteps(stair, board, material) {
+        const { run, steps, width } = stair;
+        const going = run / steps;
+        const stepRise = (stair.top_height - stair.base_height) / steps;
+        const { underside, floorAt } = StructureBuilder.closetShape(stair);
+        const outline = [[0, 0]];
+        for (let i = 0; i < steps; i++) {
+            const y = (i + 1) * stepRise - board;
+            outline.push([i * going, y], [(i + 1) * going, y]);
+        }
+        outline.push([run, Math.max(0, underside(run))], [floorAt, 0]);
+        const geometry = panelGeometry(outline, [], width).rotateY(-Math.PI / 2).translate(width / 2, 0, 0);
+        const mesh = new THREE.Mesh(this.track(geometry), material);
+        mesh.name = "steps";
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        return mesh;
+    }
+
+    /**
+     * A cupboard in the space under a flight (`stair.closet`): a soffit
+     * under the steps, a panel down each open side from the string to the
+     * floor — raked along the string's underside, running `to` metres up the
+     * run from the foot, past the head to a wall or short of it — an end
+     * panel where it stops short, and a door in one of them
+     * (StructureBuilder.closetDoor, hung by the scene builder). The panels
+     * collide, the door's opening in them left open; the ramp over them
+     * already stops a head inside the cupboard where the flight is low.
+     */
+    addCloset(stair, sides, group, collider, material) {
+        const { run, width } = stair;
+        const rise = stair.top_height - stair.base_height;
+        const shape = StructureBuilder.closetShape(stair);
+        const { to, underside, floorAt, ceiling } = shape;
+        const door = StructureBuilder.closetDoor(stair);
+        const parts = [];
+        const colliders = [];
+
+        // The soffit: a board under the steps along the strings' underside,
+        // from where they meet the floor to the head.
+        const pitch = Math.atan2(rise, run);
+        const soffitLength = (run - floorAt) / Math.cos(pitch);
+        parts.push(
+            new THREE.BoxGeometry(width - 0.01, 0.02, soffitLength)
+                .rotateX(-pitch)
+                .translate(0, (underside(floorAt) + underside(run)) / 2 - 0.01 / Math.cos(pitch), (floorAt + run) / 2)
+        );
+
+        // A side panel on each open side, its outer face flush with the string's.
+        const T = CLOSET_PANEL;
+        const top = (z) => Math.min(z <= run ? underside(z) : ceiling, ceiling);
+        // Along the floor, up the far end, then back down the raked top.
+        const outline = [[floorAt, 0], [to, 0], [to, top(to)]];
+        if (to > run) outline.push([run, top(run)]);
+        const step = run / 16;
+        for (let z = Math.min(run, to) - step; z > floorAt + 1e-3; z -= step) outline.push([z, top(z)]);
+        for (const side of sides) {
+            const hand = side > 0 ? "left" : "right";
+            const holes = door?.side === hand ? [[door.at - door.width / 2, door.at + door.width / 2, door.height]] : [];
+            const geometry = panelGeometry(outline, holes, T).rotateY(-Math.PI / 2).translate(side * (width / 2 + 0.005) + (side > 0 ? 0 : T), 0, 0);
+            parts.push(geometry.clone());
+            colliders.push(geometry);
+        }
+
+        // An end panel across the flight where the cupboard stops short of
+        // the head, up to the soffit.
+        if (to < run) {
+            const x0 = -width / 2 - 0.005;
+            const x1 = width / 2 + 0.005;
+            const h = Math.min(underside(to), ceiling);
+            const holes = door?.side === "end" ? [[-door.width / 2, door.width / 2, door.height]] : [];
+            const geometry = panelGeometry([[x0, 0], [x1, 0], [x1, h], [x0, h]], holes, T).translate(0, 0, to - T / 2);
+            parts.push(geometry.clone());
+            colliders.push(geometry);
+        }
+
+        group.add(this.mergedDecor(parts, material, "closet"));
+        for (const geometry of colliders) {
+            const mesh = new THREE.Mesh(this.track(geometry));
+            mesh.visible = false;
+            mesh.name = "closet";
+            mesh.userData = { label: "Cupboard" };
+            collider.add(mesh);
+        }
+    }
+
+    /**
+     * The shape of the space under a flight with a cupboard, in the
+     * flight's own frame (z up the run, y up): how far up the run the
+     * cupboard goes, the line of the strings' underside, where that meets
+     * the floor, and the ceiling of the storey it stands in.
+     */
+    static closetShape(stair) {
+        const rise = stair.top_height - stair.base_height;
+        const { run } = stair;
+        const stepRise = rise / stair.steps;
+        const slope = rise / run;
+        const drop = STRING_DEPTH / Math.cos(Math.atan2(rise, run));
+        const underside = (z) => stepRise + z * slope + STRING_ABOVE - drop;
+        return {
+            to: stair.closet.to ?? run,
+            underside,
+            floorAt: Math.max(0, (drop - stepRise - STRING_ABOVE) / slope),
+            // The floor above is a slab's depth thick.
+            ceiling: rise - CLOSET_SLAB,
+        };
+    }
+
+    /**
+     * Where a flight's cupboard door hangs, in the flight's own frame: the
+     * middle of its opening, and a turn about Y taking a door's frame — X
+     * along its wall, +Z the side it opens to — onto the panel it is in,
+     * opening outwards. Null without a door.
+     */
+    static closetDoor(stair) {
+        const spec = stair.closet?.door;
+        if (!spec) return null;
+        const { width } = stair;
+        const { to } = StructureBuilder.closetShape(stair);
+        const door = { side: spec.side, width: spec.width ?? 0.72, height: spec.height ?? 1.9, at: spec.at ?? 0 };
+        if (door.side === "end") {
+            return { ...door, position: new THREE.Vector3(0, 0, to), rotation: 0 };
+        }
+        const side = door.side === "left" ? 1 : -1;
+        return {
+            ...door,
+            position: new THREE.Vector3(side * (width / 2 + 0.005 - CLOSET_PANEL / 2), 0, door.at),
+            rotation: (side * Math.PI) / 2,
+        };
     }
 
     /**
@@ -1153,23 +1328,27 @@ export default class StructureBuilder {
     /**
      * Rails round the open sides of a floor opening — `hole.rails`, a list
      * of "x-", "x+", "z-" and "z+" in the opening's own frame — standing on
-     * the floor it is cut through, 5 cm back from its edge. Newels at the
+     * the floor it is cut through, 5 cm back from its edge, or the x sides
+     * `hole.rail_offset_x` back, clear of a flight's own balustrade. Newels at the
      * corners, spindles between, a handrail on top, and an invisible panel
-     * along each side for the collision.
+     * along each side for the collision. With `lining` ({depth, finish}),
+     * the opening's lining too.
      *
      * @returns {THREE.Group|null}
      */
-    buildRails(hole) {
-        if (!hole.rails?.length) return null;
+    buildRails(hole, lining = null) {
+        if (!hole.rails?.length && !lining) return null;
 
         const group = new THREE.Group();
         group.name = `rails:${hole.id}`;
         group.userData = { kind: "rail", holeId: hole.id };
         group.position.set(hole.position[0], hole.elevation, hole.position[1]);
         group.rotation.y = THREE.MathUtils.degToRad(hole.yaw || 0);
+        if (lining) group.add(this.liningMesh(hole, lining));
+        if (!hole.rails?.length) return group;
 
         const H = RAIL_HEIGHT;
-        const hw = hole.width / 2 + 0.05;
+        const hw = hole.width / 2 + (hole.rail_offset_x ?? 0.05);
         const hd = hole.depth / 2 + 0.05;
         const ends = {
             "x-": [[-hw, -hd], [-hw, hd]],
@@ -1237,6 +1416,34 @@ export default class StructureBuilder {
 
         group.add(this.mergedDecor(parts, this.materials.getTrim("trim_white"), "landing-rail"));
         return group;
+    }
+
+    /**
+     * The slab's edge round a floor opening, from the ceiling below up to
+     * the floor, facing into the opening, in the ceiling's finish: looking
+     * up past a flight whose string has risen into the slab, there is no
+     * gap between the ceiling and the floor above to see through. 3 mm back
+     * from the edge, behind a string flush with it.
+     */
+    liningMesh(hole, { depth, finish }) {
+        const hw = hole.width / 2 + 0.003;
+        const hd = hole.depth / 2 + 0.003;
+        const y = -depth / 2;
+        const faces = [
+            new THREE.PlaneGeometry(2 * hd, depth).rotateY(Math.PI / 2).translate(-hw, y, 0),
+            new THREE.PlaneGeometry(2 * hd, depth).rotateY(-Math.PI / 2).translate(hw, y, 0),
+            new THREE.PlaneGeometry(2 * hw, depth).translate(0, y, -hd),
+            new THREE.PlaneGeometry(2 * hw, depth).rotateY(Math.PI).translate(0, y, hd),
+        ];
+        const geometry = this.track(boxUVs(mergeParts(faces), this.materials.tileSize(finish)));
+        for (const face of faces) face.dispose();
+        const mesh = new THREE.Mesh(geometry, this.materials.getSurface(finish, "ceiling"));
+        mesh.name = "lining";
+        mesh.receiveShadow = true;
+        // Drawn, not collided with: the ceiling it finishes is not either,
+        // and a head going down a flight passes close under its edge.
+        mesh.userData = { decor: true };
+        return mesh;
     }
 
     // ------------------------------------------------------------------

@@ -41,10 +41,11 @@ RINGS = [
             a.door(4.45, 0.90, 2.04, swing=18),      # garage -> snug
             a.window(8.05, 2.4, 1.80, 0.60, panes_x=4, panes_z=3),
         ]),
-        # North elevation, offset = 16 - x
+        # North elevation, offset = 16 - x. The kitchen window's cill clears
+        # the worktop under it.
         ((P.W - E, P.D - E), (E, P.D - E), [
             a.french(4.00, 2.6, 2.30, panes_x=4, panes_z=3),
-            a.window(8.00, 1.6, 1.50, 0.90),
+            a.window(8.00, 1.6, 1.40, 1.00),
             a.window(13.00, 1.8, 1.60, 0.70, panes_x=3),
         ]),
         # West elevation, offset = 11 - y
@@ -93,34 +94,48 @@ RINGS = [
 
 PARTITIONS = [
     dict(level="ground", base=P.G, height=P.H_G, walls=[
-        # Hall / living-study spine
-        ((5.95, P.IY0), (5.95, P.IY1), [a.door(0.43, 0.76, swing=25)],
+        # Hall / living-study spine; the door far enough off the front wall
+        # for its casing, hung on that side so it folds back into the corner.
+        ((5.95, P.IY0), (5.95, P.IY1), [a.door(0.53, 0.76, swing=-25)],
          "wall_warm", "wall_white"),
         # Living / study
         ((P.IX0, 6.45), (5.95, 6.45), [a.doorway(2.65, 1.2)], "wall_sage", "wall_warm"),
-        # Hall / wc-utility
-        ((9.65, P.IY0), (9.65, 5.65), [a.door(1.05, 0.76), a.door(3.65, 0.80)],
+        # Hall / wc-utility. Both doors open into their rooms, not across the
+        # passage, hung on the south jamb: the cloakroom's clear of its pan,
+        # the utility's so its leaf is not in the way through to the kitchen.
+        ((9.65, P.IY0), (9.65, 5.65),
+         [a.door(1.05, 0.76, swing=-20, outward=True), a.door(3.65, 0.80, swing=-20, outward=True)],
          "wall_white", "wall_clay"),
         # WC / utility
         ((9.65, 2.45), (11.45, 2.45), [], "wall_white", "wall_clay"),
         # Utility / snug
-        ((11.45, P.IY0), (11.45, 5.65), [], "wall_charcoal", "wall_white"),
-        # The long wall between the front rooms and the kitchen
+        ((11.45, P.IY0), (11.45, 5.65), [], "wall_white", "wall_charcoal"),
+        # The long wall between the front rooms and the kitchen: a doorway
+        # into the kitchen at the end of each passage past the stairs.
         ((5.95, 5.65), (P.IX1, 5.65), [
-            a.doorway(2.05, 1.60), a.door(4.55, 0.80), a.door(7.55, 0.85, swing=20),
+            a.doorway(0.65, 1.10), a.doorway(3.05, 1.10), a.door(4.55, 0.80),
+            a.door(7.55, 0.85, swing=20),
         ], "wall_white", "wall_white"),
     ]),
     dict(level="first", base=P.F1, height=P.H_F1, walls=[
+        # West rooms off the gallery. The dressing room is the principal
+        # bedroom's, entered from it.
         ((5.95, P.IY0), (5.95, P.IY1),
-         [a.door(1.35, swing=20), a.door(4.15, 0.80), a.door(7.85, swing=15)],
+         [a.door(1.35, swing=-20), a.door(7.85, swing=15)],
          "wall_sage", "wall_white"),
+        # East rooms off the gallery, their doors opening into the rooms
+        # rather than across it.
         ((9.65, P.IY0), (9.65, P.IY1),
-         [a.door(1.85, swing=18), a.door(5.15, 0.80), a.door(8.25, swing=22)],
+         [a.door(1.85, swing=-18, outward=True), a.door(5.15, 0.80, outward=True),
+          a.door(8.25, swing=22, outward=True)],
          "wall_white", "wall_white"),
         ((P.IX0, 3.15), (5.95, 3.15), [], "wall_white", "wall_sage"),
-        ((3.25, 3.20), (3.25, 5.85), [], "wall_warm", "wall_white"),
+        ((3.25, 3.20), (3.25, 5.85), [], "wall_white", "wall_warm"),
+        # Principal bedroom / en-suite and dressing room: the doors at either
+        # end, the bed's wall between them, the en-suite's folding back
+        # towards the outside wall.
         ((P.IX0, 5.85), (5.95, 5.85),
-         [a.door(1.45, 0.76), a.door(4.25, 0.80)], "wall_warm", "wall_white"),
+         [a.door(1.45, 0.76, swing=-20), a.door(5.05, 0.76)], "wall_warm", "wall_white"),
         ((13.35, P.IY0), (13.35, 2.35), [a.door(0.95, 0.76)], "wall_white", "wall_white"),
         ((13.35, 2.35), (P.IX1, 2.35), [], "wall_white", "wall_white"),
         ((9.65, 4.25), (P.IX1, 4.25), [], "wall_white", "wall_white"),
@@ -160,20 +175,28 @@ GARAGE = dict(
 # Stairs: flights, their balustrades, and the rails round their wells
 # ---------------------------------------------------------------------
 
-#: Both flights climb +Y. `balustrade` is the open side, the other being a
-#: wall; `level` is the storey the flight leaves from.
+#: `balustrade` is the open side or sides, the other being a wall; `level`
+#: is the storey the flight leaves from. A flight climbs +Y unless its
+#: `climb` is -1. `closet` encloses the space under it as a cupboard: its
+#: sides run from where the flight's string meets the floor to `to` metres
+#: up the run from the foot — past the head, to a wall, or short of it,
+#: where an end panel closes it — with a door in one side (`side`
+#: "left"/"right" as seen climbing, its middle `at` metres up the run) or
+#: in the end panel (`side` "end").
 FLIGHTS = [
-    dict(id="flight-a", level="ground", balustrade="east", void=P.VOID_A, **P.STAIR_A),
-    dict(id="flight-b", level="first", balustrade="west", void=P.VOID_B, **P.STAIR_B),
+    dict(id="flight-a", level="ground", balustrade="both", void=P.VOID_A, **P.STAIR_A,
+         closet=dict(to=4.10, door=dict(side="right", at=3.35, width=0.72))),
+    dict(id="flight-b", level="first", balustrade="both", void=P.VOID_B, **P.STAIR_B,
+         closet=dict(to=3.25, door=dict(side="end", width=0.72))),
 ]
 
 #: Rails guard the open sides of each stairwell, and only those: a rail
 #: across the head of a flight is a fence in front of the way down.
 LANDING_RAILS = [
     dict(flight="flight-a", z=P.F1, level="first",
-         points=[(7.45, 5.40), (7.45, 0.90), (5.95, 0.90)]),
+         points=[(7.10, 5.40), (7.10, 1.35), (8.50, 1.35), (8.50, 5.40)]),
     dict(flight="flight-b", z=P.F2, level="attic",
-         points=[(8.25, 7.60), (8.25, 2.60), (9.75, 2.60), (9.75, 7.60)]),
+         points=[(7.10, 5.20), (7.10, 8.57), (8.50, 8.57), (8.50, 5.20)]),
 ]
 
 # ---------------------------------------------------------------------

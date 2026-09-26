@@ -260,7 +260,10 @@ def app_opening(o, wall_id, index):
         entry["type"] = "door"
         entry["door"] = {
             "type": "hinged",
-            "swing": "inward_left" if o.opts.get("swing", 0) < 0 else "inward_right",
+            # Inward is to the wall's left going from start to end;
+            # `outward` hangs the leaf to open to its right instead.
+            "swing": ("outward" if o.opts.get("outward") else "inward")
+                     + ("_left" if o.opts.get("swing", 0) < 0 else "_right"),
             "leaf": LEAF_TRIMS.get(o.opts.get("leaf", "door_leaf"), "trim_white"),
             "frame": "trim_white",
             "handle": HANDLE_TRIMS.get(o.opts.get("handle", "brass"), "metal_brass"),
@@ -393,13 +396,17 @@ def app_spec():
 
     stairs, holes = [], []
     for f in S.FLIGHTS:
-        # Every flight climbs Blender +Y, the app's -Z: a heading of 180.
-        # Climbing that way, east is on the right.
-        stairs.append({
+        # A flight climbing Blender +Y climbs the app's -Z: a heading of 180,
+        # with its foot at y0 and east on the right. One climbing -Y has a
+        # heading of 0, its foot at y1 and east on the left.
+        up = f.get("climb", 1) > 0
+        sides = {"east": "right", "west": "left", "both": "both"} if up else \
+            {"east": "left", "west": "right", "both": "both"}
+        stair = {
             "id": f["id"],
-            "start": [round((f["x0"] + f["x1"]) / 2, 4), round(-f["y0"], 4)],
-            "direction": "south",
-            "yaw": 180,
+            "start": [round((f["x0"] + f["x1"]) / 2, 4), round(-(f["y0"] if up else f["y1"]), 4)],
+            "direction": "south" if up else "north",
+            "yaw": 180 if up else 0,
             "width": round(f["x1"] - f["x0"], 4),
             "base_height": f["base"],
             "top_height": f["top"],
@@ -407,8 +414,16 @@ def app_spec():
             "steps": f["steps"],
             "finish": "oak_parquet",
             "riser": "trim_white",
-            "balustrade": {"east": "right", "west": "left", "both": "both"}[f["balustrade"]],
-        })
+            "balustrade": sides[f["balustrade"]],
+        }
+        if f.get("closet"):
+            c = f["closet"]
+            door = dict(c["door"])
+            door.update(width=round(door["width"], 4), height=round(door.get("height", 1.90), 4))
+            if "at" in door:
+                door["at"] = round(door["at"], 4)
+            stair["closet"] = {"to": round(c["to"], 4), "door": door}
+        stairs.append(stair)
         xs = [p[0] for p in f["void"]]
         ys = [p[1] for p in f["void"]]
         rail = next(r for r in S.LANDING_RAILS if r["flight"] == f["id"])
@@ -421,6 +436,9 @@ def app_spec():
             "yaw": 0,
             "stair_id": f["id"],
             "rails": rail_sides(rail["points"], f["void"]),
+            # The rails along the flight stand back from the opening, which
+            # is flush with its strings, clear of its own balustrade.
+            "rail_offset_x": round(min(xs) - min(p[0] for p in rail["points"]), 4),
         })
 
     return {"rooms": rooms, "walls": walls, "roofs": roofs, "stairs": stairs,
