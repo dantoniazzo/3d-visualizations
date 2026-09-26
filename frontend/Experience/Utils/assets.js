@@ -20,6 +20,6 @@ export default [
 
 /** Character picker options — `id` must match a resource name above. */
 export const AVATARS = [
-    { id: "male", label: "Alex", image: "/images/avatar_male_head.png" },
-    { id: "female", label: "Sam", image: "/images/avatar_female_head.png" },
+    { id: "male", label: "Alex", image: "/images/avatar_male_head.webp" },
+    { id: "female", label: "Sam", image: "/images/avatar_female_head.webp" },
 ];

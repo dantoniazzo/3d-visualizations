@@ -18,34 +18,10 @@ import { existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { findBlender } from "./lib/blender.mjs";
+
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const BLENDER_DIR = join(ROOT, "blender");
-
-// Blender does not put itself on PATH on macOS or Windows, so look where it
-// actually installs before giving up.
-const CANDIDATES = [
-    process.env.BLENDER,
-    "blender",
-    "/Applications/Blender.app/Contents/MacOS/Blender",
-    "/usr/bin/blender",
-    "/usr/local/bin/blender",
-    "C:\\Program Files\\Blender Foundation\\Blender 5.1\\blender.exe",
-].filter(Boolean);
-
-function findBlender() {
-    for (const path of CANDIDATES) {
-        try {
-            const version = execFileSync(path, ["--version"], {
-                encoding: "utf8",
-                stdio: ["ignore", "pipe", "ignore"],
-            });
-            return { path, version: version.split("\n")[0].trim() };
-        } catch {
-            // Not at this path; try the next.
-        }
-    }
-    return null;
-}
 
 const blender = findBlender();
 if (!blender) {

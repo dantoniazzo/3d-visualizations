@@ -1,5 +1,7 @@
 import { EventEmitter } from "events";
 
+import { MAX_PIXEL_RATIO } from "./device.js";
+
 /**
  * The size of the viewport the canvas fills.
  *
@@ -30,6 +32,6 @@ export default class Sizes extends EventEmitter {
         this.width = Math.max(1, this.element?.clientWidth || window.innerWidth);
         this.height = Math.max(1, this.element?.clientHeight || window.innerHeight);
         this.aspect = this.width / this.height;
-        this.pixelRatio = Math.min(window.devicePixelRatio, 2);
+        this.pixelRatio = Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO);
     }
 }

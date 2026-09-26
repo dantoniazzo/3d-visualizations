@@ -15,16 +15,25 @@
     "seed": "node scripts/seed-scenes.js",
     "models": "node scripts/build-models.mjs",
     "upload-models": "node scripts/upload-models.mjs",
-    "furniture": "node scripts/build-models.mjs --furniture"
+    "furniture": "node scripts/build-models.mjs --furniture",
+    "avatars": "node scripts/optimize-avatars.mjs",
+    "bake": "node scripts/bake-public.mjs"
   },
   "devDependencies": {
+    "@gltf-transform/core": "^4.5.0",
+    "@gltf-transform/extensions": "^4.5.0",
+    "@gltf-transform/functions": "^4.5.0",
     "concurrently": "^8.2.0",
+    "draco3dgltf": "^1.5.7",
+    "meshoptimizer": "^1.2.0",
     "nodemon": "^3.1.0",
     "sass": "^1.71.0",
+    "sharp": "^0.35.4",
     "vite": "^7.3.6"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1113.0",
+    "compression": "^1.8.2",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "events": "^3.3.0",

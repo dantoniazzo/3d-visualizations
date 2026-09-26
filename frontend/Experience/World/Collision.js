@@ -154,11 +154,17 @@ export function buildOctree(roots, skip = () => false) {
     return octree;
 }
 
+/**
+ * A mesh's triangles, in world space. A mesh that says what it is
+ * (`userData.label`, as a published runtime file's do) passes that on to
+ * each, for a ray to report what it hit.
+ */
 function addMeshTriangles(octree, mesh) {
     const position = mesh.geometry.attributes.position;
     const index = mesh.geometry.index;
     const matrix = mesh.matrixWorld;
     const triangleCount = index ? index.count / 3 : position.count / 3;
+    const label = mesh.userData?.label;
 
     for (let t = 0; t < triangleCount; t++) {
         const a = new THREE.Vector3();
@@ -168,7 +174,9 @@ function addMeshTriangles(octree, mesh) {
         a.fromBufferAttribute(position, index ? index.getX(i) : i).applyMatrix4(matrix);
         b.fromBufferAttribute(position, index ? index.getX(i + 1) : i + 1).applyMatrix4(matrix);
         c.fromBufferAttribute(position, index ? index.getX(i + 2) : i + 2).applyMatrix4(matrix);
-        octree.addTriangle(new THREE.Triangle(a, b, c));
+        const triangle = new THREE.Triangle(a, b, c);
+        if (label) triangle.label = label;
+        octree.addTriangle(triangle);
     }
     return triangleCount;
 }

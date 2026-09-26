@@ -4,7 +4,7 @@
   "summary": "A detached three-storey family house of about 380 m², furnished in Blender: open-plan kitchen-diner, living room, study and snug on the ground floor, four bedrooms with two en-suites and the family bathroom on the first, and a loft room with its own shower room above. Every internal door works, and both stair flights are walkable.",
   "brief": "",
   "notes": [],
-  "updated_at": "2026-09-24T19:15:01.944Z",
+  "updated_at": "2026-09-25T22:33:52.216Z",
   "scene": {
     "name": "Wrenfield House",
     "summary": "A detached three-storey family house of about 380 m², furnished in Blender: open-plan kitchen-diner, living room, study and snug on the ground floor, four bedrooms with two en-suites and the family bathroom on the first, and a loft room with its own shower room above. Every internal door works, and both stair flights are walkable.",
@@ -2666,8 +2666,8 @@
         "id": "m-modern-coffee-table-01",
         "catalog_id": "model:modern_coffee_table_01",
         "position": [
-          3,
-          0,
+          3.1,
+          0.0159,
           -3.1
         ],
         "rotation": 0,
@@ -2743,8 +2743,8 @@
         "id": "m-book-encyclopedia-set-01",
         "catalog_id": "model:book_encyclopedia_set_01",
         "position": [
-          3.149,
-          0.4,
+          3.249,
+          0.4159,
           -3.1
         ],
         "rotation": 0,
@@ -2985,7 +2985,7 @@
         "id": "m-classicconsole-01",
         "catalog_id": "model:ClassicConsole_01",
         "position": [
-          11.824,
+          12.124,
           0,
           0.4619
         ],
@@ -3645,8 +3645,8 @@
         "id": "m-kit-hob",
         "catalog_id": "model:kit_hob",
         "position": [
-          7.7756,
-          0.959,
+          8.14,
+          0.957,
           -7.765
         ],
         "rotation": 0,
@@ -3656,9 +3656,42 @@
         "id": "m-kit-island",
         "catalog_id": "model:kit_island",
         "position": [
-          8.1756,
-          0.002,
+          8.54,
+          0,
           -8.085
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "f-muhjee41yw",
+        "catalog_id": "fridge",
+        "position": [
+          8.9137,
+          0,
+          2.4554
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "f-muhjeotd52",
+        "catalog_id": "sofa",
+        "position": [
+          5.6448,
+          0,
+          5.112
+        ],
+        "rotation": 0,
+        "scale": 1
+      },
+      {
+        "id": "f-muhjf4gdcg",
+        "catalog_id": "coffee-table",
+        "position": [
+          10.9778,
+          6.05,
+          -5.1235
         ],
         "rotation": 0,
         "scale": 1

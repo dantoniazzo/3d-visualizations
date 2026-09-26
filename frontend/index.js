@@ -3,7 +3,9 @@ import { io } from "socket.io-client";
 
 import Experience from "./Experience/Experience.js";
 import elements from "./Experience/Utils/functions/elements.js";
+import { setQuality } from "./Experience/Utils/device.js";
 import { finishesFor, FINISHES } from "../shared/catalog.js";
+import { publishOptions } from "../shared/publishOptions.js";
 
 /**
  * App shell.
@@ -25,8 +27,12 @@ const dom = elements({
     // HUD
     menuButton: "#menu-button",
     viewToggle: "#view-toggle",
+    birdToggle: "#bird-toggle",
+    floorPicker: "#floor-picker",
     editorToggle: "#editor-toggle",
     viewToggleLabel: "#view-toggle-label",
+    lightingToggle: "#lighting-toggle",
+    lightingToggleLabel: "#lighting-toggle-label",
     menuPanel: "#menu-panel",
     menuSceneName: "#menu-scene-name",
     menuSceneSummary: "#menu-scene-summary",
@@ -37,6 +43,9 @@ const dom = elements({
     actionPrompt: "#action-prompt",
     actionKey: "#action-key",
     actionLabel: "#action-label",
+    touchAction: "#touch-action",
+    touchActionIcon: "#touch-action-icon",
+    touchActionLabel: "#touch-action-label",
     finishPicker: "#finish-picker",
     finishTarget: "#finish-target",
     finishGrid: "#finish-grid",
@@ -55,9 +64,15 @@ let chatSocket = null;
 let updateSocket = null;
 let userName = "";
 let currentSceneId = null;
+/** Opened from a public link: walk round and talk, nothing that edits or saves. */
+let publicView = false;
 
 /** Whatever the crosshair is currently on, from the world's "look" event. */
 let lookTarget = null;
+/** The door or car in reach, from the world's "prompt" event. */
+let worldPrompt = null;
+/** The key of the action on offer (E, F or T), for the touch button. */
+let actionKey = null;
 
 const editor = () => experience?.world?.editor ?? null;
 const editing = () => Boolean(editor()?.active);
@@ -113,15 +128,76 @@ async function loadSceneList() {
     }
 }
 
-async function openScene(sceneId) {
+async function openScene(sceneId, options = {}) {
     dom.launcherStatus.textContent = "Opening…";
     try {
+        // A public link opens the latest published version when there is
+        // one — frozen as it was published, with its optimised snapshot —
+        // and the space as it stands when there is not. `?version=` opens
+        // an earlier version, and `?live` none, to compare them.
+        const params = new URL(window.location.href).searchParams;
+        const version = params.get("version");
+        const wantPublished = options.publicView && !params.has("live");
+        const published = wantPublished ? await findPublished(sceneId, version) : null;
+        if (wantPublished && version && !published) throw new Error(`There is no published version ${version} of this space.`);
+        if (published) {
+            setQuality(published.options.quality);
+            enterScene(sceneId, published.spec, { ...options, published });
+            return;
+        }
         const record = await api(`/api/scenes/${sceneId}`);
-        enterScene(record.id, record.scene);
+        enterScene(record.id, record.scene, options);
     } catch (error) {
         dom.launcherStatus.textContent = error.message;
-        // Fall back to the library so a bad link isn't a dead end.
-        loadSceneList();
+        // Fall back to the library so a bad link isn't a dead end — except
+        // on a public link, whose visitors have no business in the library.
+        if (!options.publicView) loadSceneList();
+    }
+}
+
+/**
+ * A published version of a space — the latest, or the one asked for — or
+ * null if there is none.
+ */
+async function findPublished(sceneId, version = null) {
+    const base = `/published/${encodeURIComponent(sceneId)}`;
+    try {
+        const response = version
+            ? await fetch(`/api/scenes/${encodeURIComponent(sceneId)}/published?version=${encodeURIComponent(version)}`)
+            : await fetch(`${base}/manifest.json`, { cache: "no-cache" });
+        if (!response.ok) return null;
+        const manifest = await response.json();
+        const spec = await (await fetch(`${base}/${manifest.spec}`)).json();
+        // Baked lighting (npm run bake), when there is any: a lightmap for
+        // each of day and night.
+        const lighting = manifest.lighting && {
+            ...manifest.lighting,
+            variants: Object.fromEntries(
+                Object.entries(manifest.lighting.variants).map(([name, variant]) => [
+                    name,
+                    {
+                        ...variant,
+                        lightmap: `${base}/${variant.lightmap}`,
+                        lightmapPhone: variant.lightmapPhone && `${base}/${variant.lightmapPhone}`,
+                    },
+                ])
+            ),
+        };
+        return {
+            spec,
+            view: `${base}/${manifest.view}`,
+            version: manifest.version,
+            options: publishOptions(manifest.options),
+            lighting,
+            // What the bird's-eye view may do without showing a face the
+            // publish threw away, and the floors its meshes are levelled by.
+            birdView: manifest.birdView,
+            levels: manifest.levels,
+            // Collision, materials and glass, so the house need not be built.
+            runtime: manifest.runtime && `${base}/${manifest.runtime}`,
+        };
+    } catch {
+        return null;
     }
 }
 
@@ -129,20 +205,25 @@ async function openScene(sceneId) {
 // Entering a space
 // ---------------------------------------------------------------------
 
-function enterScene(sceneId, spec) {
+function enterScene(sceneId, spec, options = {}) {
     currentSceneId = sceneId;
+    publicView = Boolean(options.publicView);
+    document.body.classList.toggle("public-view", publicView);
 
     // Reflected in the URL so a link drops a colleague into the same space.
-    const url = new URL(window.location.href);
-    url.searchParams.set("scene", sceneId);
-    window.history.replaceState({}, "", url);
+    // A public link already says where it goes.
+    if (!publicView) {
+        const url = new URL(window.location.href);
+        url.searchParams.set("scene", sceneId);
+        window.history.replaceState({}, "", url);
+    }
 
     dom.launcher.style.display = "none";
     dom.preloader.style.display = "flex";
 
     connectSockets(sceneId);
 
-    experience = new Experience(dom.canvas, updateSocket, spec);
+    experience = new Experience(dom.canvas, updateSocket, spec, { publicView, published: options.published });
     experience.onName = handleName;
     experience.onAvatar = handleAvatar;
 
@@ -161,6 +242,10 @@ function enterScene(sceneId, spec) {
     world.on("save-now", () => scheduleSave(0));
     world.on("leave-space", leaveSpace);
     world.on("mode", onModeChange);
+    world.on("publish", () => startPublish());
+    world.on("lighting", updateLightingToggle);
+    world.on("bird-ready", setupFloorPicker);
+    world.on("bird", updateBirdView);
 
     // Desktop looks with the mouse via pointer lock; touch keeps drag-to-orbit.
     if (experience.camera.scheme === "pointerLock") {
@@ -168,6 +253,8 @@ function enterScene(sceneId, spec) {
         experience.camera.on("lockchange", (locked) => {
             document.body.classList.toggle("pointer-locked", locked);
         });
+    } else {
+        document.body.classList.add("input-touch");
     }
 }
 
@@ -250,12 +337,7 @@ function onLook(target) {
     dom.inspectLabel.textContent = label;
     dom.inspectLabel.classList.toggle("visible", Boolean(label));
 
-    // Only surfaces can be retextured; the prompt says so when one is aimed at.
-    if (target?.kind === "surface") {
-        showAction("T", "Change finish");
-    } else if (target?.kind !== "door") {
-        showAction(null);
-    }
+    refreshAction();
 
     // Keep an open picker pointed at whatever is now under the crosshair.
     if (!dom.finishPicker.hidden && target?.kind === "surface") {
@@ -264,11 +346,43 @@ function onLook(target) {
 }
 
 function onDoorPrompt(prompt) {
-    if (prompt) showAction(prompt.key, prompt.label);
-    else if (lookTarget?.kind !== "surface") showAction(null);
+    worldPrompt = prompt;
+    refreshAction();
 }
 
+/**
+ * The one action on offer: a door or the car in reach first — whatever the
+ * crosshair has moved on to, which an opened door swings away from — and
+ * otherwise, in the editor, a new finish for the surface aimed at.
+ */
+function refreshAction() {
+    if (worldPrompt) showAction(worldPrompt.key, worldPrompt.label);
+    else if (lookTarget?.kind === "surface" && !publicView) showAction("T", "Change finish");
+    else showAction(null);
+}
+
+/** What the touch button says for each action, in a word. */
+const TOUCH_ACTIONS = {
+    "Open door": { label: "Open", icon: "door" },
+    "Close door": { label: "Close", icon: "door" },
+    Drive: { label: "Drive", icon: "car" },
+    "Get out": { label: "Get out", icon: "car" },
+    "Change finish": { label: "Finish", icon: "finish" },
+};
+
+/**
+ * The action on offer — a door, the car, a finish — as a key hint on a
+ * keyboard, and as a button under the right thumb on a touch screen.
+ */
 function showAction(key, label) {
+    actionKey = key || null;
+    const touch = key && TOUCH_ACTIONS[label];
+    dom.touchAction.hidden = !touch;
+    if (touch) {
+        dom.touchActionLabel.textContent = touch.label;
+        dom.touchActionIcon.dataset.icon = touch.icon;
+        dom.touchAction.setAttribute("aria-label", label);
+    }
     if (!key) {
         dom.actionPrompt.hidden = true;
         return;
@@ -278,11 +392,25 @@ function showAction(key, label) {
     dom.actionPrompt.hidden = false;
 }
 
+/** The touch button does what the key would. */
+function runAction() {
+    const player = experience?.world?.player;
+    if (!player || !actionKey) return;
+    if (actionKey === "E") player.interact();
+    else if (actionKey === "F") player.inVehicle ? player.exitVehicle() : player.enterNearestVehicle();
+    else if (actionKey === "T") dom.finishPicker.hidden ? openFinishPicker() : closeFinishPicker();
+}
+
+dom.touchAction.addEventListener("click", (event) => {
+    event.preventDefault();
+    runAction();
+});
+
 /** Surface the picker is editing — frozen while the panel is open. */
 let pickerSurface = null;
 
 function openFinishPicker() {
-    if (!lookTarget || lookTarget.kind !== "surface") return;
+    if (publicView || !lookTarget || lookTarget.kind !== "surface") return;
 
     pickerSurface = lookTarget;
     renderFinishGrid(pickerSurface);
@@ -330,9 +458,24 @@ function renderFinishGrid(target) {
 
 let saveTimer = null;
 
+/**
+ * Publish the space's public view: the panel's options, then the snapshot.
+ * The snapshot is taken of the space as a visitor sees it, so edit mode —
+ * with its cutaways and hidden floors — is left first. The panel and the
+ * snapshot code load only now.
+ */
+async function startPublish() {
+    if (publicView || !currentSceneId || !experience) return;
+    editor()?.leave();
+    experience.camera.releaseLock?.();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const { default: PublishPanel } = await import("./Experience/Publish/PublishPanel.js");
+    new PublishPanel(experience, currentSceneId);
+}
+
 /** Debounced save of the whole spec — finishes, furniture, stairs, doors. */
 function scheduleSave(delay = 900) {
-    if (!currentSceneId || !experience?.world.sceneBuilder) return;
+    if (publicView || !currentSceneId || !experience?.world.sceneBuilder) return;
 
     editor()?.ui.setSaveState("pending");
     clearTimeout(saveTimer);
@@ -449,12 +592,74 @@ dom.menuButton.addEventListener("click", () => toggleMenu());
  */
 dom.viewToggle.addEventListener("click", (event) => {
     event.stopPropagation();
-    experience?.world?.player?.toggleView();
+    // From above, the button goes back to walking in the view it names.
+    if (experience?.world?.birdView?.active) experience.world.toggleBirdView();
+    else experience?.world?.player?.toggleView();
+});
+
+/**
+ * Each floor from above, in a public view: the button, and a picker for
+ * the floor on show while it is on.
+ */
+function setupFloorPicker(count) {
+    dom.birdToggle.hidden = false;
+    const birdView = experience.world.birdView;
+    dom.floorPicker.innerHTML = birdView.floors
+        .map(({ level }) => {
+            const name = birdView.constructor.floorName(level);
+            return `<button data-level="${level}"><span class="floor-long">${name}</span><span class="floor-short">${name.split(" ")[0]}</span></button>`;
+        })
+        .join("");
+    // One floor has nothing to pick between.
+    dom.floorPicker.dataset.count = count;
+}
+
+function updateBirdView({ active, level }) {
+    dom.birdToggle.classList.toggle("is-active", active);
+    dom.floorPicker.hidden = !active || Number(dom.floorPicker.dataset.count) < 2;
+    for (const button of dom.floorPicker.querySelectorAll("[data-level]")) {
+        button.classList.toggle("is-active", Number(button.dataset.level) === level);
+    }
+    if (active) {
+        dom.viewToggleLabel.textContent = "Walk";
+        dom.viewToggle.classList.remove("is-first");
+    } else {
+        updateViewToggle(experience.camera.mode);
+    }
+}
+
+dom.birdToggle.addEventListener("click", (event) => {
+    event.stopPropagation();
+    experience?.world?.toggleBirdView();
+});
+
+dom.floorPicker.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-level]");
+    if (button) experience?.world?.birdView?.setLevel(Number(button.dataset.level));
 });
 
 dom.editorToggle.addEventListener("click", (event) => {
     event.stopPropagation();
     editor()?.enter();
+});
+
+/** Day and night, when the published view has both baked. */
+function updateLightingToggle(variant) {
+    const variants = Object.keys(experience?.published?.lighting?.variants || {});
+    dom.lightingToggle.hidden = variants.length < 2;
+    dom.lightingToggleLabel.textContent = variant === "night" ? "Night" : "Day";
+    dom.lightingToggle.classList.toggle("is-night", variant === "night");
+}
+
+function toggleLighting() {
+    const world = experience?.world;
+    if (!world?.lighting) return;
+    world.setLighting(world.lighting === "night" ? "day" : "night");
+}
+
+dom.lightingToggle.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleLighting();
 });
 
 function updateViewToggle(mode) {
@@ -510,6 +715,11 @@ document.addEventListener("keydown", (event) => {
         return;
     }
 
+    if ((event.key === "n" || event.key === "N") && !typingElsewhere && !isChatOpen()) {
+        toggleLighting();
+        return;
+    }
+
     if ((event.key === "t" || event.key === "T") && !typingElsewhere && !isChatOpen()) {
         if (!dom.finishPicker.hidden) closeFinishPicker();
         else openFinishPicker();
@@ -529,6 +739,17 @@ document.addEventListener("keydown", (event) => {
         return;
     }
 
+    if ((event.key === "b" || event.key === "B") && !typingElsewhere && !isChatOpen()) {
+        experience.world.toggleBirdView();
+        return;
+    }
+
+    if ((event.key === "PageUp" || event.key === "PageDown") && experience.world.birdView?.active) {
+        event.preventDefault();
+        experience.world.birdView.step(event.key === "PageUp" ? 1 : -1);
+        return;
+    }
+
     // While the pointer is captured the HUD is unreachable by mouse, so the
     // menu needs a key of its own.
     if ((event.key === "m" || event.key === "M") && !typingElsewhere && !isChatOpen()) {
@@ -541,8 +762,12 @@ document.addEventListener("keydown", (event) => {
 // ---------------------------------------------------------------------
 
 const requestedScene = new URL(window.location.href).searchParams.get("scene");
+// A public link — /view/<scene> — is what goes to clients.
+const publicScene = window.location.pathname.match(/^\/view\/([^/]+)\/?$/)?.[1];
 
-if (requestedScene) {
+if (publicScene) {
+    openScene(decodeURIComponent(publicScene), { publicView: true });
+} else if (requestedScene) {
     openScene(requestedScene);
 } else {
     loadSceneList();

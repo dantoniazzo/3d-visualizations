@@ -6,6 +6,8 @@ import Experience from "../../Experience.js";
 import elements from "../../Utils/functions/elements.js";
 import Avatar from "./Avatar.js";
 
+const _joystick = new THREE.Vector3();
+
 /**
  * The visitor: capsule physics against the octree, WASD/joystick movement,
  * a third-person avatar, and the network sync for everyone else's.
@@ -94,14 +96,17 @@ export default class Player {
             mode: "dynamic",
         });
 
+        // In the camera's terms: screen-up on the stick is -Z, straight
+        // ahead; the vector's length is how far it is pushed, 0 to 1.
         this.joystick.on("move", (_event, data) => {
             this.actions.movingJoyStick = true;
-            this.joystickVector.z = -data.vector.y;
-            this.joystickVector.x = data.vector.x;
+            const push = Math.min(1, data.force ?? 1);
+            this.joystickVector.set(data.vector.x * push, 0, -data.vector.y * push);
         });
 
         this.joystick.on("end", () => {
             this.actions.movingJoyStick = false;
+            this.joystickVector.set(0, 0, 0);
         });
     }
 
@@ -419,12 +424,23 @@ export default class Player {
         return this.player.direction;
     }
 
+    /** Where the joystick points, on the ground, as a unit vector. */
     getJoyStickDirectionalVector() {
-        const vector = new THREE.Vector3().copy(this.joystickVector);
-        vector.applyQuaternion(this.camera.perspectiveCamera.quaternion);
-        vector.y = 0;
-        vector.multiplyScalar(1.5);
-        return vector;
+        const ahead = -this.joystickVector.z;
+        const across = this.joystickVector.x;
+        // Taken from the heading rather than the camera's full rotation, so
+        // looking down at the floor doesn't slow the walk to a crawl.
+        const vector = _joystick.copy(this.getForwardVector()).multiplyScalar(ahead);
+        vector.addScaledVector(this.getSideVector(), across);
+        return vector.lengthSq() > 1e-8 ? vector.normalize() : vector;
+    }
+
+    /**
+     * How fast the stick asks to go, as a multiple of walking pace: a light
+     * push walks, pushed all the way it runs.
+     */
+    joystickPace() {
+        return THREE.MathUtils.clamp(this.joystickVector.length() * 2.8, 0.5, 2.5);
     }
 
     updateColliderMovement() {
@@ -437,7 +453,9 @@ export default class Player {
         if (this.actions.run) speedDelta *= 2.5;
 
         if (this.actions.movingJoyStick) {
-            this.player.velocity.add(this.getJoyStickDirectionalVector());
+            // Per second, like the keys — not per frame, which left a phone
+            // drawing 30 frames a second walking at half the speed.
+            this.player.velocity.addScaledVector(this.getJoyStickDirectionalVector(), speedDelta * this.joystickPace());
         }
         if (this.actions.forward) {
             this.player.velocity.add(this.getForwardVector().multiplyScalar(speedDelta));
@@ -536,8 +554,10 @@ export default class Player {
             offset = -Math.PI / 2;
         } else if (right && !left) {
             offset = Math.PI / 2;
-        } else if (this.actions.movingJoyStick) {
-            offset = Math.atan2(this.joystickVector.x, this.joystickVector.z) + Math.PI;
+        } else if (this.actions.movingJoyStick && this.joystickVector.lengthSq() > 1e-6) {
+            // The way the stick points, in the camera's terms: straight up
+            // is -Z, which is the half turn the keys use for forward.
+            offset = Math.atan2(this.joystickVector.x, this.joystickVector.z);
         }
 
         this.player.directionOffset = offset;
@@ -549,7 +569,8 @@ export default class Player {
         if (!this.player.onFloor && this.player.velocity.y > 0.5) {
             next = "jumping";
         } else if (this.isMoving()) {
-            next = this.actions.run ? "running" : "walking";
+            const running = this.actions.run || (this.actions.movingJoyStick && this.joystickPace() > 1.7);
+            next = running ? "running" : "walking";
         } else if (this.player.animation === "dancing") {
             next = "dancing";
         } else {
@@ -572,7 +593,8 @@ export default class Player {
             this.upVector,
             (this.remote ? this.remote() : this.camera.getYaw()) + this.player.directionOffset
         );
-        this.avatar.avatar.quaternion.rotateTowards(this.targetRotation, 0.15);
+        // About half a turn in a third of a second, whatever the frame rate.
+        this.avatar.avatar.quaternion.rotateTowards(this.targetRotation, 9 * this.time.delta);
     }
 
     updateOtherPlayers() {
@@ -619,6 +641,11 @@ export default class Player {
      * step.
      */
     toggleView() {
+        // From above, V goes back to walking.
+        if (this.camera.birdView?.active) {
+            this.experience.world.toggleBirdView();
+            return this.camera.mode;
+        }
         const mode = this.camera.toggleView();
         this.experience.world.emit("view", mode);
         return mode;
@@ -640,6 +667,21 @@ export default class Player {
         this.experience.world.emit("door", { door, opened });
     }
 
+    /**
+     * Driving on a touch screen: the stick is the pedals and the wheel —
+     * up to accelerate, down to brake and reverse, sideways to steer.
+     */
+    steerWithJoystick() {
+        const controls = this.currentCar.controls;
+        const ahead = -this.joystickVector.z;
+        const across = this.joystickVector.x;
+        const moving = this.actions.movingJoyStick;
+        controls.forward = moving && ahead > 0.3;
+        controls.backward = moving && ahead < -0.3;
+        controls.left = moving && across < -0.3;
+        controls.right = moving && across > 0.3;
+    }
+
     /** `F` on foot: get into whichever car is within reach. */
     enterNearestVehicle() {
         const builder = this.experience.world.sceneBuilder;
@@ -654,6 +696,8 @@ export default class Player {
      */
     enterVehicle(car) {
         if (this.inVehicle || !car) return;
+        // Driving has a camera of its own.
+        this.experience.world.birdView?.deactivate();
 
         this.inVehicle = true;
         this.currentCar = car;
@@ -686,7 +730,13 @@ export default class Player {
         this.inVehicle = false;
         this.currentCar = null;
         this.camera.exitVehicleMode();
-        this.camera.target.copy(this.player.collider.end);
+        if (this.camera.scheme === "pointerLock") {
+            this.camera.target.copy(this.player.collider.end);
+        } else {
+            // Orbit round the body again, from where the chase camera was:
+            // the controls pull it in to their own distance.
+            this.camera.controls.target.copy(this.player.collider.end);
+        }
         this.experience.world.emit("vehicle", { driving: false, car });
     }
 
@@ -715,13 +765,15 @@ export default class Player {
         }
 
         const door = this.lookedAtDoor || builder.nearestDoor(this.player.collider.end);
-        const id = door?.spec.id ?? null;
+        // Keyed on which way the door is going too, so the prompt turns from
+        // Open to Close the moment it is opened, not once it has swung.
+        const id = door ? `${door.spec.id}:${door.isOpening}` : null;
 
         if (id !== this.promptedDoorId) {
             this.promptedDoorId = id;
             this.experience.world.emit(
                 "prompt",
-                door ? { label: door.isOpen ? "Close door" : "Open door", key: "E" } : null
+                door ? { label: door.isOpening ? "Close door" : "Open door", key: "E" } : null
             );
         }
     }
@@ -742,6 +794,16 @@ export default class Player {
     updateLookTarget() {
         if (this.player.interactionObjects.length === 0) return;
 
+        // Looking down on a floor, there is no crosshair to aim with.
+        if (this.camera.birdView?.active) {
+            this.lookedAtDoor = null;
+            if (this.lookSignature !== null) {
+                this.lookSignature = null;
+                this.experience.world.emit("look", null);
+            }
+            return;
+        }
+
         const builder = this.experience.world.sceneBuilder;
 
         // Cast from the head, not the camera — in third person the camera is
@@ -756,6 +818,17 @@ export default class Player {
 
         let target = null;
         this.lookedAtDoor = null;
+
+        // Built from a published runtime file, the house is only in the
+        // collision tree, each triangle saying what it is part of.
+        if (builder?.runtime) {
+            const hit = this.experience.world.collision.rayIntersect(this.player.raycaster.ray);
+            const nearer = hit && hit.distance <= this.player.raycaster.far && (!intersects.length || hit.distance < intersects[0].distance);
+            if (nearer) {
+                intersects.length = 0;
+                if (hit.triangle.label) target = { kind: "object", id: hit.triangle.label, label: hit.triangle.label };
+            }
+        }
 
         if (intersects.length > 0) {
             const hit = intersects[0];
@@ -839,12 +912,15 @@ export default class Player {
         }
 
         if (this.inVehicle) {
+            if (this.camera.scheme === "orbit") this.steerWithJoystick();
             this.currentCar.update(this.time.delta);
             // Keep the body with the car so stepping out lands beside it.
             this.player.collider.start.copy(this.currentCar.group.position);
             this.player.collider.end.copy(this.currentCar.group.position);
             this.player.collider.end.y += this.player.height;
             this.updateOtherPlayers();
+            // "Get out", in place of "Drive".
+            if (this.enabled) this.updateDoorPrompt();
             return;
         }
 

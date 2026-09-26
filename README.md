@@ -88,6 +88,18 @@ furnishings GLB and the spec its structure is built from),
 `npm run models -- --car` and `npm run models -- --kit` rebuild just those. Set `BLENDER=/path/to/blender` if it is not on `PATH` or
 in the usual place.
 
+The avatars are the exception: they are bought-in characters, kept as
+sources in `assets/avatars/`. `npm run avatars` writes the versions the app
+loads to `public/models/`:
+- redundant animation keys resampled away;
+- the unused clip and face morphs left out;
+- textures cut to what a character a few hundred pixels tall can show
+  (512², normal maps 256²), as WebP;
+- meshopt compression with its rotation and normal filters.
+
+That takes them from 9 MB to 1.6 MB, and 0.9 MB as sent, with every pose
+within a degree of the original.
+
 The pieces are deliberately plain — boxes, cylinders and spheres — because
 the point for now is that they are the right size. Where they come from:
 
@@ -200,6 +212,129 @@ Behind the wheel, `WASD` steers and `Space` brakes; `F` gets you out.
 Touch devices fall back to drag-to-look plus an on-screen joystick.
 
 **Share the URL.** `?scene=<id>` puts everyone in the same property.
+
+### Public view
+
+`/view/<id>` is the link to send clients. It walks, drives, opens doors and
+chats exactly like the walkthrough, but nothing in it edits or saves: no edit
+mode (its code is not even downloaded), no finish picker, no way back to the
+library. Because nothing will move, it is also drawn far more cheaply: once
+the furniture is in, everything static is merged into one mesh per material
+per floor, and refractive glass becomes plain see-through glass — together a
+tenth of the draw calls.
+
+**Bird's-eye view.** **B**, or the *Bird's-eye* button, looks down on one
+floor at a time with everything over it taken away: the floors above, the
+floor's own ceilings and the roof, like a doll's house with its top lifted
+off. Drag to turn and tilt it; scroll or pinch to go nearer or further. It
+follows you: you keep walking (WASD or the stick, the way the view faces)
+and chatting, and it shows whichever floor you are on, so going upstairs
+takes the view up a floor. The floor picker, or **Page Up** and **Page
+Down**, shows another floor; walking again brings the view back to yours.
+**V** or *Walk* goes back to walking. The view stays within the distances
+(6–24 m) and angles (30° and steeper) the publish looked from, so no face it
+threw away can come into sight (`frontend/Experience/World/BirdView.js`).
+
+**Publishing** makes the public view lighter still. *Publish* in the editor
+(or *Publish public view…* in its menu) takes a snapshot of the space as a
+visitor can see it and sends it to the server, which keeps it as a fixed
+version: `/view/<id>` opens the latest, and editing the space afterwards
+changes nothing there until it is published again. The snapshot:
+
+- renders every static triangle, by id, from thousands of places a camera
+  can be — every room at three heights, the stairs, the garden, and a
+  bird's-eye orbit of each floor with the floors above taken away — and
+  throws away every face none of them sees: undersides of furniture, faces
+  pressed against walls, the insides of overlapping boxes;
+- turns round any face that was only ever seen from behind, and splits a
+  surface seen from both sides into two single-sided ones, so the whole
+  view draws with back-face culling;
+- merges what is left into one mesh per material and floor;
+- checks itself from a second, random set of viewpoints and puts back
+  anything that set sees, reporting how much that was.
+
+On Wrenfield that is 205,570 triangles down to 139,685, in about two
+minutes. Versions are kept under `published/<id>/` on the machine that runs
+the server (`PUBLISH_DIR` moves it): `snapshot.glb` as sent — the input to
+baking the lighting, next — `spec.json`, `view.glb`, Draco-compressed,
+which is what the public view downloads, and the version's `manifest.json`.
+
+Straight after the snapshot the panel sends the version's **runtime file**,
+`runtime.glb` (`frontend/Experience/Publish/Runtime.js`): everything the
+public view would otherwise build the whole house for. It holds what to
+collide with, each mesh named for what it is, so the crosshair still reads
+"Wall — Warm white" or "Sofa". It holds the real materials; a finish's
+texture travels as its name and is drawn on the device, as in the editor.
+And it holds the glass. The server simplifies the collision to within
+1.5 cm and Draco-compresses the file. On Wrenfield that is 94,000 collision
+triangles down to 10,000, in a 256 KB file. With it, a public view builds
+no wall, slab, stair or piece of furniture and downloads no furniture. It
+builds only what moves: the doors, the car and the room lights. It is
+ready to walk round in less than half the time, with half the memory and
+a third of the scene objects. A version published without one, or before
+there were any, builds the house as before.
+
+**Comparing optimisations.** The Publish panel starts with a checklist of
+what the version is made with (`shared/publishOptions.js`): removing hidden
+faces, merging, compression, plain glass, baked lighting (off, draft or
+final) and the phone quality tier. Every version is kept and listed under
+it with what it was made with, its triangles, meshes and download, and an
+*Open* link — `/view/<id>?version=<version>&stats` — so two versions can be
+compared side by side; the `?stats` overlay names the version and options
+on show. `/view/<id>` itself, the link for clients, always opens the latest,
+and `?live` on any public link ignores published versions altogether.
+
+**Baking the lighting** is the last step, and it runs on this machine, in
+Blender — started by the Publish panel when a publish asks for it (or with
+*Bake* on any version there), or from a terminal:
+
+```bash
+npm run bake -- <id>     # the latest version: 4096², 512 samples
+                         # --size 2048 --samples 128 for a quicker, noisier draft
+                         # --version <version> for an earlier one
+                         # --debug also keeps the raw and denoised lightmaps (EXR)
+```
+
+The panel only offers baking to a browser on the same machine as the
+server, and only where Blender is installed (`BLENDER=/path/to/blender` if
+it is not found; `BAKE=off` turns it off). One bake runs at a time.
+
+`blender/bake_public.py` bakes the published snapshot twice — by day (sun,
+sky, the room lights low) and by night (moonlight, the room lights up) —
+with every bounce between surfaces, then denoises it. Wide surfaces get a
+4096² lightmap for a final bake (about 2 cm a texel on the house; gardens,
+the roof and the ground far coarser; skirting boards, door casings and
+window frames finer), and phones a 2048² copy of it; only thin and small
+surfaces — a moulding's curve, balusters, handrails — are lit through their
+vertices instead. The lightmap is unwrapped the way one should be: cut
+only along sharp edges (and where a curved surface has to be opened to lie
+flat), each piece relaxed with Blender's minimum-stretch unwrap so a texel
+covers the same area everywhere, walls made whole across the joins between
+their pieces first. Portals in every outside window and door send the
+sky's samples through the openings; texels hidden behind frames and
+skirting boards, or inside the walls themselves (every wall runs on into
+the next at a corner, and outside walls carry on up past the ceiling),
+take the light round them rather than baking black and bleeding a dark
+line into every corner; and where the lightmap is cut but the
+surface carries on, the two sides are stitched together. A surface seen
+from both sides, like a gable or a ceiling, is baked as two copies a few
+millimetres apart, so the lamps inside don't glow through to its outside at
+night. The top of a ceiling is only ever seen from above, in the
+bird's-eye view of the floor over it, so it is baked as it is seen there,
+with the roof lifted off. That makes it the floor of an open doll's house
+rather than of a pitch-dark roof space. Door leaves,
+which move, are tinted from light probes baked either side of each. The
+public view then draws the house unlit, from what was baked: no live
+lights and no shadow map, which is most of what a phone was spending its
+frame on. **N**, or the sun and moon button, switches between day and
+night; the night lightmap is only downloaded the first time it is asked
+for.
+
+Phones and tablets draw at a pixel ratio of at most 1.5 with a smaller,
+harder-edged sun shadow, in the public view and the walkthrough alike.
+`?quality=low` or `?quality=high` forces either tier on any device, and
+`?stats` on any link shows frame rate, draw calls, triangles and the bytes
+downloaded — which is how to compare a change on the device it is for.
 
 ### Edit mode
 

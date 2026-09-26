@@ -1,0 +1,314 @@
+// Publishing the public view: its options, progress while the snapshot is
+// built, the link and what it saved, and every version so far with its
+// bake.
+.publish-panel {
+    position: fixed;
+    inset: 0;
+    z-index: 9000;
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    background: rgba(0, 0, 0, 0.45);
+}
+
+.publish-card {
+    width: min(560px, 100%);
+    max-height: calc(100vh - 2rem);
+    overflow-y: auto;
+    padding: 1.1rem 1.3rem 1.2rem;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    color: var(--text);
+    font-family: var(--font);
+
+    [hidden] {
+        display: none !important;
+    }
+
+    small {
+        display: block;
+        margin-top: 0.1rem;
+        color: var(--text-faint);
+        font-size: 0.74rem;
+        font-weight: 400;
+        line-height: 1.35;
+    }
+
+    code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.78em;
+        color: var(--text);
+    }
+}
+
+.publish-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.8rem;
+
+    h3 {
+        margin: 0;
+        font-size: 1rem;
+        font-weight: 600;
+    }
+}
+
+.publish-x {
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    font-size: 1.2rem;
+    line-height: 1;
+
+    &:hover {
+        color: var(--text);
+        background: rgba(255, 255, 255, 0.06);
+    }
+}
+
+// Options -----------------------------------------------------------------
+
+.publish-options {
+    display: grid;
+    gap: 0.35rem;
+}
+
+.publish-option {
+    display: flex;
+    gap: 0.65rem;
+    align-items: flex-start;
+    padding: 0.5rem 0.6rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.86rem;
+    cursor: pointer;
+
+    &:hover {
+        background: rgba(255, 255, 255, 0.04);
+    }
+
+    input {
+        flex: none;
+        width: 16px;
+        height: 16px;
+        margin: 0.1rem 0 0;
+        accent-color: var(--accent);
+    }
+}
+
+.publish-choice {
+    margin: 0.2rem 0 0;
+    padding: 0.5rem 0.6rem;
+    border: 0;
+    font-size: 0.86rem;
+
+    legend {
+        padding: 0;
+        margin-bottom: 0.45rem;
+    }
+}
+
+.publish-segments {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+
+    label {
+        flex: 1 1 0;
+        min-width: 7rem;
+        cursor: pointer;
+    }
+
+    input {
+        position: absolute;
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    span {
+        display: block;
+        height: 100%;
+        padding: 0.45rem 0.6rem;
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-sm);
+        color: var(--text-muted);
+        transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+    }
+
+    input:checked + span {
+        border-color: var(--accent);
+        background: var(--accent-soft);
+        color: var(--text);
+    }
+
+    input:focus-visible + span {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+    }
+
+    input:disabled + span {
+        opacity: 0.4;
+        cursor: default;
+    }
+}
+
+// Progress and result ---------------------------------------------------------
+
+.publish-stage {
+    margin: 0 0 0.6rem;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+
+    &.is-bad {
+        color: var(--danger);
+    }
+}
+
+.publish-bar {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--border);
+    overflow: hidden;
+
+    span {
+        display: block;
+        width: 0;
+        height: 100%;
+        background: var(--accent);
+        transition: width 0.2s ease;
+    }
+}
+
+.publish-note {
+    margin: 0.7rem 0 0;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+}
+
+.publish-result {
+    font-size: 0.82rem;
+
+    .publish-link {
+        margin: 0 0 0.7rem;
+        padding: 0.45rem 0.6rem;
+        border-radius: var(--radius-sm);
+        background: var(--accent-soft);
+        color: var(--text);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        word-break: break-all;
+    }
+
+    dl {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 0.25rem 0.9rem;
+        margin: 0;
+    }
+
+    dt {
+        color: var(--text-faint);
+    }
+
+    dd {
+        margin: 0;
+        font-variant-numeric: tabular-nums;
+    }
+}
+
+.publish-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 1rem;
+}
+
+// Versions ----------------------------------------------------------------
+
+.publish-versions {
+    margin-top: 1.2rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+
+    h4 {
+        margin: 0 0 0.3rem;
+        font-size: 0.9rem;
+        font-weight: 600;
+    }
+
+    ol {
+        display: grid;
+        gap: 0.5rem;
+        margin: 0.7rem 0 0;
+        padding: 0;
+        list-style: none;
+    }
+}
+
+.publish-hint {
+    margin: 0;
+    color: var(--text-faint);
+    font-size: 0.76rem;
+}
+
+.publish-empty {
+    color: var(--text-faint);
+    font-size: 0.82rem;
+}
+
+.publish-version {
+    padding: 0.6rem 0.7rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 0.82rem;
+
+    &.is-latest {
+        border-color: var(--border-strong);
+    }
+
+    .publish-stage {
+        margin: 0.5rem 0 0.35rem;
+        font-size: 0.78rem;
+    }
+}
+
+.publish-version-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.25rem;
+}
+
+.publish-tag {
+    padding: 0.05rem 0.45rem;
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
+    color: var(--text-muted);
+    font-size: 0.7rem;
+
+    &.is-baked {
+        border-color: var(--accent);
+        color: var(--accent);
+    }
+}
+
+.publish-version-meta {
+    color: var(--text-faint);
+    font-size: 0.76rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.publish-version-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.5rem;
+
+    .ghost.small {
+        padding: 0.3rem 0.7rem;
+        font-size: 0.76rem;
+    }
+}

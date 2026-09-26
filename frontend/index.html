@@ -73,8 +73,11 @@
                     <div class="avatar-grid"></div>
                     <p class="controls-hint">
                         <b>Mouse</b> look · <b>WASD</b> move · <b>Shift</b> run ·
-                        <b>Space</b> jump · <b>E</b> open doors · <b>T</b> change
-                        finish · <b>V</b> first / third person · <b>Tab</b> edit mode ·
+                        <b>Space</b> jump · <b>E</b> open doors ·
+                        <span data-edit-only><b>T</b> change finish ·</span>
+                        <b>V</b> first / third person ·
+                        <span data-public-only><b>B</b> each floor from above ·</span>
+                        <span data-edit-only><b>Tab</b> edit mode ·</span>
                         <b>M</b> menu · <b>Enter</b> chat · <b>Esc</b> free cursor
                     </p>
                 </div>
@@ -95,7 +98,19 @@
                     <span class="view-toggle-label" id="view-toggle-label">Third person</span>
                     <kbd>V</kbd>
                 </button>
-                <button class="view-toggle" id="editor-toggle"
+                <button class="view-toggle bird-toggle" id="bird-toggle" hidden
+                        title="Each floor from above (B)">
+                    <span class="bird-toggle-icon" aria-hidden="true"></span>
+                    <span class="view-toggle-label">Bird's-eye</span>
+                    <kbd>B</kbd>
+                </button>
+                <button class="view-toggle lighting-toggle" id="lighting-toggle" hidden
+                        title="Day or night (N)">
+                    <span class="lighting-toggle-icon" aria-hidden="true"></span>
+                    <span class="view-toggle-label" id="lighting-toggle-label">Day</span>
+                    <kbd>N</kbd>
+                </button>
+                <button class="view-toggle" id="editor-toggle" data-edit-only
                         title="Open the editor: move furniture, stairs, doors and more (Tab)">
                     <span class="editor-toggle-icon" aria-hidden="true"></span>
                     <span class="view-toggle-label">Edit mode</span>
@@ -104,12 +119,22 @@
                 <div class="room-readout" id="room-readout"></div>
             </div>
 
+            <!-- Which floor the bird's-eye view shows. -->
+            <div class="floor-picker" id="floor-picker" hidden></div>
+
             <div class="inspect-label" id="inspect-label"></div>
 
             <!-- Contextual action for whatever the crosshair is on. -->
             <div class="action-prompt" id="action-prompt" hidden>
                 <kbd id="action-key">E</kbd><span id="action-label"></span>
             </div>
+
+            <!-- The same action on a touch screen: a button on the right edge,
+                 just above where the right thumb turns the camera. -->
+            <button class="touch-action" id="touch-action" hidden>
+                <span class="touch-action-icon" id="touch-action-icon" aria-hidden="true"></span>
+                <span class="touch-action-label" id="touch-action-label"></span>
+            </button>
 
             <!-- Finish picker, acting on the surface under the crosshair. -->
             <div class="finish-picker" id="finish-picker" hidden>
@@ -124,14 +149,15 @@
             <div class="lock-hint">
                 <span class="lock-hint-main">Click to look around</span>
                 <span class="lock-hint-sub">
-                    <b>V</b> first / third person · <b>E</b> opens a door ·
-                    <b>T</b> changes a finish · <b>Tab</b> edit mode
+                    <b>V</b> first / third person · <b>E</b> opens a door
+                    <span data-public-only>· <b>B</b> each floor from above</span>
+                    <span data-edit-only>· <b>T</b> changes a finish · <b>Tab</b> edit mode</span>
                 </span>
                 <span class="lock-hint-sub">
                     <b>Esc</b> frees the cursor · <b>M</b> opens the menu ·
                     <b>Enter</b> to chat
                 </span>
-                <span class="lock-hint-sub">
+                <span class="lock-hint-sub" data-edit-only>
                     <b>Click</b> furniture to select it, then <b>G</b> <b>R</b> <b>S</b>
                     as in Blender
                 </span>
@@ -148,7 +174,7 @@
                     <div class="jump-list" id="jump-list"></div>
                 </div>
 
-                <div class="hud-panel-section">
+                <div class="hud-panel-section" data-edit-only>
                     <h5>Arrange</h5>
                     <p class="hud-note">
                         Press <kbd>Tab</kbd> for edit mode to move, add or remove
@@ -157,7 +183,7 @@
                     </p>
                 </div>
 
-                <div class="hud-panel-section">
+                <div class="hud-panel-section" data-edit-only>
                     <button id="leave-button" class="ghost small">
                         Back to all spaces
                     </button>

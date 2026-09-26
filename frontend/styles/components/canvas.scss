@@ -102,8 +102,10 @@
     .chat-box {
         width: calc(100vw - 2.2rem);
     }
+    /* The left thumb's half: the right one turns the camera, and reaches up
+       to the action button, as in landscape. */
     .joystick-area {
-        width: 100vw;
-        height: 40vh;
+        width: 55vw;
+        height: 45vh;
     }
 }

@@ -449,6 +449,14 @@ def main():
         export_yup=True,
         export_image_format="WEBP",
         export_image_quality=60,
+        # Draco packs the 3.5 MB of plain vertex data to a fraction of it.
+        # Positions keep 14 bits over each piece's own extent — well under a
+        # millimetre — so pieces land where the saved layouts expect them.
+        export_draco_mesh_compression_enable=True,
+        export_draco_mesh_compression_level=6,
+        export_draco_position_quantization=14,
+        export_draco_normal_quantization=10,
+        export_draco_texcoord_quantization=14,
     )
     print("GLB_SAVED", out_glb, f"{os.path.getsize(out_glb)/1e6:.1f}MB")
 

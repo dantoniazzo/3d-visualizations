@@ -21,7 +21,9 @@ import { OrbitControls } from "./Utils/CustomOrbitControls.js";
  *
  * In edit mode none of that runs: the editor registers its own viewport
  * controller as `editorView`, which then owns the perspective camera (and
- * an orthographic one) until the walkthrough resumes.
+ * an orthographic one) until the walkthrough resumes. A public view's
+ * bird's-eye view of a floor (World/BirdView.js) takes it over the same way,
+ * as `birdView`.
  */
 
 const _offset = new THREE.Vector3();
@@ -157,7 +159,7 @@ export default class Camera extends EventEmitter {
     requestLock() {
         if (this.scheme !== "pointerLock") return;
         if (!this.pointerLockEnabled || this.locked) return;
-        if (this.editorView?.active) return;
+        if (this.editorView?.active || this.birdView?.active) return;
 
         // Browsers reject a lock request made too soon after an Escape exit,
         // and reject it as a rejected promise rather than an exception.
@@ -174,6 +176,11 @@ export default class Camera extends EventEmitter {
     /** Meshes the third-person camera should be pulled in front of. */
     setCollisionObjects(objects) {
         this.collisionObjects = objects;
+    }
+
+    /** Or a collision tree (World/Collision.js), which answers faster. */
+    setCollisionTree(tree) {
+        this.collisionTree = tree;
     }
 
     // ------------------------------------------------------------------
@@ -257,6 +264,7 @@ export default class Camera extends EventEmitter {
         this.perspectiveCamera.aspect = this.sizes.aspect;
         this.perspectiveCamera.updateProjectionMatrix();
         this.editorView?.onResize();
+        this.birdView?.onResize();
     }
 
     // ------------------------------------------------------------------
@@ -266,6 +274,10 @@ export default class Camera extends EventEmitter {
     update() {
         if (this.editorView?.active) {
             this.editorView.update();
+            return;
+        }
+        if (this.birdView?.active) {
+            this.birdView.update();
             return;
         }
 
@@ -336,6 +348,12 @@ export default class Camera extends EventEmitter {
      * third-person view and staring at the back of the plasterboard.
      */
     resolveDistance(direction, desired) {
+        if (this.collisionTree) {
+            this.cameraRay.set(this.target, direction);
+            const hit = this.collisionTree.rayIntersect(this.cameraRay.ray);
+            if (!hit || hit.distance >= desired) return desired;
+            return Math.max(0.12, hit.distance - 0.16);
+        }
         if (this.collisionObjects.length === 0) return desired;
 
         this.cameraRay.set(this.target, direction);
