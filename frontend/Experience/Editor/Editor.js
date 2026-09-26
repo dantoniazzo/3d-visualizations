@@ -3,10 +3,10 @@ import { EventEmitter } from "events";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { OutlinePass } from "three/examples/jsm/postprocessing/OutlinePass.js";
-import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 
 import Experience from "../Experience.js";
 import EditorCamera from "./EditorCamera.js";
+import ToneMappedOutputPass from "./ToneMappedOutputPass.js";
 import EditorUI from "./EditorUI.js";
 import FieldEdit from "./FieldEdit.js";
 import FitChecker from "./FitChecker.js";
@@ -1641,7 +1641,7 @@ export default class Editor extends EventEmitter {
 
         this.composer.addPass(this.renderPass);
         this.composer.addPass(this.outlinePass);
-        this.composer.addPass(new OutputPass());
+        this.composer.addPass(new ToneMappedOutputPass());
     }
 
     onResize(sizes) {

@@ -194,6 +194,7 @@ async function rebuildManifest(sceneId, version) {
             texel: bake.texel,
             meshes: bake.meshes,
             triangles: bake.triangles,
+            ...(bake.view && { view: bake.view }),
             variants: Object.fromEntries(
                 Object.entries(bake.variants).map(([name, variant]) => [
                     name,
@@ -201,6 +202,7 @@ async function rebuildManifest(sceneId, version) {
                         lightmap: `${version}/${entry}/${variant.lightmap}`,
                         ...(variant.lightmapPhone && { lightmapPhone: `${version}/${entry}/${variant.lightmapPhone}` }),
                         scale: variant.scale,
+                        ...(variant.encoding && { encoding: variant.encoding }),
                         attribute: variant.attribute,
                         doors: variant.doors,
                     },

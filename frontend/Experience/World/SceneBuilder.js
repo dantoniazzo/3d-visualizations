@@ -1483,10 +1483,13 @@ export default class SceneBuilder {
      * on every lightmapped material, its vertex light on every vertex-lit
      * mesh.
      *
-     * The lightmap is stored scaled down so its brightest light fits in 8
-     * bits, and three divides a lightmap by π; `info.scale` and π restore
-     * it, so what is drawn is the surface's colour times the light Blender
-     * baked for it.
+     * The lightmap is stored scaled so its bright light (all but the
+     * brightest few texels in a thousand) comes to 1, and three divides a
+     * lightmap by π; `info.scale` and π restore it, so what is drawn is the
+     * surface's colour times the light Blender baked for it. A lightmap
+     * encoded "reinhard" (blender/bake_public.py) keeps what is brighter
+     * than that as well, squeezed into the top of its range, and is opened
+     * back out here.
      */
     setLightingVariant(texture, info) {
         if (!texture.userData.lightmap) {
@@ -1501,6 +1504,7 @@ export default class SceneBuilder {
             if (!material.lightMap) material.needsUpdate = true;
             material.lightMap = texture;
             material.lightMapIntensity = Math.PI * info.scale;
+            decodeLightmap(material, info.encoding);
         }
         const name = info.attribute.toLowerCase();
         for (const mesh of this.vertexLit) {
@@ -1584,6 +1588,28 @@ function doubleSided(material) {
     clone.side = THREE.DoubleSide;
     doubleSidedCache.set(material.name, clone);
     return clone;
+}
+
+/** How a lightmap texel is opened back out to light, by encoding. */
+const LIGHTMAP_DECODE = {
+    // e = x / (1 + x), so x = e / (1 - e): up to 64 times the lightmap's
+    // scale, the most it was encoded with.
+    reinhard: "( lightMapTexel.rgb / max( vec3( 1.0 ) - lightMapTexel.rgb, vec3( 1.0 / 65.0 ) ) ) * lightMapIntensity",
+};
+
+/** Draw a baked material's lightmap as it was encoded (setLightingVariant). */
+function decodeLightmap(material, encoding) {
+    const decode = LIGHTMAP_DECODE[encoding] ?? null;
+    if ((material.userData.lightmapDecode ?? null) === decode) return;
+    material.userData.lightmapDecode = decode;
+    material.onBeforeCompile = (shader) => {
+        if (!decode) return;
+        const plain = "lightMapTexel.rgb * lightMapIntensity";
+        if (!shader.fragmentShader.includes(plain)) console.warn("Lightmap not decoded: three's shader has changed");
+        shader.fragmentShader = shader.fragmentShader.replace(plain, decode);
+    };
+    material.customProgramCacheKey = () => encoding ?? "";
+    material.needsUpdate = true;
 }
 
 /** Undo a previous world-UV tiling so a new tile size can be applied. */

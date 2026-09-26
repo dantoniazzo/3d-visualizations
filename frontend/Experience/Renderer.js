@@ -3,6 +3,7 @@ import * as THREE from "three";
 import Experience from "./Experience.js";
 import Stats from "./Utils/Stats.js";
 import { LOW_POWER } from "./Utils/device.js";
+import { installFilmic } from "./Utils/filmic.js";
 
 export default class Renderer {
     constructor() {
@@ -25,9 +26,12 @@ export default class Renderer {
             powerPreference: "high-performance",
         });
 
+        // Blender's Filmic view transform, in every view: the scene is drawn
+        // as Blender shows the same light (Utils/filmic.js).
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        this.renderer.toneMappingExposure = 1.05;
+        installFilmic();
+        this.renderer.toneMapping = THREE.CustomToneMapping;
+        this.renderer.toneMappingExposure = 1;
 
         this.renderer.shadowMap.enabled = true;
         // Soft filtering takes several times the shadow samples per pixel.
