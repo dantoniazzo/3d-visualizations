@@ -20,3 +20,7 @@ published/
 # Generated furniture catalogue — `npm run furniture` rebuilds it.
 public/models/furniture/*.glb
 
+
+# Python's bytecode cache, which Blender writes beside the scripts it runs.
+__pycache__/
+*.pyc
