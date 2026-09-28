@@ -78,6 +78,9 @@ export default class Collision {
     constructor() {
         this.static = new SceneOctree();
         this.dynamic = new SceneOctree();
+        // The garden's trees (Vegetation), which neither the building nor
+        // what moves in it knows of.
+        this.outdoor = new SceneOctree();
     }
 
     setStatic(octree) {
@@ -88,9 +91,14 @@ export default class Collision {
         this.dynamic = octree;
     }
 
+    setOutdoor(octree) {
+        this.outdoor = octree;
+    }
+
     /**
      * Resolve against the building first, then against whatever the
-     * building's push left the capsule touching, and report the sum.
+     * building's push left the capsule touching — what moves, then the
+     * garden's trees — and report the sum.
      */
     capsuleIntersect(capsule) {
         const a = this.static.capsuleIntersect(capsule);
@@ -99,24 +107,32 @@ export default class Collision {
         if (a) _capsule.translate(_shift.copy(a.normal).multiplyScalar(a.depth));
 
         const b = this.dynamic.capsuleIntersect(_capsule);
-        if (!a && !b) return false;
-        if (!b) return a;
+        if (b) _capsule.translate(_shift.copy(b.normal).multiplyScalar(b.depth));
+        const c = this.outdoor.capsuleIntersect(_capsule);
+        if (!a && !b && !c) return false;
 
         const total = new THREE.Vector3();
-        if (a) total.addScaledVector(a.normal, a.depth);
-        total.addScaledVector(b.normal, b.depth);
+        let last = null;
+        for (const hit of [a, b, c]) {
+            if (!hit) continue;
+            total.addScaledVector(hit.normal, hit.depth);
+            last = hit;
+        }
+        if (!a && !c) return b;
+        if (!b && !c) return a;
 
         const depth = total.length();
-        if (depth < 1e-9) return { normal: b.normal, depth: 0 };
+        if (depth < 1e-9) return { normal: last.normal, depth: 0 };
         return { normal: total.divideScalar(depth), depth };
     }
 
     rayIntersect(ray) {
-        const a = this.static.rayIntersect(ray);
-        const b = this.dynamic.rayIntersect(ray);
-        if (!a) return b;
-        if (!b) return a;
-        return a.distance <= b.distance ? a : b;
+        let nearest = null;
+        for (const tree of [this.static, this.dynamic, this.outdoor]) {
+            const hit = tree.rayIntersect(ray);
+            if (hit && (!nearest || hit.distance < nearest.distance)) nearest = hit;
+        }
+        return nearest;
     }
 }
 

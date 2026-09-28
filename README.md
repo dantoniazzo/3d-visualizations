@@ -299,9 +299,9 @@ The panel only offers baking to a browser on the same machine as the
 server, and only where Blender is installed (`BLENDER=/path/to/blender` if
 it is not found; `BAKE=off` turns it off). One bake runs at a time.
 
-`blender/bake_public.py` bakes the published snapshot twice — by day (sun,
-sky, the room lights low) and by night (moonlight, the room lights up) —
-with every bounce between surfaces, then denoises it. Wide surfaces get a
+`blender/bake_public.py` bakes the published snapshot by day (sun and
+sky) and by night (moonlight), then the light of each light switch on its
+own, with every bounce between surfaces, and denoises it. Wide surfaces get a
 4096² lightmap for a final bake (about 2 cm a texel on the house; gardens,
 the roof and the ground far coarser; skirting boards, door casings and
 window frames finer), and phones a 2048² copy of it; only thin and small
@@ -329,6 +329,50 @@ lights and no shadow map, which is most of what a phone was spending its
 frame on. **N**, or the sun and moon button, switches between day and
 night; the night lightmap is only downloaded the first time it is asked
 for.
+
+**Light switches.** Every indoor room has a ceiling light — an opal globe
+on a cord, or a dome flat to the ceiling in a small, low or tiled room —
+and a switch for it on the wall where you come in: beside the door, on
+the side it opens from, or by the top of the stairs for a landing or a
+loft. Every lamp — a piece of furniture whose model marks its bulb
+(`_lamp` in `blender/lib/furnish.py`) — has a switch of its own. Where
+each goes is worked out from the spec (`World/Fittings.js`), so they
+move with the doors; publishing gathers them into the published spec,
+and the bake lights each switch on its own, from inside its glass or
+bulb, in its room and the rooms next door. The lightmap is laid out room
+by room, so each switch's light is a small crop of it for each room it
+reaches, a few kilobytes.
+
+In the public view, **L**, or the *Lights* button, lists the switches
+floor by floor. A light can also be turned on and off by pointing the
+crosshair at it, or at its switch on the wall, and pressing **E** (the
+button under the thumb on a touch screen), or by clicking it — tapping
+it — in the bird's-eye view. The view adds the light of each switch that
+is on to the day's or the night's (`World/Switches.js`), and lights its
+glass or bulb. By day every light starts off, and at night every ceiling
+light starts on; each keeps its own switches, so the two can be compared
+as they were left. A switch's light is only downloaded the first time it
+is turned on. A room's surfaces add up to six switches' light: where
+more reach it, the faintest (spill through a doorway) is left out.
+
+**The garden.** Every lawn grows grass, and the bigger lawns trees — in
+the editor, the walkthrough and the public view alike. Where the trees
+stand and how big they grow is worked out from the rooms alone
+(`shared/vegetation.js`): towards the edge of the plot, clear of the
+house, the paths and the drive, and of each other. The grass is instanced
+tufts, drawn square by square and only near enough to tell apart; the
+trees are fluffy crowns of leaf cards round a trunk and branches. Their
+shaders — the grass's wind and its colour from root to tip, the crowns'
+volumetric shading and gusting leaves — are adapted from
+[fluffytree-threejs](https://github.com/leoawen/fluffytree-threejs) (MIT;
+its notice is in `frontend/Experience/World/Vegetation/shaders.js`, and
+the tuft and leaf textures' in `public/textures/vegetation/`). They are
+drawn live, so the wind moves them, and never published or baked; but the
+bake is told where the trees are and casts their shade on the lawn and
+the house, and in a baked view each tuft of grass is lit by the light
+baked into the lawn at its root — the house's shadow, the trees' shade,
+day or night — so the grass and the lawn are lit as one. The trees' trunks
+are walked into, not through.
 
 Phones and tablets draw at a pixel ratio of at most 1.5 with a smaller,
 harder-edged sun shadow, in the public view and the walkthrough alike.

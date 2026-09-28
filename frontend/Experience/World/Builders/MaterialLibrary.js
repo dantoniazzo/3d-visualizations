@@ -64,6 +64,7 @@ export default class MaterialLibrary {
             color: new THREE.Color(spec.color),
             roughness: spec.roughness,
             metalness: spec.metalness,
+            ...(spec.glow && { emissive: new THREE.Color(spec.glow), emissiveIntensity: 0.8 }),
         };
 
         const material = spec.transparent

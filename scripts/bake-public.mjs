@@ -28,6 +28,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { ENVIRONMENT_PRESETS, FINISHES } from "../shared/catalog.js";
+import { planTrees } from "../shared/vegetation.js";
 import { rectCorners } from "../frontend/Experience/Utils/geometry.js";
 import { compressView } from "../server/publish/compress.js";
 import { PUBLISH_DIR, latestManifest, updateVersion, versionManifest } from "../server/publish/store.js";
@@ -99,7 +100,15 @@ const rooms = spec.rooms
         const n = room.polygon.length;
         const x = room.polygon.reduce((s, p) => s + p[0], 0) / n;
         const z = room.polygon.reduce((s, p) => s + p[1], 0) / n;
-        return { id: room.id, area: area(room.polygon), light: [x, room.elevation + room.height - 0.08, z] };
+        return {
+            id: room.id,
+            area: area(room.polygon),
+            light: [x, room.elevation + room.height - 0.08, z],
+            // Which room each surface is seen from: the bake's lighting zones.
+            polygon: room.polygon,
+            elevation: room.elevation,
+            height: room.height,
+        };
     });
 
 // A probe each side of every door, a hand's width off the leaf at about
@@ -227,17 +236,76 @@ for (const room of indoor) {
     });
 }
 
+// The light fittings (the published spec's lights, Fittings.js), switch by
+// switch — each switch's light is baked on its own, into the rooms it
+// reaches: its own, and every room a door, doorway or stairwell opens into
+// from it. What it throws further is too little to see.
+const roomAt = (x, y, z) =>
+    indoor.find((room) => y >= room.elevation - 0.05 && y < room.elevation + room.height + 0.3 && insidePolygon(x, z, room.polygon)) ?? null;
+const neighbours = new Map(indoor.map((room) => [room.id, new Set()]));
+const connect = (a, b) => {
+    if (!a || !b || a === b) return;
+    neighbours.get(a.id)?.add(b.id);
+    neighbours.get(b.id)?.add(a.id);
+};
+for (const wall of spec.walls || []) {
+    const [x1, z1] = wall.start;
+    const [x2, z2] = wall.end;
+    const length = Math.hypot(x2 - x1, z2 - z1);
+    if (!length) continue;
+    const dx = (x2 - x1) / length;
+    const dz = (z2 - z1) / length;
+    const side = wall.thickness / 2 + 0.3;
+    for (const opening of wall.openings || []) {
+        if (opening.type !== "door" && opening.type !== "doorway") continue;
+        const x = x1 + dx * opening.offset;
+        const z = z1 + dz * opening.offset;
+        const y = wall.base_height + 1.0;
+        connect(roomAt(x - dz * side, y, z + dx * side), roomAt(x + dz * side, y, z - dx * side));
+    }
+}
+for (const hole of spec.floor_openings || []) {
+    const [x, z] = hole.position;
+    connect(roomAt(x, hole.elevation + 0.1, z), roomAt(x, hole.elevation - 0.6, z));
+}
+const switches = new Map();
+for (const light of spec.lights || []) {
+    if (!light.room || !neighbours.has(light.room)) continue;
+    if (!switches.has(light.switch)) {
+        switches.set(light.switch, {
+            id: light.switch,
+            label: light.label,
+            zones: [light.room, ...neighbours.get(light.room)],
+            lights: [],
+        });
+    }
+    switches.get(light.switch).lights.push({
+        kind: light.kind,
+        position: light.position,
+        power: light.power,
+        color: light.color,
+        // Its glass or bulb, kept out of the light's way, and the light's own size.
+        ...(light.glow && { glow: light.glow, radius: light.radius }),
+        ...(light.size && { size: light.size }),
+    });
+}
+
 const settings = {
     preset,
     rooms,
     probes,
     portals,
+    switches: [...switches.values()],
+    // The garden's trees, as the view grows them (shared/vegetation.js):
+    // not baked themselves, but casting their shade.
+    trees: planTrees(spec),
     solids: { walls: solidWalls, slabs },
     groundMaterials: Object.keys(FINISHES).filter((id) => FINISHES[id].kind === "ground"),
-    // Sun and sky in W/m², matched to the app's own lights; room lights in
-    // W per m² of floor — lit but not blazing by day, the only light at night.
-    day: { sun: preset.sun.intensity, sky: 1.0, lights: 2.5 },
-    night: { sky: 0.05, moon: 0.08, lights: 9 },
+    // Sun and sky in W/m², matched to the app's own lights. Light fittings
+    // are baked apart from them, switch by switch (switches), so the day
+    // and night are the sun, the sky and the moon alone.
+    day: { sun: preset.sun.intensity, sky: 1.0 },
+    night: { sky: 0.05, moon: 0.08 },
 };
 const settingsPath = join(bakeDir, "settings.json");
 await writeFile(settingsPath, JSON.stringify(settings, null, 2));
@@ -267,8 +335,14 @@ const view = await compressView(await readFile(join(bakeDir, "lit.glb")), { drac
 await writeFile(join(bakeDir, "view.glb"), view);
 
 const size = async (file) => (await stat(file)).size;
+// A lightmap's brightness and, beside it, its colour.
 const lightmaps = Object.fromEntries(
-    await Promise.all(Object.entries(bake.variants).map(async ([name, variant]) => [name, await size(join(bakeDir, variant.lightmap))]))
+    await Promise.all(
+        Object.entries(bake.variants).map(async ([name, variant]) => [
+            name,
+            (await size(join(bakeDir, variant.lightmap))) + (variant.chroma ? await size(join(bakeDir, variant.chroma)) : 0),
+        ])
+    )
 );
 await updateVersion(sceneId, version, {
     view: `${version}/${bakeName}/view.glb`,
@@ -282,6 +356,25 @@ await updateVersion(sceneId, version, {
         triangles: bake.triangles,
         // How the light is drawn: Blender's Filmic, at the bake's exposure.
         ...(bake.view && { view: bake.view }),
+        // Each room's square of the lightmap.
+        ...(bake.zones && { zones: bake.zones }),
+        // Each switch's light, room by room, its files beside the rest.
+        ...(bake.switches?.length && {
+            switches: bake.switches.map((entry) => ({
+                ...entry,
+                layers: Object.fromEntries(
+                    Object.entries(entry.layers).map(([zone, layer]) => [
+                        zone,
+                        Object.fromEntries(
+                            Object.entries(layer).map(([key, value]) => [
+                                key,
+                                typeof value === "string" ? `${version}/${bakeName}/${value}` : value,
+                            ])
+                        ),
+                    ])
+                ),
+            })),
+        }),
         variants: Object.fromEntries(
             Object.entries(bake.variants).map(([name, variant]) => [
                 name,
@@ -289,6 +382,10 @@ await updateVersion(sceneId, version, {
                     lightmap: `${version}/${bakeName}/${variant.lightmap}`,
                     // Half the size or less, for phones.
                     ...(variant.lightmapPhone && { lightmapPhone: `${version}/${bakeName}/${variant.lightmapPhone}` }),
+                    // Its colour, when the lightmap is its brightness alone.
+                    ...(variant.chroma && { chroma: `${version}/${bakeName}/${variant.chroma}` }),
+                    ...(variant.chromaPhone && { chromaPhone: `${version}/${bakeName}/${variant.chromaPhone}` }),
+                    ...(variant.storage && { storage: variant.storage }),
                     scale: variant.scale,
                     // How the lightmap's 8 bits hold its light.
                     ...(variant.encoding && { encoding: variant.encoding }),

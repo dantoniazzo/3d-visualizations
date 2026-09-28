@@ -3,7 +3,9 @@
  * and without the spec, which it fetches on its own. Positions keep 16 bits
  * over the whole house — under a millimetre — so neighbouring surfaces in
  * different meshes still meet. Custom attributes — the baked vertex light,
- * _DAY and _NIGHT — are kept at 12 bits over their range.
+ * _DAY and _NIGHT, and each light switch's, _S0, _S1… — are kept at 12
+ * bits over their range, and as colour alone: Blender writes them with an
+ * alpha nothing reads.
  *
  * Without `draco` (a version published with compression off, to compare)
  * the geometry is left as it is, and only the spec is taken out.
@@ -26,6 +28,24 @@ export async function compressView(glb, { draco: useDraco = true } = {}) {
     for (const scene of document.getRoot().listScenes()) {
         const { spec, ...rest } = scene.getExtras();
         scene.setExtras(rest);
+    }
+    const trimmed = new Set();
+    for (const mesh of document.getRoot().listMeshes()) {
+        for (const prim of mesh.listPrimitives()) {
+            for (const semantic of prim.listSemantics()) {
+                const accessor = prim.getAttribute(semantic);
+                if (!/^_(DAY|NIGHT|S\d+)$/.test(semantic) || accessor.getType() !== "VEC4" || trimmed.has(accessor)) continue;
+                const rgba = accessor.getArray();
+                const rgb = new rgba.constructor((rgba.length / 4) * 3);
+                for (let i = 0, j = 0; i < rgba.length; i += 4, j += 3) {
+                    rgb[j] = rgba[i];
+                    rgb[j + 1] = rgba[i + 1];
+                    rgb[j + 2] = rgba[i + 2];
+                }
+                accessor.setType("VEC3").setArray(rgb);
+                trimmed.add(accessor);
+            }
+        }
     }
     await document.transform(
         dedup(),

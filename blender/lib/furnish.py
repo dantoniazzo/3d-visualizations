@@ -8,12 +8,28 @@ it by that name — so a piece can be rebuilt differently but not renamed.
 
 import math
 
+from mathutils import Vector
+
 from . import geometry as g
 from . import joinery as j
 from . import loose as L
 from . import plan as P
 
 PI = math.pi
+
+
+def _lamp(obj, power=30.0, color="#ffcf99"):
+    """Mark a lamp as a light fitting (exported as its node's extras): its
+    bulb — the lamp's one piece in white linen — where the light is, in the
+    object's own coordinates, and how bright (the bake's watts) and warm it
+    is. Publishing gathers these into the published spec's lights, and the
+    public view's bake gives each lamp a switch of its own."""
+    me = obj.data
+    index = next(i for i, m in enumerate(me.materials) if m and m.name.startswith("linen_white"))
+    points = [me.vertices[v].co for p in me.polygons if p.material_index == index for v in p.vertices]
+    centre = sum(points, Vector()) / len(points)
+    obj["light"] = {"at": [round(c, 4) for c in centre], "power": power, "color": color}
+    return obj
 
 
 def _put(col, parts, name, lift=0.0):
@@ -105,7 +121,7 @@ def ground(col, mats):
     desk_top = z + 0.756
     _put(col, L.office_chair(col, mats, 3.00, 9.50), "modern_arm_chair_01", lift=z)
     _put(col, L.laptop(col, mats, 2.90, 10.22, rot=PI), "classic_laptop", lift=desk_top)
-    _put(col, L.desk_lamp(col, mats, 3.55, 10.45, h=0.46, rot=PI - 0.6), "desk_lamp_arm_01", lift=desk_top)
+    _lamp(_put(col, L.desk_lamp(col, mats, 3.55, 10.45, h=0.46, rot=PI - 0.6), "desk_lamp_arm_01", lift=desk_top))
     # Full-height shelves west of the window, clear of it.
     _put(col, j.shelving(col, mats, 0.50, 1.95, 10.45, h=2.10, shelves=5,
                          carcass="cab_white"), "study_shelves")
@@ -171,7 +187,7 @@ def first(col, mats):
                     throw="fabric_grey"), "bed1_bed")
     for i, x in enumerate((2.52, 4.68)):
         put(j.nightstand(col, mats, x, 6.11, rot=PI, w=0.42), f"bed1_ns{i}")
-        _put(col, L.desk_lamp(col, mats, x, 6.10, h=0.42), f"bed1_lamp{i}", lift=z + 0.52)
+        _lamp(_put(col, L.desk_lamp(col, mats, x, 6.10, h=0.42), f"bed1_lamp{i}", lift=z + 0.52))
     put(j.rug(col, mats, 3.60, 7.60, 2.80, 2.40, "fabric_cream"), "bed1_rug")
     # Names repeat on purpose: Blender suffixes them (.001), exactly as the
     # exported model always has, and saved layouts refer to those names.

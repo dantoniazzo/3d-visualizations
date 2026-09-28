@@ -463,7 +463,8 @@ def main():
         use_visible=True,
         export_apply=True,
         export_cameras=False,
-        export_extras=False,
+        # A lamp's light (furnish._lamp) goes out as its node's extras.
+        export_extras=True,
         export_yup=True,
         export_image_format="WEBP",
         export_image_quality=60,

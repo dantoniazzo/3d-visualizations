@@ -14,6 +14,11 @@ import Experience from "../Experience.js";
  * view up a floor. Another floor can be looked at from the floor picker or
  * with Page Up and Page Down; walking again brings the view back.
  *
+ * A click that does not drag — a tap, on a touch screen — turns the light
+ * under it on or off, or the light whose wall switch it is (a public view
+ * with light switches, World/Switches.js); with a mouse, what is under the
+ * pointer is named as it passes.
+ *
  * A published view has had every face nobody could see taken out
  * (Publish/Snapshot.js), with this view's reach among what was looked from:
  * so it keeps to that reach — the distances and angles in the version's
@@ -33,7 +38,12 @@ const TARGET_HEIGHT = 1;
 /** How far off the floor's rooms the point turned round can follow the visitor. */
 const REACH = 1.5;
 
+/** How far a press may move, in pixels, and still be a click rather than a drag. */
+const CLICK_SLOP = 6;
+
 const _offset = new THREE.Vector3();
+const _ndc = new THREE.Vector2();
+const _raycaster = new THREE.Raycaster();
 const _euler = new THREE.Euler(0, 0, 0, "YXZ");
 const _box = new THREE.Box3();
 
@@ -352,16 +362,26 @@ export default class BirdView {
         this.canvas.removeEventListener("wheel", this.onWheel);
         this.canvas.removeEventListener("contextmenu", this.onContextMenu);
         this.pointers.clear();
+        this.press = null;
+        this.hover(null);
     }
 
     onPointerDown = (event) => {
         this.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
         if (this.pointers.size === 2) this.pinch = this.spread();
+        // A click, until it moves or a second finger comes down.
+        this.press = this.pointers.size === 1 ? { id: event.pointerId, x: event.clientX, y: event.clientY } : null;
     };
 
     onPointerMove = (event) => {
         const last = this.pointers.get(event.pointerId);
-        if (!last) return;
+        if (!last) {
+            // A mouse passing over: name the light under it.
+            if (event.pointerType === "mouse" && event.target === this.canvas) this.hover(this.lightAt(event.clientX, event.clientY), event);
+            else this.hover(null);
+            return;
+        }
+        if (this.press && Math.hypot(event.clientX - this.press.x, event.clientY - this.press.y) > CLICK_SLOP) this.press = null;
         const dx = event.clientX - last.x;
         const dy = event.clientY - last.y;
         last.x = event.clientX;
@@ -378,7 +398,35 @@ export default class BirdView {
     onPointerUp = (event) => {
         this.pointers.delete(event.pointerId);
         this.pinch = this.pointers.size === 2 ? this.spread() : 0;
+        const press = this.press;
+        this.press = null;
+        if (press?.id !== event.pointerId || event.type === "pointercancel") return;
+        const light = this.lightAt(event.clientX, event.clientY);
+        if (!light) return;
+        this.world.switches.toggle(light.id);
+        if (event.pointerType === "mouse") this.hover(light, event);
     };
+
+    /**
+     * The light under a point on the screen, on the floor shown — floors
+     * above are taken away, and those below are under it — or null.
+     */
+    lightAt(x, y) {
+        if (!this.world.switches) return null;
+        const rect = this.canvas.getBoundingClientRect();
+        _ndc.set(((x - rect.left) / rect.width) * 2 - 1, -((y - rect.top) / rect.height) * 2 + 1);
+        _raycaster.setFromCamera(_ndc, this.rig.perspectiveCamera);
+        return this.builder.pickLight(_raycaster.ray, { accept: ({ elevation }) => this.levelAt(elevation + 0.05) === this.level });
+    }
+
+    /** Say what the pointer is over — for the HUD — and show that it can be clicked. */
+    hover(light, event = null) {
+        const key = light ? `${light.id}:${light.label}` : null;
+        this.canvas.style.cursor = light ? "pointer" : "";
+        if (!light && !this.hovered) return;
+        this.hovered = key;
+        this.world.emit("bird-hover", light && { id: light.id, label: light.label, x: event.clientX, y: event.clientY });
+    }
 
     onWheel = (event) => {
         event.preventDefault();

@@ -7,6 +7,8 @@ import elements from "../../Utils/functions/elements.js";
 import Avatar from "./Avatar.js";
 
 const _joystick = new THREE.Vector3();
+/** How far behind the first solid thing a light's box may be met and still be the one aimed at. */
+const LIGHT_SLACK = 0.05;
 
 /**
  * The visitor: capsule physics against the octree, WASD/joystick movement,
@@ -652,13 +654,19 @@ export default class Player {
     }
 
     /**
-     * Action key. Operates whichever door is being looked at, falling back
-     * to the nearest one within reach — so you can open a door you are
-     * standing beside without having to aim at it.
+     * Action key. Turns a light on or off when the crosshair is on it or
+     * its switch; otherwise operates whichever door is being looked at,
+     * falling back to the nearest one within reach — so you can open a door
+     * you are standing beside without having to aim at it.
      */
     interact() {
         const builder = this.experience.world.sceneBuilder;
         if (!builder) return;
+
+        if (this.lookedAtLight) {
+            this.experience.world.switches?.toggle(this.lookedAtLight.id);
+            return;
+        }
 
         const door = this.lookedAtDoor || builder.nearestDoor(this.player.collider.end);
         if (!door) return;
@@ -764,6 +772,22 @@ export default class Player {
             return;
         }
 
+        // A light aimed at: its name, and which way it will go.
+        const light = this.lookedAtLight;
+        if (light) {
+            const on = this.experience.world.switches?.isOn(light.id);
+            const id = `light:${light.id}:${on}`;
+            if (id !== this.promptedDoorId) {
+                this.promptedDoorId = id;
+                this.experience.world.emit("prompt", {
+                    label: `${on ? "Turn off" : "Turn on"} ${light.name}`,
+                    key: "E",
+                    touch: { label: on ? "Off" : "On", icon: "light" },
+                });
+            }
+            return;
+        }
+
         const door = this.lookedAtDoor || builder.nearestDoor(this.player.collider.end);
         // Keyed on which way the door is going too, so the prompt turns from
         // Open to Close the moment it is opened, not once it has swung.
@@ -797,6 +821,7 @@ export default class Player {
         // Looking down on a floor, there is no crosshair to aim with.
         if (this.camera.birdView?.active) {
             this.lookedAtDoor = null;
+            this.lookedAtLight = null;
             if (this.lookSignature !== null) {
                 this.lookSignature = null;
                 this.experience.world.emit("look", null);
@@ -818,11 +843,15 @@ export default class Player {
 
         let target = null;
         this.lookedAtDoor = null;
+        this.lookedAtLight = null;
+        // How far the crosshair sees: to whatever solid it meets first.
+        let sight = intersects.length ? intersects[0].distance : Infinity;
 
         // Built from a published runtime file, the house is only in the
         // collision tree, each triangle saying what it is part of.
         if (builder?.runtime) {
             const hit = this.experience.world.collision.rayIntersect(this.player.raycaster.ray);
+            if (hit && hit.distance <= this.player.raycaster.far) sight = Math.min(sight, hit.distance);
             const nearer = hit && hit.distance <= this.player.raycaster.far && (!intersects.length || hit.distance < intersects[0].distance);
             if (nearer) {
                 intersects.length = 0;
@@ -867,6 +896,17 @@ export default class Player {
                         };
                     }
                 }
+            }
+        }
+
+        // A light, or its switch, in sight: what is aimed at, before any
+        // door. Its box stands a little proud of it, so it is met first.
+        if (this.experience.world.switches) {
+            const light = builder?.pickLight(this.player.raycaster.ray, { far: this.player.raycaster.far });
+            if (light && light.distance <= sight + LIGHT_SLACK) {
+                this.lookedAtLight = light;
+                this.lookedAtDoor = null;
+                target = { kind: "light", id: light.id, label: light.label };
             }
         }
 

@@ -195,12 +195,32 @@ async function rebuildManifest(sceneId, version) {
             meshes: bake.meshes,
             triangles: bake.triangles,
             ...(bake.view && { view: bake.view }),
+            ...(bake.zones && { zones: bake.zones }),
+            ...(bake.switches?.length && {
+                switches: bake.switches.map((item) => ({
+                    ...item,
+                    layers: Object.fromEntries(
+                        Object.entries(item.layers).map(([zone, layer]) => [
+                            zone,
+                            Object.fromEntries(
+                                Object.entries(layer).map(([key, value]) => [
+                                    key,
+                                    typeof value === "string" ? `${version}/${entry}/${value}` : value,
+                                ])
+                            ),
+                        ])
+                    ),
+                })),
+            }),
             variants: Object.fromEntries(
                 Object.entries(bake.variants).map(([name, variant]) => [
                     name,
                     {
                         lightmap: `${version}/${entry}/${variant.lightmap}`,
                         ...(variant.lightmapPhone && { lightmapPhone: `${version}/${entry}/${variant.lightmapPhone}` }),
+                        ...(variant.chroma && { chroma: `${version}/${entry}/${variant.chroma}` }),
+                        ...(variant.chromaPhone && { chromaPhone: `${version}/${entry}/${variant.chromaPhone}` }),
+                        ...(variant.storage && { storage: variant.storage }),
                         scale: variant.scale,
                         ...(variant.encoding && { encoding: variant.encoding }),
                         attribute: variant.attribute,
@@ -212,7 +232,10 @@ async function rebuildManifest(sceneId, version) {
         manifest.sizes.view = await size(`${entry}/view.glb`);
         manifest.sizes.lightmaps = Object.fromEntries(
             await Promise.all(
-                Object.entries(bake.variants).map(async ([name, variant]) => [name, await size(`${entry}/${variant.lightmap}`)])
+                Object.entries(bake.variants).map(async ([name, variant]) => [
+                    name,
+                    (await size(`${entry}/${variant.lightmap}`)) + (variant.chroma ? await size(`${entry}/${variant.chroma}`) : 0),
+                ])
             )
         );
     }

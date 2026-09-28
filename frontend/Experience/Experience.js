@@ -3,7 +3,7 @@ import * as THREE from "three";
 import Sizes from "./Utils/Sizes.js";
 import Time from "./Utils/Time.js";
 import Resources from "./Utils/Resources.js";
-import { lightmapURL } from "./Utils/device.js";
+import { chromaURL, lightmapURL } from "./Utils/device.js";
 import assets from "./Utils/assets.js";
 
 import Camera from "./Camera.js";
@@ -104,6 +104,7 @@ export default class Experience {
         if (runtime) extra.push({ name: "publishedRuntime", type: "glbModel", path: runtime });
         const day = this.published?.lighting?.variants?.day;
         if (day) extra.push({ name: "lightmap:day", type: "imageTexture", path: lightmapURL(day) });
+        if (day && chromaURL(day)) extra.push({ name: "lightmap:day:chroma", type: "imageTexture", path: chromaURL(day) });
 
         this.resources = new Resources([...assets, ...sceneAssets, ...extra]);
     }

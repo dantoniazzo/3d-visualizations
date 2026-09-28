@@ -107,13 +107,17 @@ def cylinder(name, radius, height, loc=(0, 0, 0), col=None, mat=None, rot=None,
 
 
 def cone(name, radius_bottom, radius_top, height, loc=(0, 0, 0), col=None, mat=None,
-         rot=None, segments=24, origin="center"):
-    """A tapered cylinder — lampshades, pots, table pedestals."""
+         rot=None, segments=24, origin="center", open_bottom=False):
+    """A tapered cylinder — lampshades, pots, table pedestals. A lampshade
+    is `open_bottom`: its bulb's light comes out of it."""
     bm = bmesh.new()
     bmesh.ops.create_cone(
         bm, cap_ends=True, cap_tris=False, segments=segments,
         radius1=radius_bottom, radius2=radius_top, depth=height,
     )
+    if open_bottom:
+        bottom = [f for f in bm.faces if len(f.verts) == segments and f.calc_center_median().z < 0]
+        bmesh.ops.delete(bm, geom=bottom, context="FACES_ONLY")
     if "z" in origin:
         bmesh.ops.translate(bm, vec=Vector((0, 0, height / 2)), verts=bm.verts)
     mesh = bpy.data.meshes.new(name)

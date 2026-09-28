@@ -12,6 +12,8 @@ import { buildOctree, isTransient } from "./Collision.js";
 import { GROUND_TYPES, FINISHES } from "../../../shared/catalog.js";
 import { pointInPolygon, rectCorners } from "../Utils/geometry.js";
 import { applyReflections } from "../Utils/reflections.js";
+import { CEILING_STYLES, GLASS, SWITCH_PLATE, ceilingFitting, wallSwitch } from "./Fittings.js";
+import { LIGHTMAP_DECODE, LIGHTMAP_YCOCG } from "./lightmapGLSL.js";
 
 /**
  * Builds a property from a scene spec, and rebuilds the parts of it the
@@ -34,6 +36,8 @@ export default class SceneBuilder {
     static MESH_COLLISION_BUDGET = 6000;
     /** Anything flatter than this is a rug: walked over, placed under. */
     static FLAT_HEIGHT = 0.035;
+    /** How much brighter than white a lit lamp's bulb is drawn. */
+    static BULB_GLOW = 6;
 
     /**
      * @param {object} spec
@@ -108,6 +112,7 @@ export default class SceneBuilder {
         this.buildModel();
         this.buildFreeDoors();
         this.buildLights();
+        this.buildLightFittings();
         this.applyFinishOverrides();
 
         this.scene.add(this.root);
@@ -498,6 +503,8 @@ export default class SceneBuilder {
         group.updateMatrixWorld(true);
         this.reapplyFinishes([`wall:${wallId}:a`, `wall:${wallId}:b`]);
         this.shellDirty = true;
+        // A switch goes by a door: moving the door moves it.
+        this.buildLightFittings();
         return group;
     }
 
@@ -701,9 +708,8 @@ export default class SceneBuilder {
     }
 
     /**
-     * A soft light at the centre of each room's ceiling. The shell has no
-     * light fittings of its own — those are furniture — but an unlit room
-     * reads as a bug, so every room gets one.
+     * A soft light in each room, at its ceiling light (buildLightFittings):
+     * an unlit room reads as a bug, so every room gets one.
      *
      * Outdoor slabs are skipped: a yard is lit by the sun, and a point light
      * hovering over a lawn reads as a bug of its own.
@@ -713,14 +719,9 @@ export default class SceneBuilder {
         this.lights.name = "fixtures";
 
         for (const room of this.spec.rooms) {
-            if (FINISHES[room.floor_finish]?.kind === "ground") continue;
-
-            const centre = room.polygon.reduce(
-                (acc, [x, z]) => [acc[0] + x, acc[1] + z],
-                [0, 0]
-            );
-            const x = centre[0] / room.polygon.length;
-            const z = centre[1] / room.polygon.length;
+            const fitting = ceilingFitting(room);
+            if (!fitting) continue;
+            const [x, y, z] = fitting.position;
 
             // Scale with floor area so a big living room isn't as dim as a WC.
             const area = polygonArea(room.polygon);
@@ -733,12 +734,91 @@ export default class SceneBuilder {
                 Math.max(6, Math.sqrt(area) * 3),
                 1.8
             );
-            light.position.set(x, room.elevation + room.height - 0.25, z);
+            // Under the glass, clear of it, so the ceiling round it is lit.
+            light.position.set(x, y - CEILING_STYLES[fitting.style].radius - 0.1, z);
             light.name = `light:${room.id}`;
             this.lights.add(light);
         }
 
         this.root.add(this.lights);
+    }
+
+    /**
+     * Each room's ceiling light — an opal globe on a cord, or a dome flat to
+     * the ceiling (World/Fittings.js) — and the switch for it on the wall by
+     * the door. Drawn, published and baked like the rest of the house, and
+     * walked through: nothing here is collided with. Built again whenever a
+     * wall's openings change, since a switch goes by a door.
+     */
+    buildLightFittings() {
+        if (this.lightFittings) {
+            this.root.remove(this.lightFittings);
+            this.lightFittings.traverse((node) => node.geometry?.dispose());
+        }
+        const group = new THREE.Group();
+        group.name = "light-fittings";
+        group.userData.decor = true;
+        this.lightFittings = group;
+        if (this.isModelScene) return;
+
+        const glass = this.materials.getTrim(GLASS);
+        const white = this.materials.getTrim("trim_white");
+        const cord = this.materials.getTrim("trim_charcoal");
+        const roomAt = (x, y, z) => this.roomAt(x, y, z);
+
+        for (const room of this.spec.rooms) {
+            const fitting = ceilingFitting(room);
+            if (!fitting) continue;
+            // The room's, for which floor they are on (staticOptions).
+            const owner = new THREE.Group();
+            owner.name = `fittings:${room.id}`;
+            owner.userData = { kind: "fitting", id: room.id, decor: true };
+            group.add(owner);
+            const part = (geometry, material, label, x, y, z) => {
+                const mesh = new THREE.Mesh(geometry, material);
+                mesh.position.set(x, y, z);
+                mesh.userData = { decor: true, label };
+                mesh.castShadow = false;
+                owner.add(mesh);
+                return mesh;
+            };
+            const label = `${room.name || room.id} light`;
+            const style = CEILING_STYLES[fitting.style];
+            const [x, y, z] = fitting.position;
+            const top = fitting.ceiling;
+            if (fitting.style === "pendant") {
+                const canopy = 0.025;
+                part(new THREE.CylinderGeometry(style.canopy, style.canopy, canopy, 24), white, label, x, top - canopy / 2, z);
+                const hang = top - canopy - (y + style.radius);
+                part(new THREE.CylinderGeometry(style.cord, style.cord, hang, 6), cord, label, x, top - canopy - hang / 2, z);
+                part(new THREE.CylinderGeometry(0.032, 0.036, 0.035, 16), white, label, x, y + style.radius + 0.005, z);
+                part(new THREE.SphereGeometry(style.radius, 28, 18), glass, label, x, y, z);
+            } else {
+                // The dome's rim at the ceiling, its glass below.
+                part(new THREE.CylinderGeometry(style.radius + 0.012, style.radius + 0.012, 0.012, 32), white, label, x, top - 0.006, z);
+                const dome = part(new THREE.SphereGeometry(style.radius, 32, 10, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), glass, label, x, top - 0.012, z);
+                dome.scale.y = style.depth / style.radius;
+            }
+
+            const plate = wallSwitch(room, this.spec, roomAt);
+            if (!plate) continue;
+            const holder = new THREE.Group();
+            holder.position.set(...plate.position);
+            holder.rotation.y = plate.yaw;
+            holder.userData.decor = true;
+            const { size, depth, rocker } = SWITCH_PLATE;
+            const face = new THREE.Mesh(new THREE.BoxGeometry(size, size, depth), white);
+            const key = new THREE.Mesh(new THREE.BoxGeometry(...rocker), white);
+            key.position.z = depth / 2 + rocker[2] / 2;
+            for (const mesh of [face, key]) {
+                mesh.userData = { decor: true, label: `${label} switch` };
+                holder.add(mesh);
+            }
+            owner.add(holder);
+        }
+
+        group.updateMatrixWorld(true);
+        this.root.add(group);
     }
 
     // ------------------------------------------------------------------
@@ -1249,6 +1329,65 @@ export default class SceneBuilder {
         return best;
     }
 
+    /**
+     * What a visitor can point at to turn a light on or off, in a public
+     * view with light switches (World/Switches.js): a box round each lamp,
+     * each ceiling light and each wall switch, from the published spec's
+     * lights. Never drawn, published or collided with — only aimed at.
+     *
+     * @param {object[]} lights  the published spec's, on the switches there are
+     */
+    buildLightTargets(lights) {
+        if (this.lightTargets) {
+            this.scene.remove(this.lightTargets);
+            this.lightTargets.traverse((node) => node.geometry?.dispose());
+        }
+        const group = new THREE.Group();
+        group.name = "light-targets";
+        const material = new THREE.MeshBasicMaterial({ visible: false });
+        const rooms = new Map(this.spec.rooms.map((room) => [room.id, room]));
+        for (const light of lights) {
+            const room = rooms.get(light.room);
+            for (const { part, box } of light.targets || []) {
+                const [x0, y0, z0, x1, y1, z1] = box;
+                const mesh = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0), material);
+                mesh.position.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+                mesh.userData = {
+                    lightSwitch: light.switch,
+                    name: light.label,
+                    label: part === "switch" ? `${light.label} switch` : light.label,
+                    elevation: room?.elevation ?? y0,
+                };
+                group.add(mesh);
+            }
+        }
+        group.updateMatrixWorld(true);
+        this.lightTargets = group;
+        this.scene.add(group);
+    }
+
+    /**
+     * The light a ray meets first — or its switch — or null.
+     *
+     * @param {THREE.Ray} ray
+     * @param {object} [options]
+     * @param {number} [options.far]  how far it reaches
+     * @param {(target: object) => boolean} [options.accept]  which may be picked
+     * @returns {{ id, name, label, distance }|null}  the switch, the light's
+     *          name, and what was pointed at
+     */
+    pickLight(ray, { far = Infinity, accept = () => true } = {}) {
+        if (!this.lightTargets) return null;
+        _pick.ray.copy(ray);
+        _pick.far = far;
+        for (const hit of _pick.intersectObjects(this.lightTargets.children, false)) {
+            const { lightSwitch, name, label, elevation } = hit.object.userData;
+            if (!accept({ elevation })) continue;
+            return { id: lightSwitch, name, label, distance: hit.distance };
+        }
+        return null;
+    }
+
     /** Everything a look-at raycast should consider. */
     getInteractiveObjects() {
         const list = [this.shell];
@@ -1325,7 +1464,7 @@ export default class SceneBuilder {
         const walls = byId(this.spec.walls);
         const stairs = byId(this.spec.stairs);
         const holes = byId(this.spec.floor_openings);
-        const OWNERS = new Set(["room", "wall", "roof", "stairs", "rail", "furniture"]);
+        const OWNERS = new Set(["room", "wall", "roof", "stairs", "rail", "furniture", "fitting"]);
         const owner = (mesh) => {
             for (let node = mesh; node; node = node.parent) if (OWNERS.has(node.userData?.kind)) return node;
             return null;
@@ -1344,6 +1483,7 @@ export default class SceneBuilder {
                 const id = node?.userData.id;
                 switch (node?.userData.kind) {
                     case "room":
+                    case "fitting":
                         return levelAt(rooms.get(id)?.elevation ?? box.min.y);
                     case "wall":
                         return levelAt(walls.get(id)?.base_height ?? box.min.y);
@@ -1425,9 +1565,18 @@ export default class SceneBuilder {
         this.baked = Boolean(lighting?.variants);
         this.bakedMaterials = [];
         this.vertexLit = [];
+        // Each light switch's own light, baked room by room: which of it
+        // each room's lightmapped materials add in (setSwitchLight).
+        this.switches = this.baked ? lighting.switches ?? [] : [];
+        this.switchLayers = planSwitchLayers(this.switches, maxSwitchLayers(this.experience.renderer?.renderer));
+        this.switchWeights = this.switches.map(() => 0);
+        // Lamps' bulbs, lit up while their switches are on.
+        this.bulbs = [];
 
-        const materialFor = (key, lit, fallback) => {
-            const cacheKey = `${key}|${this.baked ? lit : ""}`;
+        const materialFor = (key, lit, fallback, zone) => {
+            // A room with switches of its own draws with materials of its own.
+            const layers = lit === "lightmap" ? this.switchLayers.get(zone) : null;
+            const cacheKey = `${key}|${this.baked ? lit : ""}${layers ? `|${zone}` : ""}`;
             if (cache.has(cacheKey)) return cache.get(cacheKey);
             const live = byKey.get(key) ?? fallback;
             // A metal has next to no diffuse colour, so its baked light is
@@ -1446,7 +1595,8 @@ export default class SceneBuilder {
                     side,
                     vertexColors: lit === "vertex",
                 });
-                this.bakedMaterials.push({ material, lit });
+                if (layers) material.userData.switchLayers = layers;
+                this.bakedMaterials.push({ material, lit, zone: layers ? zone : null });
             }
             cache.set(cacheKey, material);
             return material;
@@ -1458,16 +1608,24 @@ export default class SceneBuilder {
         gltf.scene.updateMatrixWorld(true);
         gltf.scene.traverse((node) => {
             if (!node.isMesh) return;
-            const { material: key, level = 0, kind = null, cast = true, receive = true, lighting: lit } = node.userData;
-            const mesh = new THREE.Mesh(node.geometry, materialFor(key, lit, node.material));
+            const { material: key, level = 0, kind = null, cast = true, receive = true, lighting: lit, zone = null, glow = null } = node.userData;
+            const mesh = new THREE.Mesh(node.geometry, materialFor(key, lit, node.material, zone));
             mesh.applyMatrix4(node.matrixWorld);
             mesh.name = node.name;
             // Baked, the shadows are in the light already.
             mesh.castShadow = this.baked ? false : cast;
             mesh.receiveShadow = this.baked ? false : receive;
-            mesh.userData = { batch: true, level, kind, lighting: lit };
+            // Which room it is lit as, once the bake is laid out by room.
+            mesh.userData = { batch: true, level, kind, lighting: lit, zone };
             mesh.raycast = () => {};
-            if (this.baked && lit === "vertex") this.vertexLit.push(mesh);
+            if (this.baked && lit === "vertex") {
+                this.vertexLit.push(mesh);
+                // Each switch's light on it, kept off the GPU until the
+                // switch is on (mixVertexLight).
+                mesh.userData.switchLight = takeSwitchLight(node.geometry);
+            }
+            const bulbOf = glow ? this.switches.findIndex((entry) => entry.id === glow) : -1;
+            if (bulbOf >= 0) this.bulbs.push({ mesh, index: bulbOf, id: glow, off: mesh.material, on: null });
             group.add(mesh);
             triangles += (node.geometry.index?.count ?? node.geometry.attributes.position.count) / 3;
         });
@@ -1489,29 +1647,132 @@ export default class SceneBuilder {
      * surface's colour times the light Blender baked for it. A lightmap
      * encoded "reinhard" (blender/bake_public.py) keeps what is brighter
      * than that as well, squeezed into the top of its range, and is opened
-     * back out here.
+     * back out here. One stored "ycocg" is its brightness alone, one
+     * channel, with its colour beside it (`chroma`) at half the size: on
+     * the GPU as they are, for well under half the memory of the colour
+     * itself, and put back together as it is drawn.
      */
-    setLightingVariant(texture, info) {
-        if (!texture.userData.lightmap) {
-            texture.userData.lightmap = true;
-            texture.flipY = false;
-            texture.colorSpace = THREE.SRGBColorSpace;
-            texture.channel = 1;
-            texture.needsUpdate = true;
-        }
+    setLightingVariant(texture, info, chroma = null) {
+        const parted = info.storage === "ycocg" && chroma;
+        prepareLightmap(texture, parted ? THREE.RedFormat : null);
+        if (parted) prepareLightmap(chroma, THREE.RGFormat);
+        const layerEncoding = this.switches[0]?.encoding;
         for (const { material, lit } of this.bakedMaterials) {
             if (lit !== "lightmap") continue;
             if (!material.lightMap) material.needsUpdate = true;
             material.lightMap = texture;
             material.lightMapIntensity = Math.PI * info.scale;
-            decodeLightmap(material, info.encoding);
+            decodeLightmap(material, info.encoding, parted ? chroma : null, layerEncoding);
         }
-        const name = info.attribute.toLowerCase();
+        this.lightingInfo = info;
+        this.mixVertexLight();
+        this.tintDoors(this.mixDoorLight());
+    }
+
+    /**
+     * Turn light switches on and off: each switch's light, as baked on its
+     * own, added to the day's or the night's — in the lightmaps of the
+     * rooms it reaches, as layers each room's materials add in; on the
+     * thin, vertex-lit faces; and on the doors.
+     *
+     * @param {number[]} weights  by switch, in the order the bake lists
+     *        them (lighting.switches): 0 off, 1 on
+     * @param {Map<string, { luma, chroma }>} [textures]  each switch's
+     *        layer in each room, as `${switch}|${zone}`: a switch whose
+     *        layer is not loaded adds nothing there
+     */
+    setSwitchLight(weights, textures = new Map()) {
+        this.switchWeights = weights;
+        for (const { material, zone } of this.bakedMaterials) {
+            if (!zone) continue;
+            const uniforms = material.userData.switchUniforms;
+            if (!uniforms) continue;
+            this.switchLayers.get(zone).forEach((layer, k) => {
+                const loaded = textures.get(`${layer.index}|${zone}`);
+                if (loaded) {
+                    prepareLightmap(loaded.luma, THREE.RedFormat);
+                    prepareLightmap(loaded.chroma, THREE.RGFormat);
+                }
+                const weight = loaded ? weights[layer.index] ?? 0 : 0;
+                uniforms[k].luma.value = loaded?.luma ?? blankLayer().luma;
+                uniforms[k].chroma.value = loaded?.chroma ?? blankLayer().chroma;
+                uniforms[k].gain.value = Math.PI * layer.scale * weight;
+            });
+        }
+        for (const bulb of this.bulbs) {
+            const on = (weights[bulb.index] ?? 0) > 0;
+            bulb.on ??= this.bulbMaterial(bulb);
+            bulb.mesh.material = on ? bulb.on : bulb.off;
+        }
+        if (!this.lightingInfo) return;
+        this.mixVertexLight();
+        this.tintDoors(this.mixDoorLight());
+    }
+
+    /**
+     * A lit bulb: its lamp's colour, bright — so bright Filmic draws it
+     * close to white, as a camera sees one — and lit by nothing else.
+     */
+    bulbMaterial({ id, off }) {
+        const fitting = this.spec.lights?.find((light) => light.switch === id);
+        return new THREE.MeshBasicMaterial({
+            name: `${off.name}-lit`,
+            color: new THREE.Color(fitting?.color ?? "#ffcf99").multiplyScalar(SceneBuilder.BULB_GLOW),
+            side: off.side,
+        });
+    }
+
+    /**
+     * The thin faces' light: the variant's, plus each switch that is on —
+     * added up here, once, as switches change, rather than as they are
+     * drawn. A face no switch that is on reaches draws the variant's own.
+     */
+    mixVertexLight() {
+        const name = this.lightingInfo.attribute.toLowerCase();
         for (const mesh of this.vertexLit) {
-            const light = mesh.geometry.getAttribute(name);
-            if (light) mesh.geometry.setAttribute("color", light);
+            const geometry = mesh.geometry;
+            const light = geometry.getAttribute(name);
+            if (!light) continue;
+            const on = mesh.userData.switchLight.filter(({ index }) => this.switchWeights[index] > 0);
+            if (!on.length) {
+                if (geometry.getAttribute("color") !== light) geometry.setAttribute("color", light);
+                continue;
+            }
+            const size = light.itemSize;
+            let mixed = mesh.userData.mixedLight;
+            if (!mixed || mixed.count !== light.count || mixed.itemSize !== size) {
+                mixed = mesh.userData.mixedLight = new THREE.BufferAttribute(new Float32Array(light.count * size), size);
+            }
+            const out = mixed.array;
+            out.set(floatValues(light));
+            for (const { index, values } of on) {
+                const weight = this.switchWeights[index];
+                const step = values.length / light.count;
+                // Its colour, not its alpha.
+                for (let v = 0, o = 0; o < out.length; v += step, o += size) {
+                    out[o] += values[v] * weight;
+                    out[o + 1] += values[v + 1] * weight;
+                    out[o + 2] += values[v + 2] * weight;
+                }
+            }
+            mixed.needsUpdate = true;
+            if (geometry.getAttribute("color") !== mixed) geometry.setAttribute("color", mixed);
         }
-        this.tintDoors(info.doors || {});
+    }
+
+    /** Each door's light: the variant's, plus each switch that is on. */
+    mixDoorLight() {
+        const doors = {};
+        for (const [id, light] of Object.entries(this.lightingInfo.doors || {})) doors[id] = [...light];
+        this.switches.forEach((entry, index) => {
+            const weight = this.switchWeights[index] ?? 0;
+            if (!weight) return;
+            for (const [id, light] of Object.entries(entry.doors || {})) {
+                const door = (doors[id] ??= [0, 0, 0]);
+                for (let c = 0; c < 3; c++) door[c] += light[c] * weight;
+            }
+        });
+        return doors;
     }
 
     /**
@@ -1539,6 +1800,7 @@ export default class SceneBuilder {
     }
 
     dispose() {
+        if (this.lightTargets) this.scene.remove(this.lightTargets);
         this.scene.remove(this.root);
         this.scene.remove(this.colliders);
         this.scene.remove(this.staticColliders);
@@ -1569,6 +1831,8 @@ export default class SceneBuilder {
 // Helpers
 // ---------------------------------------------------------------------
 
+const _pick = new THREE.Raycaster();
+
 /** What the dynamic octree leaves out: what isTransient does, and placeholders for missing pieces. */
 export function skipDynamic(object) {
     return isTransient(object) || object.name === "missing-model";
@@ -1590,26 +1854,188 @@ function doubleSided(material) {
     return clone;
 }
 
-/** How a lightmap texel is opened back out to light, by encoding. */
-const LIGHTMAP_DECODE = {
-    // e = x / (1 + x), so x = e / (1 - e): up to 64 times the lightmap's
-    // scale, the most it was encoded with.
-    reinhard: "( lightMapTexel.rgb / max( vec3( 1.0 ) - lightMapTexel.rgb, vec3( 1.0 / 65.0 ) ) ) * lightMapIntensity",
-};
+/**
+ * A lightmap texture set up once for drawing: through the lightmap UVs,
+ * as the bake laid it out (not flipped). A colour lightmap is sRGB; its
+ * brightness or colour alone (`format`, stored "ycocg") is raw 8-bit
+ * values, decoded in the shader.
+ */
+function prepareLightmap(texture, format = null) {
+    if (texture.userData.lightmap) return;
+    texture.userData.lightmap = true;
+    texture.flipY = false;
+    texture.channel = 1;
+    if (format) {
+        texture.format = format;
+        texture.colorSpace = THREE.NoColorSpace;
+    } else {
+        texture.colorSpace = THREE.SRGBColorSpace;
+    }
+    texture.needsUpdate = true;
+}
 
-/** Draw a baked material's lightmap as it was encoded (setLightingVariant). */
-function decodeLightmap(material, encoding) {
-    const decode = LIGHTMAP_DECODE[encoding] ?? null;
-    if ((material.userData.lightmapDecode ?? null) === decode) return;
-    material.userData.lightmapDecode = decode;
+const LIGHTMAP_CHROMA = /* glsl */ `
+uniform sampler2D lightMapChroma;
+vec3 lightMapColour( float luma, vec2 uv ) {
+	return ycocgColour( luma, texture2D( lightMapChroma, uv ).rg );
+}
+`;
+
+/**
+ * The light of the switches that are on, for a room's material with
+ * `count` layers (setSwitchLight): each one's crop of the lightmap, stored
+ * "ycocg", opened back out by `decode`, times its gain — nothing when it
+ * is off, or not loaded yet. Written out layer by layer, as GLSL indexes
+ * no array of textures by a loop's counter.
+ */
+function switchLightGLSL(count, decode) {
+    const layers = Array.from({ length: count }, (_, k) => k);
+    return /* glsl */ `
+${layers.map((k) => `uniform sampler2D switchLuma${k};\nuniform sampler2D switchChroma${k};\nuniform vec4 switchRect${k};\nuniform float switchGain${k};`).join("\n")}
+vec3 switchLayer( sampler2D luma, sampler2D chroma, vec4 rect, vec2 uv ) {
+	vec2 st = ( uv - rect.xy ) / rect.zw;
+	vec3 e = ycocgColour( texture2D( luma, st ).r, texture2D( chroma, st ).rg );
+	return ${decode("e")};
+}
+vec3 switchLight( vec2 uv ) {
+	vec3 light = vec3( 0.0 );
+${layers.map((k) => `\tif ( switchGain${k} > 0.0 ) light += switchLayer( switchLuma${k}, switchChroma${k}, switchRect${k}, uv ) * switchGain${k};`).join("\n")}
+	return light;
+}
+`;
+}
+
+/**
+ * Draw a baked material's lightmap as it was stored and encoded
+ * (setLightingVariant): its colour from its brightness and `chroma` when
+ * given, then opened back out — and, for a room's material with switches
+ * of its own (userData.switchLayers), their light added in, as encoded
+ * `layerEncoding`.
+ */
+function decodeLightmap(material, encoding, chroma = null, layerEncoding = null) {
+    const uniform = (material.userData.lightMapChroma ??= { value: null });
+    uniform.value = chroma;
+    const layers = material.userData.switchLayers ?? [];
+    const switches = (material.userData.switchUniforms ??= layers.map((layer) => ({
+        luma: { value: blankLayer().luma },
+        chroma: { value: blankLayer().chroma },
+        rect: { value: new THREE.Vector4(...layer.rect) },
+        gain: { value: 0 },
+    })));
+    const key = `${LIGHTMAP_DECODE[encoding] ? encoding : ""}|${chroma ? "ycocg" : ""}|${switches.length}|${layerEncoding ?? ""}`;
+    if ((material.userData.lightmapKey ?? "||0|") === key) return;
+    material.userData.lightmapKey = key;
+    const decode = LIGHTMAP_DECODE[encoding] ?? ((e) => e);
+    const decodeLayer = LIGHTMAP_DECODE[layerEncoding] ?? ((e) => e);
     material.onBeforeCompile = (shader) => {
-        if (!decode) return;
         const plain = "lightMapTexel.rgb * lightMapIntensity";
         if (!shader.fragmentShader.includes(plain)) console.warn("Lightmap not decoded: three's shader has changed");
-        shader.fragmentShader = shader.fragmentShader.replace(plain, decode);
+        let colour = "lightMapTexel.rgb";
+        let prefix = "";
+        if (chroma || switches.length) prefix += LIGHTMAP_YCOCG;
+        if (chroma) {
+            shader.uniforms.lightMapChroma = uniform;
+            prefix += LIGHTMAP_CHROMA;
+            colour = "lightMapColour( lightMapTexel.r, vLightMapUv )";
+        }
+        let light = `${decode(colour)} * lightMapIntensity`;
+        if (switches.length) {
+            switches.forEach(({ luma, chroma: layerChroma, rect, gain }, k) => {
+                shader.uniforms[`switchLuma${k}`] = luma;
+                shader.uniforms[`switchChroma${k}`] = layerChroma;
+                shader.uniforms[`switchRect${k}`] = rect;
+                shader.uniforms[`switchGain${k}`] = gain;
+            });
+            prefix += switchLightGLSL(switches.length, decodeLayer);
+            light = `( ${light} + switchLight( vLightMapUv ) )`;
+        }
+        shader.fragmentShader = prefix + shader.fragmentShader.replace(plain, light);
     };
-    material.customProgramCacheKey = () => encoding ?? "";
+    material.customProgramCacheKey = () => key;
     material.needsUpdate = true;
+}
+
+/**
+ * How many switches' layers a room's materials can add in: two textures
+ * each, beside the surface's own texture and the lightmap's two, within
+ * what this GPU can bind at once — and never more than six.
+ */
+function maxSwitchLayers(renderer) {
+    const units = renderer?.capabilities?.maxTextures ?? 16;
+    return Math.max(0, Math.min(6, Math.floor((units - 3) / 2)));
+}
+
+/**
+ * Which switches' light each room's materials add in: every switch whose
+ * light reaches the room, as the bake found it — or, where more reach it
+ * than there is room for, the strongest there. What is left out is the
+ * faint spill through a doorway from the rooms beyond.
+ *
+ * @returns {Map<string, object[]>} zone -> `{ index, scale, rect }`, the
+ *          switch's place in `switches` and its layer's place in the atlas
+ */
+function planSwitchLayers(switches, max) {
+    const byZone = new Map();
+    switches.forEach((entry, index) => {
+        for (const [zone, layer] of Object.entries(entry.layers || {})) {
+            if (entry.storage !== "ycocg" || !layer.chroma) continue;
+            if (!byZone.has(zone)) byZone.set(zone, []);
+            byZone.get(zone).push({ index, scale: entry.scale, rect: layer.rect, strength: layer.strength ?? 0, layer });
+        }
+    });
+    for (const [zone, layers] of byZone) {
+        layers.sort((a, b) => b.strength - a.strength);
+        if (layers.length > max) layers.length = max;
+        if (!layers.length) byZone.delete(zone);
+    }
+    return byZone;
+}
+
+/**
+ * A switch layer's stand-in until it loads — no light, no colour — for the
+ * shader to have a texture bound in its place.
+ */
+let blank = null;
+function blankLayer() {
+    if (blank) return blank;
+    const texture = (data, format) => {
+        const t = new THREE.DataTexture(data, 1, 1, format);
+        t.colorSpace = THREE.NoColorSpace;
+        t.needsUpdate = true;
+        return t;
+    };
+    blank = { luma: texture(new Uint8Array([0]), THREE.RedFormat), chroma: texture(new Uint8Array([128, 128]), THREE.RGFormat) };
+    return blank;
+}
+
+/**
+ * Take each switch's vertex light — `_s0`, `_s1`… — off a vertex-lit
+ * mesh's geometry, so it is not sent to the GPU with it: as plain numbers,
+ * for mixVertexLight to add up.
+ *
+ * @returns {{ index: number, values: Float32Array }[]}
+ */
+function takeSwitchLight(geometry) {
+    const taken = [];
+    for (const name of Object.keys(geometry.attributes)) {
+        const match = /^_s(\d+)$/.exec(name);
+        if (!match) continue;
+        taken.push({ index: Number(match[1]), values: floatValues(geometry.getAttribute(name)).slice() });
+        geometry.deleteAttribute(name);
+    }
+    return taken;
+}
+
+/** An attribute's values as floats, whatever it is stored as. */
+function floatValues(attribute) {
+    if (attribute.array instanceof Float32Array && !attribute.isInterleavedBufferAttribute) return attribute.array;
+    const size = attribute.itemSize;
+    const values = new Float32Array(attribute.count * size);
+    const get = ["getX", "getY", "getZ", "getW"];
+    for (let i = 0; i < attribute.count; i++) {
+        for (let c = 0; c < size; c++) values[i * size + c] = attribute[get[c]](i);
+    }
+    return values;
 }
 
 /** Undo a previous world-UV tiling so a new tile size can be applied. */

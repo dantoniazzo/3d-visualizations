@@ -7,7 +7,9 @@ import Environment from "./Environment.js";
 import Collision from "./Collision.js";
 import Player from "./Player/Player.js";
 import BirdView from "./BirdView.js";
-import { lightmapURL } from "../Utils/device.js";
+import Switches from "./Switches.js";
+import Vegetation from "./Vegetation/Vegetation.js";
+import { chromaURL, lightmapURL } from "../Utils/device.js";
 
 export default class World extends EventEmitter {
     constructor() {
@@ -31,6 +33,8 @@ export default class World extends EventEmitter {
             this.sceneBuilder = new SceneBuilder(this.spec, { runtime });
             this.environment = new Environment(this.spec);
             this.player = new Player();
+            // The garden: grass on the lawns, trees on the bigger ones.
+            this.vegetation = new Vegetation(this);
 
             if (this.experience.publicView) {
                 // Nothing will move but the doors, the car and the people, so
@@ -48,7 +52,17 @@ export default class World extends EventEmitter {
                             // The room lights are in the lightmaps now.
                             if (this.sceneBuilder.lights) this.sceneBuilder.lights.visible = false;
                             this.environment.useBaked(lighting.view);
-                            this.setLighting("day");
+                            // Its light switches, when its fittings were baked apart.
+                            if (lighting.switches?.length && lighting.variants) {
+                                this.switches = new Switches(this.sceneBuilder, published);
+                                this.switches.on("change", () => this.emit("switches", this.switches));
+                                // Each light, and its switch on the wall, to point at.
+                                const lights = (published.spec.lights || []).filter((light) => this.switches.byId.has(light.switch));
+                                this.sceneBuilder.buildLightTargets(lights);
+                            }
+                            this.setLighting("day").then(() => {
+                                if (this.switches) this.emit("switches-ready", this.switches);
+                            });
                         }
                     }
                     // From opening the page, for the ?stats readout.
@@ -113,7 +127,9 @@ export default class World extends EventEmitter {
 
     /**
      * Day or night, in a public view whose lighting has been baked. The
-     * night lightmap is only downloaded the first time it is asked for.
+     * night lightmap is only downloaded the first time it is asked for;
+     * so are the lights that come on with it (Switches), and the two
+     * change together.
      *
      * @returns {Promise<boolean>} whether it changed
      */
@@ -122,12 +138,24 @@ export default class World extends EventEmitter {
         if (!info || !this.sceneBuilder?.baked) return false;
         this.lightmaps ??= new Map();
         if (!this.lightmaps.has(variant)) {
-            const preloaded = this.resources.items[`lightmap:${variant}`];
-            this.lightmaps.set(variant, preloaded ? Promise.resolve(preloaded) : new THREE.TextureLoader().loadAsync(lightmapURL(info)));
+            // Its brightness, and its colour when that is apart from it.
+            const load = (name, url) => {
+                const preloaded = this.resources.items[name];
+                if (preloaded) return Promise.resolve(preloaded);
+                return url ? new THREE.TextureLoader().loadAsync(url) : Promise.resolve(null);
+            };
+            this.lightmaps.set(
+                variant,
+                Promise.all([load(`lightmap:${variant}`, lightmapURL(info)), load(`lightmap:${variant}:chroma`, chromaURL(info))])
+            );
         }
-        const texture = await this.lightmaps.get(variant);
-        this.sceneBuilder.setLightingVariant(texture, info);
+        const [[texture, chroma]] = await Promise.all([this.lightmaps.get(variant), this.switches?.prepare(variant)]);
+        this.sceneBuilder.setLightingVariant(texture, info, chroma);
+        this.switches?.useVariant(variant);
         this.environment.setVariant(variant);
+        // The grass lit by the lawn under it, the trees by the bake's sun and sky.
+        this.vegetation?.useGroundLight(this.sceneBuilder, info, texture, chroma);
+        this.vegetation?.setLight(variant);
         this.lighting = variant;
         this.emit("lighting", variant);
         return true;
@@ -150,6 +178,7 @@ export default class World extends EventEmitter {
         const delta = this.experience.time.delta;
         if (this.sceneBuilder) this.sceneBuilder.updateDoors(delta);
         if (this.player) this.player.update();
+        if (this.vegetation) this.vegetation.update(delta);
         if (this.editor) this.editor.update(delta);
         this.emit("tick", delta);
     }
@@ -158,6 +187,7 @@ export default class World extends EventEmitter {
         this.disposed = true;
         this.birdView?.dispose();
         this.editor?.dispose();
+        this.vegetation?.dispose();
         this.sceneBuilder?.dispose();
         this.environment?.dispose();
         this.player?.dispose();

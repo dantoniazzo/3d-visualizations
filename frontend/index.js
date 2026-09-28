@@ -33,6 +33,11 @@ const dom = elements({
     viewToggleLabel: "#view-toggle-label",
     lightingToggle: "#lighting-toggle",
     lightingToggleLabel: "#lighting-toggle-label",
+    lightsToggle: "#lights-toggle",
+    lightsPanel: "#lights-panel",
+    lightsList: "#lights-list",
+    lightsAllOff: "#lights-all-off",
+    pickLabel: "#pick-label",
     menuPanel: "#menu-panel",
     menuSceneName: "#menu-scene-name",
     menuSceneSummary: "#menu-scene-summary",
@@ -179,9 +184,28 @@ async function findPublished(sceneId, version = null) {
                         ...variant,
                         lightmap: `${base}/${variant.lightmap}`,
                         lightmapPhone: variant.lightmapPhone && `${base}/${variant.lightmapPhone}`,
+                        chroma: variant.chroma && `${base}/${variant.chroma}`,
+                        chromaPhone: variant.chromaPhone && `${base}/${variant.chromaPhone}`,
                     },
                 ])
             ),
+            // Each light switch's light, room by room, when the fittings
+            // were baked apart.
+            switches: manifest.lighting.switches?.map((entry) => ({
+                ...entry,
+                layers: Object.fromEntries(
+                    Object.entries(entry.layers).map(([zone, layer]) => [
+                        zone,
+                        {
+                            ...layer,
+                            lightmap: `${base}/${layer.lightmap}`,
+                            chroma: `${base}/${layer.chroma}`,
+                            lightmapPhone: layer.lightmapPhone && `${base}/${layer.lightmapPhone}`,
+                            chromaPhone: layer.chromaPhone && `${base}/${layer.chromaPhone}`,
+                        },
+                    ])
+                ),
+            })),
         };
         return {
             spec,
@@ -244,6 +268,9 @@ function enterScene(sceneId, spec, options = {}) {
     world.on("mode", onModeChange);
     world.on("publish", () => startPublish());
     world.on("lighting", updateLightingToggle);
+    world.on("switches-ready", setupLights);
+    world.on("switches", renderLights);
+    world.on("bird-hover", showPickLabel);
     world.on("bird-ready", setupFloorPicker);
     world.on("bird", updateBirdView);
 
@@ -314,6 +341,7 @@ function updateRoomReadout(room) {
 function onModeChange(mode) {
     if (mode === "edit") {
         toggleMenu(false);
+        toggleLights(false);
         if (!dom.finishPicker.hidden) closeFinishPicker({ relock: false });
         if (isChatOpen()) closeChat({ relock: false });
         showAction(null);
@@ -356,7 +384,7 @@ function onDoorPrompt(prompt) {
  * otherwise, in the editor, a new finish for the surface aimed at.
  */
 function refreshAction() {
-    if (worldPrompt) showAction(worldPrompt.key, worldPrompt.label);
+    if (worldPrompt) showAction(worldPrompt.key, worldPrompt.label, worldPrompt.touch);
     else if (lookTarget?.kind === "surface" && !publicView) showAction("T", "Change finish");
     else showAction(null);
 }
@@ -371,12 +399,13 @@ const TOUCH_ACTIONS = {
 };
 
 /**
- * The action on offer — a door, the car, a finish — as a key hint on a
- * keyboard, and as a button under the right thumb on a touch screen.
+ * The action on offer — a door, the car, a light, a finish — as a key hint
+ * on a keyboard, and as a button under the right thumb on a touch screen:
+ * `touch`'s word and icon, or those TOUCH_ACTIONS has for the label.
  */
-function showAction(key, label) {
+function showAction(key, label, touch = TOUCH_ACTIONS[label]) {
     actionKey = key || null;
-    const touch = key && TOUCH_ACTIONS[label];
+    if (!key) touch = null;
     dom.touchAction.hidden = !touch;
     if (touch) {
         dom.touchActionLabel.textContent = touch.label;
@@ -561,6 +590,7 @@ function sendChat() {
 function toggleMenu(force) {
     const show = force === undefined ? dom.menuPanel.hidden : force;
     dom.menuPanel.hidden = !show;
+    if (show) toggleLights(false);
 
     // The panel is only clickable once the cursor is free again.
     if (show) experience?.camera.releaseLock();
@@ -616,6 +646,7 @@ function setupFloorPicker(count) {
 
 function updateBirdView({ active, level }) {
     dom.birdToggle.classList.toggle("is-active", active);
+    if (!active) dom.pickLabel.hidden = true;
     dom.floorPicker.hidden = !active || Number(dom.floorPicker.dataset.count) < 2;
     for (const button of dom.floorPicker.querySelectorAll("[data-level]")) {
         button.classList.toggle("is-active", Number(button.dataset.level) === level);
@@ -661,6 +692,79 @@ dom.lightingToggle.addEventListener("click", (event) => {
     event.stopPropagation();
     toggleLighting();
 });
+
+/**
+ * The light switches, when the published view's fittings were baked apart
+ * (World/Switches.js): a button, and a panel of them floor by floor.
+ */
+function setupLights(switches) {
+    dom.lightsToggle.hidden = false;
+    const floors = switches.floors;
+    dom.lightsList.innerHTML = floors
+        .map(({ level, switches: items }) => {
+            const rows = items
+                .map(
+                    (item) => `<button class="light-switch" data-switch="${escapeHtml(item.id)}" aria-pressed="false">
+                        <span class="light-switch-label">${escapeHtml(item.label)}</span>
+                        <span class="light-switch-toggle" aria-hidden="true"></span>
+                    </button>`
+                )
+                .join("");
+            // One floor needs no heading.
+            const heading = floors.length > 1 ? `<h5>${escapeHtml(experience.world.birdView?.constructor.floorName(level) ?? `Floor ${level}`)}</h5>` : "";
+            return `<div class="hud-panel-section">${heading}<div class="light-switches">${rows}</div></div>`;
+        })
+        .join("");
+    renderLights(switches);
+}
+
+/** Each switch as it is — the list itself is only built once, so it keeps its focus. */
+function renderLights(switches) {
+    let lit = false;
+    for (const button of dom.lightsList.querySelectorAll("[data-switch]")) {
+        const on = switches.isOn(button.dataset.switch);
+        button.classList.toggle("is-on", on);
+        button.setAttribute("aria-pressed", String(on));
+        lit ||= on;
+    }
+    dom.lightsToggle.classList.toggle("is-lit", lit);
+    dom.lightsAllOff.disabled = !lit;
+}
+
+function toggleLights(force) {
+    if (dom.lightsToggle.hidden) force = false;
+    const show = force === undefined ? dom.lightsPanel.hidden : force;
+    dom.lightsPanel.hidden = !show;
+    dom.lightsToggle.classList.toggle("is-active", show);
+    if (show) {
+        toggleMenu(false);
+        // The panel is only clickable once the cursor is free again.
+        experience?.camera.releaseLock();
+    }
+}
+
+dom.lightsToggle.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleLights();
+});
+
+dom.lightsList.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-switch]");
+    if (button) experience?.world?.switches?.toggle(button.dataset.switch);
+});
+
+dom.lightsAllOff.addEventListener("click", () => experience?.world?.switches?.allOff());
+
+/** From above, the light under the mouse and what a click will do to it. */
+function showPickLabel(hover) {
+    const switches = experience?.world?.switches;
+    dom.pickLabel.hidden = !hover || !switches;
+    if (dom.pickLabel.hidden) return;
+    const on = switches.isOn(hover.id);
+    dom.pickLabel.innerHTML = `${escapeHtml(hover.label)} <span>${on ? "On" : "Off"} · click to turn ${on ? "off" : "on"}</span>`;
+    dom.pickLabel.classList.toggle("is-on", on);
+    dom.pickLabel.style.transform = `translate(${Math.round(hover.x + 14)}px, ${Math.round(hover.y + 16)}px)`;
+}
 
 function updateViewToggle(mode) {
     const first = mode === "first";
@@ -723,6 +827,16 @@ document.addEventListener("keydown", (event) => {
     if ((event.key === "t" || event.key === "T") && !typingElsewhere && !isChatOpen()) {
         if (!dom.finishPicker.hidden) closeFinishPicker();
         else openFinishPicker();
+        return;
+    }
+
+    if ((event.key === "l" || event.key === "L") && !typingElsewhere && !isChatOpen()) {
+        toggleLights();
+        return;
+    }
+
+    if (event.key === "Escape" && !dom.lightsPanel.hidden) {
+        toggleLights(false);
         return;
     }
 

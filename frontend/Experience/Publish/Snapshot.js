@@ -3,6 +3,7 @@ import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
 
 import { collectStatic, listStatic, materialKeys } from "../World/StaticBatcher.js";
 import { BIRD_VIEW, birdViewpoints, seeded, walkViewpoints } from "./viewpoints.js";
+import { gatherLights } from "../World/Fittings.js";
 
 /**
  * The static scene as a visitor can see it, and nothing more: the input to
@@ -102,8 +103,12 @@ export async function buildSnapshot(experience, { onProgress = () => {}, cull = 
         seconds: Math.round((performance.now() - started) / 100) / 10,
         timing,
     });
+    // With its light fittings and their switches, for the bake to light
+    // switch by switch and the public view to switch.
+    const spec = JSON.parse(JSON.stringify(builder.spec));
+    spec.lights = gatherLights(builder);
     scene.userData = {
-        spec: JSON.parse(JSON.stringify(builder.spec)),
+        spec,
         levels: options.levels,
         birdView: BIRD_VIEW,
         stats,

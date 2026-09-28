@@ -355,7 +355,7 @@ def desk_lamp(col, mats, x, y, h=0.45, rot=0.0, z=0.0):
     axis = (0.0, -_m.sin(tilt), _m.cos(tilt))
     centre = (head[0], head[1] - axis[1] * length / 2 + 0.01, head[2] - axis[2] * length / 2)
     parts.append(g.cone("shade", 0.07, 0.025, length, loc=centre, rot=(tilt, 0, 0), col=col,
-                        mat=mats["shade"], segments=24))
+                        mat=mats["shade"], segments=24, open_bottom=True))
     parts.append(g.sphere("bulb", 0.022, loc=(centre[0], centre[1] + 0.02, centre[2] - 0.03), col=col,
                           mat=mats["linen_white"], subdivisions=1))
     return _rotate(parts, x, y, rot)

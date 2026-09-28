@@ -332,6 +332,8 @@ export const TRIM_MATERIALS = {
     metal_black: { color: "#2a2b2e", roughness: 0.4, metalness: 0.85 },
     glass: { color: "#dfe5f5", roughness: 0.05, metalness: 0, transparent: true, opacity: 0.28 },
     frosted_glass: { color: "#e8ecf2", roughness: 0.5, metalness: 0, transparent: true, opacity: 0.55 },
+    // A ceiling light's glass (World/Fittings.js): lit from within, live.
+    opal_glass: { color: "#f6f2ea", roughness: 0.35, metalness: 0, glow: "#ffe3bf" },
 };
 
 export const TRIM_NAMES = Object.keys(TRIM_MATERIALS);

@@ -37,3 +37,8 @@ setQuality();
 export function lightmapURL(variant) {
     return (LOW_POWER && variant.lightmapPhone) || variant.lightmap;
 }
+
+/** The colour to go with that lightmap, when it is its brightness alone. */
+export function chromaURL(variant) {
+    return (LOW_POWER && variant.chromaPhone) || variant.chroma || null;
+}
