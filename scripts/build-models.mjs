@@ -19,6 +19,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { findBlender } from "./lib/blender.mjs";
+import { packGlb } from "./lib/pack-glb.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const BLENDER_DIR = join(ROOT, "blender");
@@ -68,6 +69,13 @@ for (const [script, args] of steps) {
         ["--background", "--python", join(BLENDER_DIR, script), ...(args.length ? ["--", ...args] : [])],
         { stdio: "inherit", cwd: BLENDER_DIR }
     );
+}
+
+// The car, packed for the web.
+if (steps.some(([script]) => script === "export_car.py")) {
+    for (const name of ["car-chassis.glb", "car-wheel.glb"]) {
+        console.log(`  packed ${name}: ${await packGlb(join(ROOT, "public", "models", name))}`);
+    }
 }
 
 const glb = join(ROOT, "public", "models",
