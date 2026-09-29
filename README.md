@@ -107,8 +107,37 @@ the point for now is that they are the right size. Where they come from:
 |---|---|
 | `blender/lib/joinery.py` | Built-ins: kitchen runs, islands, appliances, beds, wardrobes, bathrooms |
 | `blender/lib/loose.py` | Loose pieces: sofas, chairs, stools, tables, bookcases, TVs, lamps, plants, decor |
-| `blender/export_car.py` | The car, to the wheelbase, track and ride height `Car.js` drives with |
+| `blender/export_car.py` | The car — a BMW X6 M Competition (below) — to the wheelbase, track and ride height `Car.js` drives with |
 | `blender/lib/kit.py` | The kit of parts: panelled door leaves, levers, hinges and stops, skirting, mitred architraves, window frames, glazing bars and cills, stair treads, newels, turned balusters and handrails |
+
+**The car is modelled, not assembled.** It is a BMW X6 M Competition (G06,
+2023), built from the-blueprints.com's side, top, front and rear drawings
+the way a car modeller builds one — the method of Enpix's *Best Way To Model
+A Car In Blender*: the panels' outlines traced off the blueprints, each
+filled with an even grid of quads, the panels joined along the edges they
+share, one half built and mirrored, subdivided for smoothness. Here the
+tracing is numbers, measured off the drawings (`blender/lib/x6.py`): the
+lines that run along the car — the sills, the shoulder crease, the
+beltline, the window line, the roof rail, the centreline's profile — and a
+cross-section through them at every station. The body is one quad mesh of
+about 40 mm quads following those lines: its columns fall on the design's
+edges (the windscreen's base and top, the doors, the pillars, the rear
+window), its rows run along them, three rows loop round each wheel arch as
+a car's edge loops do, and the front and rear are patches filling the last
+columns' outlines (`blender/lib/carbody.py` has the curve and patch tools).
+Onto it are cut the kidneys and intakes (inset and sunk, the grille and
+fins behind them), the windows (set in, with their seals) and the shut
+lines of the doors and the bonnet (split and turned in); and on it are
+laid the parts a real car has as parts — the lamps with their bezels and
+light bars, the gill, the mirrors, the handles, the badges, the exhausts,
+the arch liners (`blender/lib/x6_parts.py`). The wheel is the 21-inch
+Y-spoke with the M brakes' blue caliper, which `Car.js` steers but does
+not spin (`blender/lib/x6_wheel.py`). Its silhouette matches the drawings
+in all four views: `export_car.py -- --views DIR` renders them at the
+drawings' scale to lay over them, and `--previews DIR` renders the car and
+its cage. `npm run models -- --car` also writes `blender/out/bmw_x6.blend`,
+the model with its Mirror and Subdivision modifiers still live, and packs
+the GLBs with meshopt (about 170 KB as sent).
 
 The kit is how a building built from a scene spec gets real joinery while
 staying editable. The app still decides where every door, window and flight
