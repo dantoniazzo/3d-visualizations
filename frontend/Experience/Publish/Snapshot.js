@@ -4,6 +4,7 @@ import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
 import { collectStatic, listStatic, materialKeys } from "../World/StaticBatcher.js";
 import { BIRD_VIEW, birdViewpoints, seeded, walkViewpoints } from "./viewpoints.js";
 import { gatherLights } from "../World/Fittings.js";
+import { SCENERY_IDS, leaveOut } from "../../../shared/scenery.js";
 
 /**
  * The static scene as a visitor can see it, and nothing more: the input to
@@ -69,9 +70,11 @@ const _color = new THREE.Color();
  * @param {(fraction: number, label: string) => void} [options.onProgress]
  * @param {boolean} [options.cull]  remove hidden faces (default true)
  * @param {boolean} [options.merge]  merge by material and floor (default true)
+ * @param {string[]} [options.scenery]  what of the scenery the version has
+ *        (shared/scenery.js): its spec says the rest is left out
  * @returns {Promise<{ glb: ArrayBuffer, stats: object }>}
  */
-export async function buildSnapshot(experience, { onProgress = () => {}, cull = true, merge = true } = {}) {
+export async function buildSnapshot(experience, { onProgress = () => {}, cull = true, merge = true, scenery = SCENERY_IDS } = {}) {
     const started = performance.now();
     const builder = experience.world.sceneBuilder;
     await builder.furnitureReady;
@@ -115,8 +118,9 @@ export async function buildSnapshot(experience, { onProgress = () => {}, cull = 
         timing,
     });
     // With its light fittings and their switches, for the bake to light
-    // switch by switch and the public view to switch.
-    const spec = JSON.parse(JSON.stringify(builder.spec));
+    // switch by switch and the public view to switch; and without the
+    // scenery left out of it, which neither grows nor is baked.
+    const spec = leaveOut(builder.spec, scenery);
     spec.lights = gatherLights(builder);
     scene.userData = {
         spec,

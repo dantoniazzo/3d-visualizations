@@ -43,27 +43,47 @@ export function chromaURL(variant) {
     return (LOW_POWER && variant.chromaPhone) || variant.chroma || null;
 }
 
+/** What a published version asks for (its `lighting` option), and what this visitor picked. */
+let publishedLighting = "auto";
+let chosenLighting = null;
+
+/**
+ * Before the scene is built: how a published version asks to be lit
+ * (shared/publishOptions.js's `lighting`: "auto", "phones" or "static"),
+ * and how its visitor has asked to see it, from the menu ("live", "baked",
+ * "static", or null for as published).
+ */
+export function setLighting(published = "auto", chosen = null) {
+    publishedLighting = published;
+    chosenLighting = chosen;
+}
+
 /**
  * How a baked public view is lit:
  *
  *   - "live": the sun and the lamps are drawn live, with shadows that
  *     follow the doors, the people and the car, on top of the rest of the
  *     light — the sky's, and everything bounced — from the bake.
- *   - "baked": all of the light from the bake, and no shadow map drawn for
- *     the house; what a phone can afford.
+ *   - "baked": all of the light from the bake, the sun shaded by what moves
+ *     where the bake says how much of it there is; what a phone can afford.
+ *   - "static": all of the light from the bake and nothing drawn live — no
+ *     shadow map, no light probes, the doors dimming no room — as the view
+ *     was before any of it; the lightest there is, for the slowest phones.
  *
- * Live where the bake has the light apart (blender/bake_public.py's
- * `indirect`) and the device is not low-power. `?lighting=live` or
- * `?lighting=baked` in the link overrides, to compare the two anywhere.
+ * `?lighting=` in the link first, then the visitor's choice (setLighting),
+ * then the version's: "static" fully baked everywhere, "phones" on a
+ * low-power device; otherwise live where the bake has the light apart
+ * (blender/bake_public.py's `indirect`) and the device is not low-power.
  *
  * @param {object} lighting  a published version's baked lighting
- * @returns {"live"|"baked"}
+ * @returns {"live"|"baked"|"static"}
  */
 export function lightingMode(lighting) {
-    if (!lighting?.variants?.day?.indirect) return "baked";
-    const asked = new URL(window.location.href).searchParams.get("lighting");
-    if (asked === "live" || asked === "baked") return asked;
-    return LOW_POWER ? "baked" : "live";
+    const apart = Boolean(lighting?.variants?.day?.indirect);
+    const asked = new URL(window.location.href).searchParams.get("lighting") ?? chosenLighting;
+    if (asked === "static" || asked === "baked" || (asked === "live" && apart)) return asked;
+    if (publishedLighting === "static" || (publishedLighting === "phones" && LOW_POWER)) return "static";
+    return apart && !LOW_POWER ? "live" : "baked";
 }
 
 /**

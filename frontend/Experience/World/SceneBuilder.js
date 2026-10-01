@@ -1009,13 +1009,16 @@ export default class SceneBuilder {
         this.root.add(this.vehicleGroup);
 
         // Each car as the model it names, preloaded with the scene; one that
-        // was not (or failed) is downloaded, and the car dressed when it comes.
+        // was not (or failed) is downloaded, and the car dressed when it comes
+        // — or, hidden by a visitor (World/Scenery.js), once it is shown.
         const models = this.experience.carModels;
+        const hidden = this.experience.hiddenScenery?.has("car");
         for (const spec of this.spec.vehicles) {
             const id = spec.model || DEFAULT_CAR;
             const car = new Car(spec, models.get(id), this.collision);
-            if (!car.model) {
-                models
+            car.dress = () => {
+                if (car.model || car.dressing) return;
+                car.dressing = models
                     .load(id)
                     .catch((error) => {
                         console.error(`Car "${id}" didn't load; using the default.`, error);
@@ -1025,9 +1028,69 @@ export default class SceneBuilder {
                         if (!car.model) car.setModel(model);
                     })
                     .catch((error) => console.error("No car model loaded; the car stays empty.", error));
-            }
+            };
+            car.group.visible = !hidden;
+            if (!hidden) car.dress();
             this.vehicleGroup.add(car.group);
             this.cars.push(car);
+        }
+    }
+
+    /**
+     * The cars shown or hidden (World/Scenery.js): hidden, not drawn, not
+     * offered to get into — and got out of, if one is being driven.
+     */
+    showCars(shown) {
+        for (const car of this.cars || []) {
+            car.group.visible = shown;
+            if (shown) car.dress?.();
+        }
+        const player = this.experience.world?.player;
+        if (!shown && player?.inVehicle) player.exitVehicle();
+    }
+
+    /**
+     * The hills shown, or laid flat at the level of the ground round them
+     * (World/Scenery.js): they are the house's own ground, cut out of the
+     * ground under them, so hidden they would leave a hole. Flat, they keep
+     * their baked light; what is walked on is as it was.
+     */
+    showHills(shown) {
+        const hills = planHills(this.spec);
+        if (!hills) return;
+        const meshes = [];
+        (this.batches ?? this.root).traverse((node) => {
+            if (node.isMesh && (node === this.hills || node.userData.material === "hill_grass")) meshes.push(node);
+        });
+        const at = new THREE.Vector3();
+        for (const mesh of meshes) {
+            const geometry = mesh.geometry;
+            const position = geometry.getAttribute("position");
+            const normal = geometry.getAttribute("normal");
+            if (!mesh.userData.risen) {
+                if (shown) continue;
+                mesh.userData.risen = { position: position.array.slice(), normal: normal?.array.slice() };
+            }
+            if (shown) {
+                position.array.set(mesh.userData.risen.position);
+                normal?.array.set(mesh.userData.risen.normal);
+            } else {
+                mesh.updateMatrixWorld();
+                const inverse = mesh.matrixWorld.clone().invert();
+                for (let i = 0; i < position.count; i++) {
+                    at.fromBufferAttribute(position, i).applyMatrix4(mesh.matrixWorld);
+                    at.y = hills.y;
+                    at.applyMatrix4(inverse);
+                    position.setXYZ(i, at.x, at.y, at.z);
+                    // Facing up, for what lights it live.
+                    normal?.setXYZ(i, 0, 1, 0);
+                }
+                if (normal) normal.needsUpdate = true;
+            }
+            position.needsUpdate = true;
+            if (normal) normal.needsUpdate = true;
+            geometry.computeBoundingSphere();
+            geometry.computeBoundingBox();
         }
     }
 
@@ -1037,6 +1100,7 @@ export default class SceneBuilder {
         let bestDistance = maxDistance;
 
         for (const car of this.cars || []) {
+            if (!car.group.visible) continue;
             const distance = car.group.position.distanceTo(position);
             if (distance < bestDistance) {
                 bestDistance = distance;
@@ -1649,10 +1713,12 @@ export default class SceneBuilder {
      *   without `cull`, its faces are as they are in the scene, and each
      *   material is drawn single- or double-sided as it is live; whether its
      *   light is `live`; drawn from the bake, whether what moves `shade`s
-     *   the sun in it (setSunShade); and whether the light `probes` light
-     *   what moves (World/ProbeLight.js), rather than the doors' probes
+     *   the sun in it (setSunShade); whether the light `probes` light
+     *   what moves (World/ProbeLight.js), rather than the doors' probes;
+     *   and whether a shut door dims its rooms (`doors`, the bake's door
+     *   states) — none of which a view fully baked does
      */
-    usePublishedView(gltf, lighting = null, { glass = true, cull = true, live = false, shade = false, probes = false } = {}) {
+    usePublishedView(gltf, lighting = null, { glass = true, cull = true, live = false, shade = false, probes = false, doors = true } = {}) {
         if (this.batches) return null;
 
         const options = this.staticOptions();
@@ -1686,7 +1752,7 @@ export default class SceneBuilder {
         // (lighting.doorStates): a room's lightmapped materials dim by it as
         // its doors close, read from one atlas of every door's rooms — and
         // by how open each door is, eased as its leaf swings (updateDoorLight).
-        this.doorStates = this.baked ? lighting.doorStates ?? null : null;
+        this.doorStates = this.baked && doors ? lighting.doorStates ?? null : null;
         this.doorLayers = planDoorLayers(this.doorStates);
         this.doorLight = new Map();
         for (const layers of this.doorLayers.values()) for (const { id } of layers) if (!this.doorLight.has(id)) this.doorLight.set(id, { value: 0 });
@@ -1768,7 +1834,7 @@ export default class SceneBuilder {
             mesh.castShadow = shadows && cast && !glow;
             mesh.receiveShadow = shadows && receive;
             // Which room it is lit as, once the bake is laid out by room.
-            mesh.userData = { batch: true, level, kind, lighting: lit, zone };
+            mesh.userData = { batch: true, level, kind, lighting: lit, zone, material: key };
             mesh.raycast = () => {};
             if (this.baked && lit === "vertex") {
                 this.vertexLit.push(mesh);

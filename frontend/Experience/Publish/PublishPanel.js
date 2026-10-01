@@ -118,6 +118,10 @@ export default class PublishPanel {
 
     setOptions(options) {
         for (const option of PUBLISH_OPTIONS) {
+            if (option.pieces) {
+                for (const box of this.dom.form.querySelectorAll(`input[name="${option.id}"]`)) box.checked = options[option.id].includes(box.value);
+                continue;
+            }
             const field = this.dom.form.elements[option.id];
             if (option.choices) field.value = options[option.id];
             else field.checked = options[option.id];
@@ -126,11 +130,8 @@ export default class PublishPanel {
 
     getOptions() {
         const data = new FormData(this.dom.form);
-        return publishOptions(
-            Object.fromEntries(
-                PUBLISH_OPTIONS.map((option) => [option.id, option.choices ? data.get(option.id) : data.has(option.id)])
-            )
-        );
+        const value = (option) => (option.pieces ? data.getAll(option.id) : option.choices ? data.get(option.id) : data.has(option.id));
+        return publishOptions(Object.fromEntries(PUBLISH_OPTIONS.map((option) => [option.id, value(option)])));
     }
 
     /** Baking is offered only where this server can run it. */
@@ -157,11 +158,15 @@ export default class PublishPanel {
         }
         this.show("progress");
         this.dom.stage.classList.remove("is-bad");
+        // The hills are the house's own ground: left out, the ground is
+        // published whole without them, and nothing walks on them.
+        const restoreHills = this.leaveHills(!options.scenery.includes("hills"));
         try {
             const { glb, stats } = await buildSnapshot(this.experience, {
                 onProgress: (fraction, label) => this.progress(fraction, label),
                 cull: options.cull,
                 merge: options.merge,
+                scenery: options.scenery,
             });
             this.progress(1, `Uploading ${(glb.byteLength / 1048576).toFixed(1)} MB…`);
             const response = await fetch(`${this.api}/publish`, {
@@ -180,7 +185,29 @@ export default class PublishPanel {
             this.dom.stage.textContent = `Couldn't publish: ${error.message}`;
             this.dom.stage.classList.add("is-bad");
             setTimeout(() => this.show("options"), 4000);
+        } finally {
+            restoreHills();
         }
+    }
+
+    /**
+     * The editor's scene without its hills, meanwhile, when `leave`: the
+     * ground no longer cut away for them, and nothing to walk on there — as
+     * the version is published. Returns what puts them back.
+     */
+    leaveHills(leave) {
+        const builder = this.experience.world.sceneBuilder;
+        if (!leave || !builder.hills) return () => {};
+        const spec = builder.spec;
+        spec.garden ??= {};
+        const saved = spec.garden.hills;
+        spec.garden.hills = { ...(saved || {}), enabled: false };
+        builder.rebuildHills();
+        return () => {
+            if (saved === undefined) delete spec.garden.hills;
+            else spec.garden.hills = saved;
+            builder.rebuildHills();
+        };
     }
 
     /**
@@ -409,6 +436,21 @@ export default class PublishPanel {
 
 /** The form field for one option: a checkbox, or a row of choices. */
 function optionField(option) {
+    if (option.pieces) {
+        return `
+            <fieldset class="publish-choice">
+                <legend>${option.label}<small>${option.hint}</small></legend>
+                <div class="publish-segments">${option.pieces
+                    .map(
+                        (piece) => `
+                            <label>
+                                <input type="checkbox" name="${option.id}" value="${piece.value}">
+                                <span>${piece.label}</span>
+                            </label>`
+                    )
+                    .join("")}</div>
+            </fieldset>`;
+    }
     if (option.choices) {
         return `
             <fieldset class="publish-choice">

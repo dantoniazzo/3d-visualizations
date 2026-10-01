@@ -4,6 +4,7 @@ import Sizes from "./Utils/Sizes.js";
 import Time from "./Utils/Time.js";
 import Resources from "./Utils/Resources.js";
 import { chromaURL, lightingMode, lightmapURL } from "./Utils/device.js";
+import { hiddenScenery } from "./Utils/viewerChoices.js";
 import assets from "./Utils/assets.js";
 
 import Camera from "./Camera.js";
@@ -38,6 +39,8 @@ export default class Experience {
         this.sceneSpec = sceneSpec;
         this.publicView = publicView;
         this.published = published;
+        // In a public view, the scenery its visitor has hidden (World/Scenery.js).
+        this.hiddenScenery = publicView ? hiddenScenery() : new Set();
 
         this.sizes = new Sizes();
         this.time = new Time();
@@ -80,8 +83,9 @@ export default class Experience {
         const extra = [{ name: "kit", type: "glbModel", path: base + "/models/kit.glb" }];
         // Cars are only loaded by scenes that place them — the ones they
         // place, with the index of all of them; any other is downloaded when
-        // the editor picks it (World/Vehicle/CarModels.js).
-        if (this.sceneSpec.vehicles?.length) {
+        // the editor picks it (World/Vehicle/CarModels.js) — and not while a
+        // visitor has hidden the car.
+        if (this.sceneSpec.vehicles?.length && !this.hiddenScenery.has("car")) {
             extra.push(...CarModels.assets(this.sceneSpec.vehicles.map((v) => v.model || DEFAULT_CAR), base));
         }
 
