@@ -1,5 +1,6 @@
 import "dotenv/config";
 
+import os from "os";
 import path from "path";
 import http from "http";
 import express from "express";
@@ -76,5 +77,20 @@ registerChat(io);
 registerPresence(io);
 
 server.listen(PORT, () => {
-    console.log(`Walkthrough server listening on http://localhost:${PORT}`);
+    console.log("Walkthrough server listening on");
+    console.log(`  Local:    http://localhost:${PORT}`);
+    // The same server from a phone on the same Wi-Fi: it listens on every
+    // interface, so any of this machine's network addresses reaches it.
+    for (const { name, address } of networkAddresses()) {
+        console.log(`  Network:  http://${address}:${PORT}  (${name})`);
+    }
 });
+
+/** This machine's IPv4 addresses on its networks, each with its interface's name. */
+function networkAddresses() {
+    return Object.entries(os.networkInterfaces()).flatMap(([name, entries]) =>
+        (entries ?? [])
+            .filter((entry) => (entry.family === "IPv4" || entry.family === 4) && !entry.internal)
+            .map((entry) => ({ name, address: entry.address }))
+    );
+}
