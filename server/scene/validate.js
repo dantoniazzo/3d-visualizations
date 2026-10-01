@@ -10,6 +10,8 @@ import {
     ROOF_TYPES,
     STAIR_DIRECTIONS,
 } from "../../shared/catalog.js";
+import { carId } from "../../shared/cars.js";
+import { sanitizeGarden } from "../../shared/garden.js";
 
 /**
  * Every scene that reaches the builders passes through here: hand-authored
@@ -137,6 +139,10 @@ export function validateScene(raw) {
         ground,
         ground_size: ground === "none" ? 0 : clamp(num(env.ground_size, 60), 10, 500),
     };
+
+    // --- the garden's settings (shared/garden.js) ------------------------
+    const garden = sanitizeGarden(raw.garden);
+    if (garden) scene.garden = garden;
 
     // --- imported model (authored scenes only) ---------------------------
     if (raw.model && typeof raw.model === "object") {
@@ -470,6 +476,8 @@ export function validateScene(raw) {
     scene.vehicles = (Array.isArray(raw.vehicles) ? raw.vehicles : []).flatMap((v, i) => [
         {
             id: uniqueId(v?.id, "car", vehicleIds, i),
+            // which car it is (shared/cars.js)
+            model: carId(v?.model),
             position: vec(v?.position, 2, [0, 0]),
             elevation: clamp(num(v?.elevation, 0), -20, 60),
             yaw: num(v?.yaw, 0),

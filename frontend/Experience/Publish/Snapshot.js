@@ -90,6 +90,17 @@ export async function buildSnapshot(experience, { onProgress = () => {}, cull = 
     const timing = {};
     if (cull) {
         ({ keep, restored } = await findVisible(experience, parts, table, seen, samples, timing, onProgress));
+        // Kept whole, front out, whatever the samples saw: ground a visitor
+        // can walk round to the far side of — the hills behind the plot,
+        // which nothing sampled sees the back of.
+        parts.forEach((part, p) => {
+            if (!part.mesh.userData.keepWhole) return;
+            const first = table.offsets[p];
+            for (let t = first; t < first + part.geometry.index.count / 3; t++) {
+                keep[t] = 1;
+                seen[t] |= 1;
+            }
+        });
     }
 
     onProgress(0.96, "Assembling");

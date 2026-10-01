@@ -1,11 +1,15 @@
 import * as THREE from "three";
 import { Capsule } from "three/examples/jsm/math/Capsule.js";
 
+import { applyReflections } from "../../Utils/reflections.js";
+
 /**
  * A drivable car.
  *
- * The enter/exit flow, the chase camera and the control scheme are carried
- * over from the sibling `game` project. Its physics are not: that car is a
+ * The enter/exit flow and the control scheme are carried over from the
+ * sibling `game` project; the keys steer the car along its own heading,
+ * whichever way the camera — which orbits it, free (Camera.js) — is
+ * looking. Its physics are not carried over: that car is a
  * Rapier raycast vehicle and its whole world is built from Rapier colliders,
  * whereas this app collides everything — player included — against a three.js
  * Octree. Rather than run a second physics world alongside the octree (plus
@@ -16,42 +20,26 @@ import { Capsule } from "three/examples/jsm/math/Capsule.js";
 
 const _v = new THREE.Vector3();
 const _ray = new THREE.Vector3();      // ground probes only, never shared
-const _idealOffset = new THREE.Vector3();
-const _idealLookAt = new THREE.Vector3();
 const _down = new THREE.Vector3(0, -1, 0);
 const _forward = new THREE.Vector3();
 const _normal = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 
 /**
- * Wheel positions in the chassis's own frame.
- *
- * The car is a BMW X6 M Competition, modelled by blender/export_car.py
- * from its blueprints to these numbers: a body 2.0 wide on X and 4.96 long
- * on Z, with Z the longitudinal axis and +Z forward — the same convention
- * the heading maths uses — and its origin midway between the axles, 2.975
- * apart. Change one and the other has to follow.
- *
- * Y is the axle height: the wheel is 0.744 across, so its centre sits one
- * radius above the ground, i.e. RIDE_HEIGHT - WHEEL_RADIUS below the
- * chassis origin.
+ * Every car's model is in the same frame (blender/import_cars.py): +Z
+ * forward — the convention the heading maths uses — +X to its left, Y up,
+ * the origin midway between the axles on the centreline, RIDE_HEIGHT above
+ * the ground. Where each car's wheels are, how big, and how big its body,
+ * come with its model (World/Vehicle/CarModels.js); the car takes them from
+ * whichever model it wears.
  */
-const WHEEL_RADIUS = 0.372;
 const RIDE_HEIGHT = 0.45;
-const AXLE_Y = WHEEL_RADIUS - RIDE_HEIGHT;
-const TRACK = 0.842;       // half the distance between left and right wheels
-const AXLE = 1.4875;       // each axle's distance from the origin
-const WHEELS = [
-    { at: new THREE.Vector3(TRACK, AXLE_Y, AXLE), steers: true },    // front right
-    { at: new THREE.Vector3(-TRACK, AXLE_Y, AXLE), steers: true },   // front left
-    { at: new THREE.Vector3(TRACK, AXLE_Y, -AXLE), steers: false },  // rear right
-    { at: new THREE.Vector3(-TRACK, AXLE_Y, -AXLE), steers: false }, // rear left
-];
 
-// Body capsule: lifted so its underside clears the road, as wide as the
-// body, which leaves room either side in a single garage.
-const CAPSULE_RADIUS = 1.0;    // body is 2.0 wide over the arches
-const CAPSULE_LIFT = 0.72;
+// Body capsule: lifted so its underside clears the road — its bottom this far
+// above the origin, less its radius — and no wider than a metre each side,
+// which leaves room in a single garage.
+const CAPSULE_CLEARANCE = 0.28;
+const CAPSULE_MAX_RADIUS = 1.0;
 
 const PARAMS = {
     accel: 14.0,          // m/s² under power
@@ -63,8 +51,6 @@ const PARAMS = {
     maxSteer: 0.62,       // radians at the front wheels
     steerRate: 2.8,       // how fast the wheels turn toward the target angle
     steerEase: 0.55,      // steering authority falls off with speed
-    wheelBase: 2.975,     // front axle to rear axle, from the offsets above
-    wheelRadius: WHEEL_RADIUS,
     rideHeight: RIDE_HEIGHT,
     suspension: 8.0,      // how briskly the body settles onto the ground
     gravity: 22.0,
@@ -73,10 +59,11 @@ const PARAMS = {
 export default class Car {
     /**
      * @param {object} spec   validated vehicle spec from the scene
-     * @param {object} models { chassis, wheel } loaded GLTF scenes
+     * @param {object|null} model the car it is — `{ meta, body, wheels }`
+     *   from CarModels — or null until it has loaded (setModel)
      * @param {Octree} octree the same collision tree the player uses
      */
-    constructor(spec, models, octree) {
+    constructor(spec, model, octree) {
         this.spec = spec;
         this.octree = octree;
 
@@ -93,62 +80,88 @@ export default class Car {
         this.group.position.set(spec.position[0], spec.elevation + PARAMS.rideHeight, spec.position[1]);
         this.group.rotation.y = this.heading;
 
-        this.cameraPosition = new THREE.Vector3();
-        this.cameraLookAt = new THREE.Vector3();
-        this.cameraSeeded = false;
-
-        this.build(models);
+        this.model = null;
+        this.parts = [];
+        this.wheels = [];
+        this.setModel(model);
 
         this.group.userData = { kind: "car", id: spec.id, label: "Car", car: this };
     }
 
-    build(models) {
-        if (models.chassis) {
-            const body = models.chassis.clone(true);
-            body.traverse((o) => {
-                if (o.isMesh) {
-                    o.castShadow = true;
-                    o.receiveShadow = true;
-                }
-            });
-            this.group.add(body);
-        }
+    /**
+     * Wear a car's model: its body, and its wheels where it has them. The car
+     * stays where it is; only what it looks like, how its wheels sit and how
+     * big it is change.
+     */
+    setModel(model) {
+        for (const part of this.parts) part.removeFromParent();
+        this.parts = [];
+        this.wheels = [];
+        this.model = model || null;
+        if (!model) return;
+
+        const { meta } = model;
+        const [x0, , z0] = meta.body.min;
+        const [x1, , z1] = meta.body.max;
+        this.size = { width: x1 - x0, length: z1 - z0, middle: (z0 + z1) / 2 };
+        this.wheelBase = meta.wheels.front.z - meta.wheels.rear.z;
+
+        const body = model.body.clone(true);
+        body.traverse((o) => {
+            if (o.isMesh) {
+                o.castShadow = true;
+                o.receiveShadow = true;
+            }
+        });
+        this.group.add(body);
+        this.parts.push(body);
 
         // Each wheel: a pivot that steers, and in it the wheel, which turns,
-        // and its brake caliper, which does not.
-        this.wheels = WHEELS.map((cfg) => {
-            const pivot = new THREE.Group();
-            pivot.position.copy(cfg.at);
-            const spinner = new THREE.Group();
-            pivot.add(spinner);
-            if (models.wheel) {
-                const mesh = models.wheel.clone(true);
-                const caliper = mesh.getObjectByName("caliper");
-                if (caliper) {
-                    caliper.removeFromParent();
-                    // Built for the front right, behind the axle: mirrored
-                    // across the car for the left, and ahead of the rear axle
-                    // — in a group of its own, since its own transform is how
-                    // its packed vertices are unpacked.
-                    const mirror = new THREE.Group();
-                    mirror.scale.set(cfg.at.x < 0 ? -1 : 1, 1, cfg.at.z < 0 ? -1 : 1);
-                    mirror.add(caliper);
-                    caliper.traverse((o) => {
-                        if (o.isMesh) o.castShadow = true;
-                    });
-                    pivot.add(mirror);
+        // and what does not turn with it (its brake caliper). The model has a
+        // wheel per axle, each built for the left-hand side.
+        for (const end of ["front", "rear"]) {
+            const w = meta.wheels[end];
+            for (const side of [1, -1]) {
+                const cfg = {
+                    at: new THREE.Vector3(side * w.x, w.radius - RIDE_HEIGHT, w.z),
+                    steers: end === "front",
+                    radius: w.radius,
+                };
+                const pivot = new THREE.Group();
+                pivot.position.copy(cfg.at);
+                const spinner = new THREE.Group();
+                pivot.add(spinner);
+                const source = model.wheels.getObjectByName(`wheel_${end}`);
+                if (source) {
+                    const wheel = source.clone(true);
+                    const still = wheel.getObjectByName(`static_${end}`);
+                    if (still) {
+                        still.removeFromParent();
+                        // Mirrored across the car for the right — in a group
+                        // of its own, since its own transform is how its
+                        // packed vertices are unpacked.
+                        const mirror = new THREE.Group();
+                        mirror.scale.set(side, 1, 1);
+                        mirror.add(still);
+                        pivot.add(mirror);
+                    }
+                    // The wheel's axle runs along X, so the far side is a
+                    // half turn about Y.
+                    if (side < 0) wheel.rotation.y = Math.PI;
+                    spinner.add(wheel);
                 }
-                // The wheel's axle runs along X, so the far side is a half
-                // turn about Y.
-                if (cfg.at.x < 0) mesh.rotation.y = Math.PI;
-                mesh.traverse((o) => {
-                    if (o.isMesh) o.castShadow = true;
+                pivot.traverse((o) => {
+                    if (o.isMesh) o.castShadow = o.receiveShadow = true;
                 });
-                spinner.add(mesh);
+                this.group.add(pivot);
+                this.parts.push(pivot);
+                this.wheels.push({ pivot, spinner, cfg, spin: 0 });
             }
-            this.group.add(pivot);
-            return { pivot, spinner, cfg, spin: 0 };
-        });
+        }
+
+        // The models were made for a viewer's image-based lighting: their
+        // chrome, lamp reflectors and rims need something to reflect.
+        applyReflections(this.group, { imageLit: true });
     }
 
     // ------------------------------------------------------------------
@@ -202,7 +215,7 @@ export default class Car {
         // Bicycle model: heading turns in proportion to distance travelled,
         // so the car pivots about its rear axle and stands still when parked.
         if (Math.abs(this.speed) > 0.01) {
-            this.heading += (this.speed * dt / p.wheelBase) * Math.tan(this.steer);
+            this.heading += (this.speed * dt / (this.wheelBase || 2.9)) * Math.tan(this.steer);
         }
 
         // --- proposed movement -------------------------------------------
@@ -254,14 +267,15 @@ export default class Car {
         this.group.quaternion.slerp(_q, Math.min(1, 10 * dt));
 
         // --- wheels -------------------------------------------------------
+        // Rolling forward (+Z) turns the top of the wheel forward: a positive
+        // turn about X, which carries +Y toward +Z.
         const travelled = this.group.position.distanceTo(before) * Math.sign(this.speed || 1);
         for (const wheel of this.wheels) {
-            wheel.spin -= travelled / PARAMS.wheelRadius;
+            wheel.spin += travelled / wheel.cfg.radius;
             wheel.pivot.rotation.set(0, wheel.cfg.steers ? this.steer : 0, 0);
             wheel.spinner.rotation.set(wheel.spin, 0, 0);
         }
 
-        this.updateCamera(dt);
     }
 
     /**
@@ -273,42 +287,22 @@ export default class Car {
      * brake the car to a standstill on flat tarmac.
      */
     collider() {
-        const half = 1.48;         // body is 4.96 long, less the cap radius
+        const size = this.size || { width: 2, length: 4.9, middle: 0 };
+        const radius = Math.min(CAPSULE_MAX_RADIUS, size.width * 0.46);
+        const half = Math.max(0, size.length / 2 - radius);
         const axis = _v.set(Math.sin(this.heading), 0, Math.cos(this.heading));
-        const a = this.group.position.clone().addScaledVector(axis, -half);
-        const b = this.group.position.clone().addScaledVector(axis, half);
-        a.y += CAPSULE_LIFT;
-        b.y += CAPSULE_LIFT;
-        return new Capsule(a, b, CAPSULE_RADIUS);
-    }
-
-    updateCamera(dt) {
-        // Ideal chase position, behind and above, in the car's own frame.
-        _idealOffset.set(0, 3.2, -8.5).applyQuaternion(this.group.quaternion);
-        _idealOffset.add(this.group.position);
-        if (_idealOffset.y < this.group.position.y + 1.0) {
-            _idealOffset.y = this.group.position.y + 1.0;
-        }
-
-        _idealLookAt.set(0, 0.8, 3.0).applyQuaternion(this.group.quaternion);
-        _idealLookAt.add(this.group.position);
-
-        if (!this.cameraSeeded) {
-            this.cameraPosition.copy(_idealOffset);
-            this.cameraLookAt.copy(_idealLookAt);
-            this.cameraSeeded = true;
-            return;
-        }
-
-        const smoothing = 1 - Math.pow(0.0015, dt);
-        this.cameraPosition.lerp(_idealOffset, smoothing);
-        this.cameraLookAt.lerp(_idealLookAt, smoothing);
+        const middle = this.group.position.clone().addScaledVector(axis, size.middle);
+        const a = middle.clone().addScaledVector(axis, -half);
+        const b = middle.clone().addScaledVector(axis, half);
+        a.y += radius - CAPSULE_CLEARANCE;
+        b.y += radius - CAPSULE_CLEARANCE;
+        return new Capsule(a, b, radius);
     }
 
     /** Where a driver stands when they get out — beside the door, not inside it. */
     exitPoint() {
         const side = new THREE.Vector3(1, 0, 0).applyQuaternion(this.group.quaternion);
-        const spot = this.group.position.clone().addScaledVector(side, 1.9);
+        const spot = this.group.position.clone().addScaledVector(side, (this.size?.width || 2.2) / 2 + 0.8);
         const ground = this.groundAt(spot, 4.0);
         spot.y = ground ? ground.y : this.spec.elevation;
         return spot;

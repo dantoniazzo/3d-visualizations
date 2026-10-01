@@ -150,19 +150,28 @@ def main():
         mats = m.library()
         col = g.collection("piece")
 
-        obj = g.join(build(col, mats), piece_id, col)
+        # Its doors and drawers are parts of their own, which the app opens
+        # (geometry.join_piece).
+        obj = g.join_piece(build(col, mats), piece_id, col)
         if obj is None:
             print(f"SKIP {piece_id}")
             continue
 
         # Centre on the footprint and stand it on the floor, so a placement
         # position means "put it here" rather than "put its origin here".
-        lo, hi = g.bounds(obj)
+        corners = [g.bounds(o) for o in [obj, *obj.children] if o.type == "MESH"]
+        lo = g.Vector([min(c[0][k] for c in corners) for k in range(3)])
+        hi = g.Vector([max(c[1][k] for c in corners) for k in range(3)])
+        shift = ((lo.x + hi.x) / 2, (lo.y + hi.y) / 2, lo.z)
         for v in obj.data.vertices:
-            v.co.x -= (lo.x + hi.x) / 2
-            v.co.y -= (lo.y + hi.y) / 2
-            v.co.z -= lo.z
+            v.co.x -= shift[0]
+            v.co.y -= shift[1]
+            v.co.z -= shift[2]
         obj.data.update()
+        for child in obj.children:
+            child.location.x -= shift[0]
+            child.location.y -= shift[1]
+            child.location.z -= shift[2]
 
         bake_tiling_textures()
 
@@ -173,6 +182,8 @@ def main():
             export_apply=True,
             export_cameras=False,
             export_lights=False,
+            # What each door or drawer does (geometry.join_piece), as its node's extras.
+            export_extras=True,
             export_yup=True,
             export_image_format="WEBP",
             export_image_quality=60,

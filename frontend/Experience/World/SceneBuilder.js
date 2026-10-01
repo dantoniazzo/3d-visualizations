@@ -7,13 +7,19 @@ import KitLibrary from "./Builders/KitLibrary.js";
 import batchStatic, { hideOriginals, listStatic, materialKeys } from "./StaticBatcher.js";
 import FurnitureLibrary from "./Builders/FurnitureLibrary.js";
 import Door from "./Door.js";
+import Openables from "./Openables.js";
 import Car from "./Vehicle/Car.js";
 import { buildOctree, isTransient } from "./Collision.js";
 import { GROUND_TYPES, FINISHES } from "../../../shared/catalog.js";
+import { DEFAULT_CAR } from "../../../shared/cars.js";
 import { pointInPolygon, rectCorners } from "../Utils/geometry.js";
 import { applyReflections } from "../Utils/reflections.js";
 import { CEILING_STYLES, GLASS, SWITCH_PLATE, ceilingFitting, wallSwitch } from "./Fittings.js";
+import { buildFence } from "./Builders/FenceBuilder.js";
+import { buildHills } from "./Builders/HillBuilder.js";
+import { groundGradient, hillOutline, planFence, planHills } from "../../../shared/vegetation.js";
 import { LIGHTMAP_DECODE, LIGHTMAP_YCOCG } from "./lightmapGLSL.js";
+import { LIVE_LAMPS } from "../Utils/device.js";
 
 /**
  * Builds a property from a scene spec, and rebuilds the parts of it the
@@ -58,6 +64,8 @@ export default class SceneBuilder {
         this.spec.stairs = this.spec.stairs || [];
 
         this.materials = new MaterialLibrary();
+        // The garden's ground: one gradient over the plot, where its settings put it.
+        this.materials.textures.setGradient(groundGradient(spec));
         this.kit = new KitLibrary(this.experience.resources?.items?.kit);
         this.structure = new StructureBuilder(this.materials, this.kit);
         this.furnitureLibrary = new FurnitureLibrary();
@@ -78,6 +86,8 @@ export default class SceneBuilder {
         /** surfaceId -> { id, kind, meshes, slot, finish, label } */
         this.surfaces = new Map();
         this.doors = [];
+        /** The furniture's doors and drawers that open (Openables.js). */
+        this.openables = new Openables();
         /** id -> { placement, group } */
         this.furniture = new Map();
         /** id -> { spec, group, collider } */
@@ -108,6 +118,8 @@ export default class SceneBuilder {
         this.buildRails();
         this.buildWalls();
         this.buildRoofs();
+        this.buildFence();
+        this.buildHills();
         this.buildStairs();
         this.buildModel();
         this.buildFreeDoors();
@@ -182,12 +194,19 @@ export default class SceneBuilder {
             if (size.y < SceneBuilder.FLAT_HEIGHT || item?.collision === "none") continue;
 
             const triangles = countTriangles(group);
+            // A piece whose doors or drawers open (Openables.js) is hollow
+            // behind them, and they collide with nothing: it is met as its
+            // box, shut, or a wardrobe would be walked into through its doors.
+            let opens = false;
+            group.traverse((node) => {
+                if (node.userData?.opens) opens = true;
+            });
             const mode =
                 item?.collision === "box" || item?.collision === "mesh"
                     ? item.collision
-                    : triangles <= SceneBuilder.MESH_COLLISION_BUDGET
-                      ? "mesh"
-                      : "box";
+                    : opens || triangles > SceneBuilder.MESH_COLLISION_BUDGET
+                      ? "box"
+                      : "mesh";
 
             if (mode === "mesh") {
                 roots.push(group);
@@ -288,6 +307,14 @@ export default class SceneBuilder {
             hideFixedParts(door.group);
         }
         this.buildVehicles();
+        // The furniture's doors and drawers, and the lights inside it,
+        // drawn live as ever (Openables.js).
+        this.openableGroup = this.runtime.scene.getObjectByName("openable") ?? null;
+        if (this.openableGroup) {
+            this.root.add(this.openableGroup);
+            this.openableGroup.updateMatrixWorld(true);
+            this.openables.add(this.openableGroup);
+        }
         this.furnitureReady = Promise.resolve();
     }
 
@@ -337,7 +364,9 @@ export default class SceneBuilder {
         if (ground === "none" || size <= 0) return;
 
         const spec = GROUND_TYPES[ground];
-        const mesh = this.structure.buildGround({ ...spec, size });
+        // The hills behind the plot rise out of it, where it is cut away.
+        const hills = this.isModelScene ? null : planHills(this.spec);
+        const mesh = this.structure.buildGround({ ...spec, size }, hills ? [hillOutline(hills)] : []);
         mesh.userData = { kind: "surface", surfaceKind: "ground", label: "Ground" };
         this.root.add(mesh);
         this.groundPlane = mesh;
@@ -506,6 +535,54 @@ export default class SceneBuilder {
         // A switch goes by a door: moving the door moves it.
         this.buildLightFittings();
         return group;
+    }
+
+    /**
+     * The fence round the plot (shared/vegetation.js): part of the shell, so
+     * it is collided with, published and baked as the house is.
+     */
+    buildFence() {
+        if (this.isModelScene) return;
+        const runs = planFence(this.spec);
+        if (!runs.length) return;
+        this.fence = buildFence(runs, this.materials);
+        this.shell.add(this.fence);
+    }
+
+    /**
+     * The small hills behind the house (shared/vegetation.js): ground like
+     * the plot's, in the shell, so they are walked on, published and baked.
+     */
+    buildHills() {
+        if (this.isModelScene) return;
+        const hills = planHills(this.spec);
+        if (!hills) return;
+        this.hills = buildHills(hills, this.materials);
+        this.shell.add(this.hills);
+    }
+
+    /**
+     * The hills again, once the garden's settings for them have changed
+     * (the editor's Garden panel): them, the ground they are cut out of,
+     * and what is walked on. Not in a view drawn merged.
+     */
+    rebuildHills() {
+        if (this.runtime || this.batches || this.isModelScene) return;
+        if (this.hills) {
+            this.shell.remove(this.hills);
+            this.hills.geometry.dispose();
+            this.hills = null;
+        }
+        if (this.groundPlane) {
+            this.root.remove(this.groundPlane);
+            this.groundPlane.geometry.dispose();
+            this.groundPlane.material.dispose();
+            this.groundPlane = null;
+        }
+        this.buildGround();
+        this.buildHills();
+        for (const mesh of [this.groundPlane, this.hills]) if (mesh) applyReflections(mesh);
+        this.buildStaticCollision();
     }
 
     buildRoofs() {
@@ -927,21 +1004,28 @@ export default class SceneBuilder {
         this.cars = [];
         if (!this.spec.vehicles?.length) return;
 
-        const models = {
-            chassis: this.experience.resources.items.carChassis?.scene,
-            wheel: this.experience.resources.items.carWheel?.scene,
-        };
-        if (!models.chassis) {
-            console.error("Car model failed to load; skipping vehicles.");
-            return;
-        }
-
         this.vehicleGroup = new THREE.Group();
         this.vehicleGroup.name = "vehicles";
         this.root.add(this.vehicleGroup);
 
+        // Each car as the model it names, preloaded with the scene; one that
+        // was not (or failed) is downloaded, and the car dressed when it comes.
+        const models = this.experience.carModels;
         for (const spec of this.spec.vehicles) {
-            const car = new Car(spec, models, this.collision);
+            const id = spec.model || DEFAULT_CAR;
+            const car = new Car(spec, models.get(id), this.collision);
+            if (!car.model) {
+                models
+                    .load(id)
+                    .catch((error) => {
+                        console.error(`Car "${id}" didn't load; using the default.`, error);
+                        return models.load(DEFAULT_CAR);
+                    })
+                    .then((model) => {
+                        if (!car.model) car.setModel(model);
+                    })
+                    .catch((error) => console.error("No car model loaded; the car stays empty.", error));
+            }
             this.vehicleGroup.add(car.group);
             this.cars.push(car);
         }
@@ -995,6 +1079,10 @@ export default class SceneBuilder {
         instance.updateMatrixWorld(true);
         const entry = { placement, group: instance };
         this.furniture.set(placement.id, entry);
+        // Its doors and drawers, once its model is here.
+        instance.userData.ready.then(() => {
+            if (this.furniture.get(placement.id) === entry) this.openables.add(instance);
+        });
 
         if (record) this.spec.furniture.push(placement);
         this.objectsDirty = true;
@@ -1033,6 +1121,7 @@ export default class SceneBuilder {
         if (!entry) return false;
 
         this.furnitureGroup.remove(entry.group);
+        this.openables.remove(entry.group);
         entry.group.traverse((child) => {
             if (child.isMesh && child.name === "missing-model") child.geometry.dispose();
         });
@@ -1049,6 +1138,8 @@ export default class SceneBuilder {
 
     updateDoors(delta) {
         for (const door of this.doors) door.update(delta);
+        this.openables.update(delta);
+        if (this.baked) this.updateDoorLight(delta);
     }
 
     /**
@@ -1395,6 +1486,8 @@ export default class SceneBuilder {
         if (this.fittings) list.push(this.fittings);
         if (this.doorAnchors) list.push(this.doorAnchors);
         if (this.furnitureGroup) list.push(this.furnitureGroup);
+        // Built from a runtime file, the furniture's doors and drawers alone.
+        if (this.openableGroup) list.push(this.openableGroup);
         if (this.model) list.push(this.model);
         return list;
     }
@@ -1477,7 +1570,10 @@ export default class SceneBuilder {
                 object === this.vehicleGroup ||
                 object.userData?.doorLeaf ||
                 object.userData?.hingeSide !== undefined ||
-                object.userData?.helper,
+                object.userData?.helper ||
+                // A piece's doors and drawers move (Openables.js).
+                object.userData?.opens !== undefined ||
+                object.userData?.fixture !== undefined,
             levelOf: (mesh, box) => {
                 const node = owner(mesh);
                 const id = node?.userData.id;
@@ -1540,13 +1636,23 @@ export default class SceneBuilder {
      * not lighting it at all. Metals keep their live material, for the
      * reflections that make them read as metal.
      *
+     * Lit live (`live`, Utils/device.js's lightingMode), the sun and the
+     * lamps are live lights instead, drawn with their shadows — which
+     * follow the doors, the people and the car — on top of the rest of the
+     * light, the sky's and everything bounced, from the bake: each mesh is
+     * drawn lit, as a matt surface (Lambert, as the bake lit it), with that
+     * light as all of its ambient light.
+     *
      * @param {object} gltf  the loaded snapshot
      * @param {object} [lighting]  the published version's baked lighting
      * @param {object} [options]  what it was published with (shared/publishOptions.js):
      *   without `cull`, its faces are as they are in the scene, and each
-     *   material is drawn single- or double-sided as it is live
+     *   material is drawn single- or double-sided as it is live; whether its
+     *   light is `live`; drawn from the bake, whether what moves `shade`s
+     *   the sun in it (setSunShade); and whether the light `probes` light
+     *   what moves (World/ProbeLight.js), rather than the doors' probes
      */
-    usePublishedView(gltf, lighting = null, { glass = true, cull = true } = {}) {
+    usePublishedView(gltf, lighting = null, { glass = true, cull = true, live = false, shade = false, probes = false } = {}) {
         if (this.batches) return null;
 
         const options = this.staticOptions();
@@ -1563,20 +1669,51 @@ export default class SceneBuilder {
         if (glass) this.simplifyGlass();
         const cache = new Map();
         this.baked = Boolean(lighting?.variants);
+        // The sun and the lamps drawn live, the rest of the light baked.
+        this.liveLight = this.baked && live;
+        // Drawn from the bake, what moves shading the sun in it.
+        this.sunShade = this.baked && !this.liveLight && shade ? sunShadeUniforms() : null;
+        this.probeLit = this.baked && probes;
         this.bakedMaterials = [];
         this.vertexLit = [];
         // Each light switch's own light, baked room by room: which of it
-        // each room's lightmapped materials add in (setSwitchLight).
+        // each room's lightmapped materials add in (setSwitchLight). Lit
+        // live, each material also samples the sun's and the lamps' shadows;
+        // drawn from the bake with what moves shading the sun, the sun's
+        // mask and its shadow map.
         this.switches = this.baked ? lighting.switches ?? [] : [];
-        this.switchLayers = planSwitchLayers(this.switches, maxSwitchLayers(this.experience.renderer?.renderer));
+        // How much of each room's light stays as each of its doors shuts
+        // (lighting.doorStates): a room's lightmapped materials dim by it as
+        // its doors close, read from one atlas of every door's rooms — and
+        // by how open each door is, eased as its leaf swings (updateDoorLight).
+        this.doorStates = this.baked ? lighting.doorStates ?? null : null;
+        this.doorLayers = planDoorLayers(this.doorStates);
+        this.doorLight = new Map();
+        for (const layers of this.doorLayers.values()) for (const { id } of layers) if (!this.doorLight.has(id)) this.doorLight.set(id, { value: 0 });
+        this.doorAtlas = { value: whiteLayer() };
+        this.doorAtlasReady = false;
+        this.doorOpenness = new Map();
+        this.doorLightVersion = 0;
+        const reserved = this.liveLight ? 3 + 1 + LIVE_LAMPS : this.sunShade ? 3 + 2 : 3;
+        const renderer = this.experience.renderer?.renderer;
+        // A room with doors reads their atlas too: a texture fewer for switches.
+        this.switchLayers = planSwitchLayers(this.switches, (zone) => maxSwitchLayers(renderer, reserved + (this.doorLayers.has(zone) ? 1 : 0)));
         this.switchWeights = this.switches.map(() => 0);
+        this.switchTextures = new Map();
+        // Which switches' lamps are lit live (LiveLamps): theirs is only
+        // what they bounce, from the bake.
+        this.switchLive = this.switches.map(() => false);
         // Lamps' bulbs, lit up while their switches are on.
         this.bulbs = [];
 
-        const materialFor = (key, lit, fallback, zone) => {
-            // A room with switches of its own draws with materials of its own.
+        const materialFor = (key, lit, fallback, zone, kind) => {
+            // A room with switches or doors of its own draws with materials of its own.
             const layers = lit === "lightmap" ? this.switchLayers.get(zone) : null;
-            const cacheKey = `${key}|${this.baked ? lit : ""}${layers ? `|${zone}` : ""}`;
+            const doors = lit === "lightmap" ? this.doorLayers.get(zone) : null;
+            const own = Boolean(layers || doors);
+            // Lit live, so do ceilings (bakedAmbient's `lid`).
+            const lid = this.liveLight && kind === "ceiling";
+            const cacheKey = `${key}|${this.baked ? lit : ""}${own ? `|${zone}` : ""}${lid ? "|lid" : ""}`;
             if (cache.has(cacheKey)) return cache.get(cacheKey);
             const live = byKey.get(key) ?? fallback;
             // A metal has next to no diffuse colour, so its baked light is
@@ -1588,15 +1725,27 @@ export default class SceneBuilder {
                 material = live.clone();
                 material.side = side;
             } else {
-                material = new THREE.MeshBasicMaterial({
+                // Unlit, or — its light live — matt and lit, as it was baked.
+                const Material = this.liveLight ? THREE.MeshLambertMaterial : THREE.MeshBasicMaterial;
+                material = new Material({
                     name: live.name,
                     color: live.color ? live.color.clone() : 0xffffff,
                     map: live.map ?? null,
                     side,
                     vertexColors: lit === "vertex",
                 });
+                if (lid) material.userData.lid = true;
+                if (this.liveLight && lit === "vertex") lightByVertices(material);
                 if (layers) material.userData.switchLayers = layers;
-                this.bakedMaterials.push({ material, lit, zone: layers ? zone : null });
+                if (doors) {
+                    material.userData.doorAtlas = this.doorAtlas;
+                    material.userData.doorUniforms = doors.map((layer) => ({
+                        rect: { value: new THREE.Vector4(...layer.rect) },
+                        at: { value: new THREE.Vector4(...layer.at) },
+                        open: this.doorLight.get(layer.id),
+                    }));
+                }
+                this.bakedMaterials.push({ material, lit, zone: own ? zone : null });
             }
             cache.set(cacheKey, material);
             return material;
@@ -1609,12 +1758,15 @@ export default class SceneBuilder {
         gltf.scene.traverse((node) => {
             if (!node.isMesh) return;
             const { material: key, level = 0, kind = null, cast = true, receive = true, lighting: lit, zone = null, glow = null } = node.userData;
-            const mesh = new THREE.Mesh(node.geometry, materialFor(key, lit, node.material, zone));
+            const mesh = new THREE.Mesh(node.geometry, materialFor(key, lit, node.material, zone, kind));
             mesh.applyMatrix4(node.matrixWorld);
             mesh.name = node.name;
-            // Baked, the shadows are in the light already.
-            mesh.castShadow = this.baked ? false : cast;
-            mesh.receiveShadow = this.baked ? false : receive;
+            // Baked, the shadows are in the light already; lit live, they
+            // are drawn — but for a lamp's glass or bulb, which lets its
+            // light out, as the bake had it.
+            const shadows = !this.baked || this.liveLight;
+            mesh.castShadow = shadows && cast && !glow;
+            mesh.receiveShadow = shadows && receive;
             // Which room it is lit as, once the bake is laid out by room.
             mesh.userData = { batch: true, level, kind, lighting: lit, zone };
             mesh.raycast = () => {};
@@ -1631,6 +1783,13 @@ export default class SceneBuilder {
         });
 
         hideOriginals(meshes);
+        // Lit live, whatever is drawn live — the glass, the doors — takes the
+        // lamps' shadows too, or a lamp next door would light it through the wall.
+        if (this.liveLight) {
+            this.root.traverse((node) => {
+                if (node.isMesh && node.visible) node.receiveShadow = true;
+            });
+        }
         this.batches = group;
         this.scene.add(group);
         return { meshes: group.children.length, triangles, hidden: meshes.length };
@@ -1653,20 +1812,31 @@ export default class SceneBuilder {
      * itself, and put back together as it is drawn.
      */
     setLightingVariant(texture, info, chroma = null) {
-        const parted = info.storage === "ycocg" && chroma;
-        prepareLightmap(texture, parted ? THREE.RedFormat : null);
-        if (parted) prepareLightmap(chroma, THREE.RGFormat);
+        const parted = this.prepareLightmaps(texture, info, chroma);
         const layerEncoding = this.switches[0]?.encoding;
         for (const { material, lit } of this.bakedMaterials) {
             if (lit !== "lightmap") continue;
             if (!material.lightMap) material.needsUpdate = true;
             material.lightMap = texture;
             material.lightMapIntensity = Math.PI * info.scale;
-            decodeLightmap(material, info.encoding, parted ? chroma : null, layerEncoding);
+            decodeLightmap(material, info.encoding, parted ? chroma : null, layerEncoding, this.sunShade);
         }
         this.lightingInfo = info;
         this.mixVertexLight();
         this.tintDoors(this.mixDoorLight());
+    }
+
+    /**
+     * Set a variant's lightmap up to be drawn — and its colour, when it is
+     * stored apart — whether the house draws it or only the grass reads
+     * it (lit live, the house draws the one without the sun). Returns
+     * whether the colour is apart.
+     */
+    prepareLightmaps(texture, info, chroma = null) {
+        const parted = Boolean(info.storage === "ycocg" && chroma);
+        prepareLightmap(texture, parted ? THREE.RedFormat : null);
+        if (parted) prepareLightmap(chroma, THREE.RGFormat);
+        return parted;
     }
 
     /**
@@ -1675,30 +1845,52 @@ export default class SceneBuilder {
      * rooms it reaches, as layers each room's materials add in; on the
      * thin, vertex-lit faces; and on the doors.
      *
+     * Lit live, a switch whose lamps are lit live (setLiveSwitches) adds
+     * only what they bounce: their straight light is the live lights'.
+     *
      * @param {number[]} weights  by switch, in the order the bake lists
      *        them (lighting.switches): 0 off, 1 on
      * @param {Map<string, { luma, chroma }>} [textures]  each switch's
-     *        layer in each room, as `${switch}|${zone}`: a switch whose
-     *        layer is not loaded adds nothing there
+     *        layer in each room, as `${switch}|${zone}` — and what its lamps
+     *        bounce, as `${switch}|${zone}|indirect`: a switch whose layer
+     *        is not loaded adds nothing there
      */
     setSwitchLight(weights, textures = new Map()) {
         this.switchWeights = weights;
+        this.switchTextures = textures;
+        this.applySwitchLight();
+    }
+
+    /**
+     * Which switches' lamps are lit live (LiveLamps), by switch: theirs is
+     * only what they bounce, from the bake; the others' is all of it.
+     *
+     * @param {boolean[]} live
+     */
+    setLiveSwitches(live) {
+        if (live.every((on, index) => on === this.switchLive[index])) return;
+        this.switchLive = live;
+        this.applySwitchLight();
+    }
+
+    applySwitchLight() {
+        const weights = this.switchWeights;
+        const textures = this.switchTextures;
         for (const { material, zone } of this.bakedMaterials) {
-            if (!zone) continue;
             const uniforms = material.userData.switchUniforms;
-            if (!uniforms) continue;
+            if (!zone || !uniforms?.length) continue;
             this.switchLayers.get(zone).forEach((layer, k) => {
-                const loaded = textures.get(`${layer.index}|${zone}`);
+                const live = this.switchLive[layer.index];
+                const loaded = textures.get(`${layer.index}|${zone}${live ? "|indirect" : ""}`);
                 if (loaded) {
                     prepareLightmap(loaded.luma, THREE.RedFormat);
                     prepareLightmap(loaded.chroma, THREE.RGFormat);
                 }
-                const weight = loaded ? weights[layer.index] ?? 0 : 0;
                 uniforms[k].luma.value = loaded?.luma ?? blankLayer().luma;
                 uniforms[k].chroma.value = loaded?.chroma ?? blankLayer().chroma;
-                uniforms[k].gain.value = Math.PI * layer.scale * weight;
             });
         }
+        this.applySwitchGains();
         for (const bulb of this.bulbs) {
             const on = (weights[bulb.index] ?? 0) > 0;
             bulb.on ??= this.bulbMaterial(bulb);
@@ -1707,6 +1899,103 @@ export default class SceneBuilder {
         if (!this.lightingInfo) return;
         this.mixVertexLight();
         this.tintDoors(this.mixDoorLight());
+    }
+
+    /**
+     * How strongly each room's switch layers are added in: each switch's
+     * light, on or off — only what its lamps bounce when they are lit
+     * live — and in a room next door that it lights through doors alone,
+     * as far as they are open (switchReach).
+     */
+    applySwitchGains() {
+        for (const { material, zone } of this.bakedMaterials) {
+            const uniforms = material.userData.switchUniforms;
+            if (!zone || !uniforms?.length) continue;
+            this.switchLayers.get(zone).forEach((layer, k) => {
+                const live = this.switchLive[layer.index];
+                const loaded = this.switchTextures.has(`${layer.index}|${zone}${live ? "|indirect" : ""}`);
+                const weight = loaded ? this.switchWeights[layer.index] ?? 0 : 0;
+                const scale = live ? this.switches[layer.index].indirect.scale : layer.scale;
+                uniforms[k].gain.value = Math.PI * scale * weight * this.switchReach(layer.index, zone);
+            });
+        }
+    }
+
+    /**
+     * How much of a switch's light reaches `zone`: all of it, unless the
+     * room is next door to the switch's and joined to it by doors alone
+     * (the bake's `through`) — then as far as they are open, on average.
+     */
+    switchReach(index, zone) {
+        const doors = this.switches[index]?.through?.[zone];
+        if (!doors?.length) return 1;
+        let open = 0;
+        for (const id of doors) open += this.doorOpenness.get(id) ?? 1;
+        return open / doors.length;
+    }
+
+    /**
+     * How much of a room's light stays with its doors as they are: each
+     * door's share of it (the bake's door states), as far as it is shut —
+     * for what has no texels of the room's own, its thin faces and the
+     * light probes. All of it until the doors' atlas is here, so the rest
+     * of the room does not dim without it.
+     */
+    zoneStays(zone) {
+        const doors = this.doorAtlasReady ? this.doorLayers.get(zone) : null;
+        if (!doors) return 1;
+        let stays = 1;
+        for (const { id, share } of doors) stays *= THREE.MathUtils.lerp(share, 1, this.doorLight.get(id).value);
+        return stays;
+    }
+
+    /**
+     * The doors' atlas (World.loadDoorStates): how much of each room's light
+     * stays with each of its doors shut, texel by texel.
+     */
+    setDoorAtlas(texture) {
+        prepareLightmap(texture, THREE.RedFormat);
+        // Every crop has only a few texels round it: no mipmaps to blend it with the next.
+        texture.generateMipmaps = false;
+        texture.minFilter = THREE.LinearFilter;
+        this.doorAtlas.value = texture;
+        this.doorAtlasReady = true;
+        this.doorLightVersion++;
+        if (this.lightingInfo) this.mixVertexLight();
+    }
+
+    /**
+     * Each door's light as it swings: how open it is — eased, as its leaf
+     * is — in every material of the rooms either side, at once; in the
+     * switches' light next door, at once; and in the thin faces' light
+     * and the light probes', added up on the CPU, now and then while any
+     * door moves and once they have all stopped.
+     */
+    updateDoorLight(delta = 0) {
+        let moved = false;
+        for (const door of this.doors) {
+            const id = door.spec.id;
+            const open = 1 - (1 - door.open) ** 2;
+            if (this.doorOpenness.get(id) === open) continue;
+            this.doorOpenness.set(id, open);
+            const uniform = this.doorLight.get(id);
+            if (uniform) uniform.value = open;
+            moved = true;
+        }
+        if (moved) {
+            this.doorLightStale = true;
+            this.applySwitchGains();
+        }
+        this.doorMixWait = (this.doorMixWait ?? 0) - delta;
+        if (this.doorLightStale && (!moved || this.doorMixWait <= 0)) {
+            this.doorLightStale = false;
+            this.doorMixWait = 0.1;
+            this.doorLightVersion++;
+            if (this.lightingInfo) {
+                this.mixVertexLight();
+                this.tintDoors(this.mixDoorLight());
+            }
+        }
     }
 
     /**
@@ -1728,13 +2017,25 @@ export default class SceneBuilder {
      * drawn. A face no switch that is on reaches draws the variant's own.
      */
     mixVertexLight() {
-        const name = this.lightingInfo.attribute.toLowerCase();
+        const info = this.lightingInfo;
+        const name = info.attribute.toLowerCase();
+        // Drawn from the bake, a shut door dims the light but the sun's
+        // straight light, which is a vertex attribute of its own; lit live,
+        // all of it is that.
+        const softName = !this.liveLight && info.indirect?.attribute ? info.indirect.attribute.toLowerCase() : null;
         for (const mesh of this.vertexLit) {
             const geometry = mesh.geometry;
             const light = geometry.getAttribute(name);
             if (!light) continue;
-            const on = mesh.userData.switchLight.filter(({ index }) => this.switchWeights[index] > 0);
-            if (!on.length) {
+            const zone = mesh.userData.zone;
+            // As much of the room's light as stays with its doors as they are.
+            const stays = this.zoneStays(zone);
+            // Each switch that is on: all of its light, or — its lamps lit
+            // live — what they bounce.
+            const on = mesh.userData.switchLight.filter(
+                ({ index, indirect }) => this.switchWeights[index] > 0 && indirect === this.switchLive[index]
+            );
+            if (!on.length && stays > 0.999) {
                 if (geometry.getAttribute("color") !== light) geometry.setAttribute("color", light);
                 continue;
             }
@@ -1745,8 +2046,19 @@ export default class SceneBuilder {
             }
             const out = mixed.array;
             out.set(floatValues(light));
+            if (stays <= 0.999) {
+                const soft = softName ? geometry.getAttribute(softName) : null;
+                const values = soft ? floatValues(soft) : out.slice();
+                const step = soft ? soft.itemSize : size;
+                const gone = 1 - stays;
+                for (let v = 0, o = 0; o < out.length; v += step, o += size) {
+                    out[o] = Math.max(0, out[o] - values[v] * gone);
+                    out[o + 1] = Math.max(0, out[o + 1] - values[v + 1] * gone);
+                    out[o + 2] = Math.max(0, out[o + 2] - values[v + 2] * gone);
+                }
+            }
             for (const { index, values } of on) {
-                const weight = this.switchWeights[index];
+                const weight = this.switchWeights[index] * this.switchReach(index, zone);
                 const step = values.length / light.count;
                 // Its colour, not its alpha.
                 for (let v = 0, o = 0; o < out.length; v += step, o += size) {
@@ -1760,14 +2072,18 @@ export default class SceneBuilder {
         }
     }
 
-    /** Each door's light: the variant's, plus each switch that is on. */
+    /**
+     * Each door's light: the variant's, plus each switch that is on — or,
+     * its lamps lit live, what they bounce.
+     */
     mixDoorLight() {
         const doors = {};
         for (const [id, light] of Object.entries(this.lightingInfo.doors || {})) doors[id] = [...light];
         this.switches.forEach((entry, index) => {
             const weight = this.switchWeights[index] ?? 0;
             if (!weight) return;
-            for (const [id, light] of Object.entries(entry.doors || {})) {
+            const probes = this.switchLive[index] ? entry.indirect?.doors : entry.doors;
+            for (const [id, light] of Object.entries(probes || {})) {
                 const door = (doors[id] ??= [0, 0, 0]);
                 for (let c = 0; c < 3; c++) door[c] += light[c] * weight;
             }
@@ -1776,27 +2092,181 @@ export default class SceneBuilder {
     }
 
     /**
-     * Door leaves move, so their light cannot be baked; instead each is lit
-     * like the air around it, from the probes baked each side of it. Most
-     * of the leaf's brightness is that light, given as emission; a quarter
-     * is left to the live lights, so its panels still catch some relief.
+     * Each door's light a side at a time (the bake's `doorSides`): the
+     * variant's on either side, as much as stays in that room with its doors
+     * as they are (zoneStays), and each switch that is on, as far as it
+     * reaches that room (switchReach) — so a shut door's face in a dark WC
+     * is dark, and the other face lit by the hall light. Empty for a bake
+     * without them.
      */
-    tintDoors(probes) {
-        const light = new THREE.Color();
+    mixDoorSides() {
+        const info = this.lightingInfo;
+        if (!info?.doorSides) return {};
+        const out = {};
+        const add = (sides, weight, share) => {
+            for (const [id, two] of Object.entries(sides || {})) {
+                const door = (out[id] ??= [
+                    [0, 0, 0],
+                    [0, 0, 0],
+                ]);
+                const zones = this.doorSideZones(id);
+                two.forEach((rgb, side) => {
+                    const k = weight * share(zones[side]);
+                    for (let c = 0; c < 3; c++) door[side][c] += rgb[c] * k;
+                });
+            }
+        };
+        add(info.doorSides, 1, (zone) => this.zoneStays(zone));
+        this.switches.forEach((entry, index) => {
+            const weight = this.switchWeights[index] ?? 0;
+            if (!weight) return;
+            add(this.switchLive[index] ? entry.indirect?.doorSides : entry.doorSides, weight, (zone) => this.switchReach(index, zone));
+        });
+        return out;
+    }
+
+    /** The rooms either side of a door, as the bake's probes' sides are: the wall's +Z, then its -Z. */
+    doorSideZones(id) {
+        this.sideZones ??= new Map();
+        if (!this.sideZones.has(id)) {
+            const door = this.doors.find((candidate) => candidate.spec.id === id);
+            const zones = [0.3, -0.3].map((z) => {
+                if (!door) return null;
+                const at = door.group.localToWorld(new THREE.Vector3(0, 1, z));
+                return this.roomAt(at.x, at.y, at.z)?.id ?? null;
+            });
+            this.sideZones.set(id, zones);
+        }
+        return this.sideZones.get(id);
+    }
+
+    /**
+     * Door leaves move, so their light cannot be baked; instead each is lit
+     * like the air around it, from the probes baked each side of it — each
+     * face by its own side's, where the bake has them apart (`sides`,
+     * mixDoorSides), or both by the two's average. Most of the leaf's
+     * brightness is that light, given as emission; a quarter is left to the
+     * live lights, so its panels still catch some relief.
+     *
+     * Lit live, the probes' light is the rest of the light — the sky's and
+     * what is bounced — and all of it: the live sun and lamps light the
+     * leaf in full, as they do the walls, and nothing else is ambient to it.
+     */
+    tintDoors(probes, sides = this.mixDoorSides()) {
+        // Drawn from the bake with light probes, those light the leaves as
+        // they do everything that moves (ProbeLight), the sun too.
+        if (this.probeLit && !this.liveLight) return;
+        const front = new THREE.Color();
+        const back = new THREE.Color();
         for (const door of this.doors) {
-            const probe = probes[door.spec.id];
+            // Lit live, a door with no probes of its own — a cupboard under
+            // the stairs — is lit like the nearest door that has them: it
+            // has no light of the scene's to fall back on.
+            const probe =
+                probes[door.spec.id] ??
+                (this.liveLight ? probes[this.nearestProbedDoor(door.group.getWorldPosition(new THREE.Vector3()), probes, door)] : null);
             if (!probe) continue;
-            light.setRGB(...probe);
+            const two = sides[door.spec.id];
+            front.setRGB(...(two ? two[0] : probe));
+            back.setRGB(...(two ? two[1] : probe));
             for (const { leaf } of door.leaves) {
                 if (!leaf.userData.baseColor) {
                     leaf.userData.baseColor = leaf.material.color.clone();
                     leaf.material = leaf.material.clone();
+                    litBySides(leaf.material, { live: this.liveLight });
                 }
                 const base = leaf.userData.baseColor;
-                leaf.material.color.copy(base).multiplyScalar(0.25);
-                leaf.material.emissive.copy(base).multiply(light).multiplyScalar(0.85);
+                const share = this.liveLight ? [1, 1] : [0.25, 0.85];
+                leaf.material.color.copy(base).multiplyScalar(share[0]);
+                leaf.material.emissive.copy(base).multiply(front).multiplyScalar(share[1]);
+                leaf.material.userData.emissiveBack.value.copy(base).multiply(back).multiplyScalar(share[1]);
             }
         }
+        if (!this.liveLight && !this.probeLit) this.tintOpenables(probes);
+    }
+
+    /**
+     * Drawn from the bake, the sun's share of the light at every texel (the
+     * variant's sun `mask`, blender/bake_public.py's sun_mask) and its
+     * colour, for what moves to shade it (decodeLightmap).
+     *
+     * @param {THREE.Texture} mask
+     * @param {object} sun  the variant's sun: its `maskScale` and linear `color`
+     */
+    setSunShade(mask, sun) {
+        if (!this.sunShade) return;
+        prepareLightmap(mask, THREE.RedFormat);
+        this.sunShade.sunMask.value = mask;
+        this.sunShade.sunMaskScale.value = sun.maskScale ?? 0;
+        const [r, g, b] = sun.color ?? [1, 1, 1];
+        const most = Math.max(r, g, b, 1e-6);
+        this.sunShade.sunTint.value.set(r / most, g / most, b / most);
+    }
+
+    /** The sun's shadow map of what moves, as it is this frame. */
+    updateSunShade(light) {
+        if (!this.sunShade) return;
+        const shade = this.sunShade;
+        const map = light.castShadow ? light.shadow.map?.texture : null;
+        shade.sunShadowMap.value = map ?? null;
+        shade.sunShadowOn.value = map ? 1 : 0;
+        shade.sunShadowMatrix.value = light.shadow.matrix;
+        shade.sunShadowSize.value.copy(light.shadow.mapSize);
+        shade.sunShadowBias.value = light.shadow.bias;
+        shade.sunShadowNormalBias.value = light.shadow.normalBias;
+    }
+
+    /**
+     * Drawn from the bake, the furniture's doors and drawers — which move,
+     * so are not baked — are lit as the door leaves are, from the probes of
+     * the nearest door on their floor. Lit live, the light probes light
+     * them (ProbeLight).
+     */
+    tintOpenables(probes) {
+        const light = new THREE.Color();
+        const at = new THREE.Vector3();
+        for (const part of this.openables.parts) {
+            const probe = probes[this.nearestProbedDoor(part.node.getWorldPosition(at), probes)];
+            if (!probe) continue;
+            light.setRGB(...probe);
+            part.node.traverse((mesh) => {
+                if (!mesh.isMesh) return;
+                const tint = (material) => {
+                    if (!material?.emissive) return material;
+                    if (!material.userData.baseColor) {
+                        material = material.clone();
+                        material.userData.baseColor = material.color.clone();
+                    }
+                    material.color.copy(material.userData.baseColor).multiplyScalar(0.25);
+                    material.emissive.copy(material.userData.baseColor).multiply(light).multiplyScalar(0.85);
+                    return material;
+                };
+                mesh.material = Array.isArray(mesh.material) ? mesh.material.map(tint) : tint(mesh.material);
+            });
+        }
+    }
+
+    /**
+     * The id of the door with probes nearest the point `at`, on its floor
+     * if there is one there: a door at or a little above the point's feet,
+     * within a storey below it.
+     */
+    nearestProbedDoor(at, probes, except = null) {
+        let best = null;
+        let bestScore = Infinity;
+        const other = new THREE.Vector3();
+        for (const candidate of this.doors) {
+            if (candidate === except || !probes[candidate.spec.id]) continue;
+            candidate.group.getWorldPosition(other);
+            // Another floor's doors only when this one has none.
+            const sameFloor = other.y <= at.y + 0.3 && at.y - other.y < 2.5;
+            const score = at.distanceTo(other) + (sameFloor ? 0 : 1000);
+            if (score < bestScore) {
+                bestScore = score;
+                best = candidate.spec.id;
+            }
+        }
+        return best;
     }
 
     dispose() {
@@ -1906,13 +2376,36 @@ ${layers.map((k) => `\tif ( switchGain${k} > 0.0 ) light += switchLayer( switchL
 }
 
 /**
+ * How much of a room's light stays with its doors as they are, for a
+ * room's material with `count` of them (userData.doorUniforms): each
+ * door's crop of the doors' atlas, where this texel is in it — the share
+ * of the light that stays with it shut — as far as it is shut. A door
+ * wide open reads nothing.
+ */
+function doorLightGLSL(count) {
+    const doors = Array.from({ length: count }, (_, k) => k);
+    return /* glsl */ `
+uniform sampler2D doorAtlas;
+${doors.map((k) => `uniform vec4 doorRect${k};\nuniform vec4 doorAt${k};\nuniform float doorOpen${k};`).join("\n")}
+float doorKeeps( vec4 rect, vec4 at, float open, vec2 uv ) {
+	if ( open > 0.999 ) return 1.0;
+	return mix( texture2D( doorAtlas, at.xy + ( uv - rect.xy ) / rect.zw * at.zw ).r, 1.0, open );
+}
+float doorStays( vec2 uv ) {
+	return 1.0${doors.map((k) => ` * doorKeeps( doorRect${k}, doorAt${k}, doorOpen${k}, uv )`).join("")};
+}
+`;
+}
+
+/**
  * Draw a baked material's lightmap as it was stored and encoded
  * (setLightingVariant): its colour from its brightness and `chroma` when
  * given, then opened back out — and, for a room's material with switches
  * of its own (userData.switchLayers), their light added in, as encoded
- * `layerEncoding`.
+ * `layerEncoding`; for one with doors (userData.doorUniforms), as much of
+ * the rest as stays with them as they are.
  */
-function decodeLightmap(material, encoding, chroma = null, layerEncoding = null) {
+function decodeLightmap(material, encoding, chroma = null, layerEncoding = null, shade = null) {
     const uniform = (material.userData.lightMapChroma ??= { value: null });
     uniform.value = chroma;
     const layers = material.userData.switchLayers ?? [];
@@ -1922,12 +2415,17 @@ function decodeLightmap(material, encoding, chroma = null, layerEncoding = null)
         rect: { value: new THREE.Vector4(...layer.rect) },
         gain: { value: 0 },
     })));
-    const key = `${LIGHTMAP_DECODE[encoding] ? encoding : ""}|${chroma ? "ycocg" : ""}|${switches.length}|${layerEncoding ?? ""}`;
+    const doors = material.userData.doorUniforms ?? [];
+    const lit = material.isMeshLambertMaterial;
+    const lid = Boolean(material.userData.lid);
+    const key = `${LIGHTMAP_DECODE[encoding] ? encoding : ""}|${chroma ? "ycocg" : ""}|${switches.length}|${layerEncoding ?? ""}${lit ? "|lit" : ""}${lid ? "|lid" : ""}${shade ? "|shade" : ""}${doors.length ? `|${doors.length}doors` : ""}`;
     if ((material.userData.lightmapKey ?? "||0|") === key) return;
     material.userData.lightmapKey = key;
     const decode = LIGHTMAP_DECODE[encoding] ?? ((e) => e);
     const decodeLayer = LIGHTMAP_DECODE[layerEncoding] ?? ((e) => e);
     material.onBeforeCompile = (shader) => {
+        // Lit live, its lightmap is all of its ambient light.
+        if (lit) shader.fragmentShader = bakedAmbient(shader.fragmentShader, "", { lid });
         const plain = "lightMapTexel.rgb * lightMapIntensity";
         if (!shader.fragmentShader.includes(plain)) console.warn("Lightmap not decoded: three's shader has changed");
         let colour = "lightMapTexel.rgb";
@@ -1939,6 +2437,26 @@ function decodeLightmap(material, encoding, chroma = null, layerEncoding = null)
             colour = "lightMapColour( lightMapTexel.r, vLightMapUv )";
         }
         let light = `${decode(colour)} * lightMapIntensity`;
+        if (doors.length) {
+            shader.uniforms.doorAtlas = material.userData.doorAtlas;
+            doors.forEach(({ rect, at, open }, k) => {
+                shader.uniforms[`doorRect${k}`] = rect;
+                shader.uniforms[`doorAt${k}`] = at;
+                shader.uniforms[`doorOpen${k}`] = open;
+            });
+            prefix += doorLightGLSL(doors.length);
+        }
+        // Drawn from the bake, what moves still shades the sun: its share
+        // of the light, where the shadow map of what moves falls, taken
+        // away — and a shut door dims the rest of it, and only that.
+        if (shade) {
+            Object.assign(shader.uniforms, shade);
+            prefix += SUN_SHADE_FRAGMENT + (doors.length ? "" : "float doorStays( vec2 uv ) { return 1.0; }\n") + BAKED_LIGHT;
+            light = `bakedLight( ${light}, vLightMapUv )`;
+            shader.vertexShader = SUN_SHADE_VERTEX + shader.vertexShader.replace("#include <project_vertex>", SUN_SHADE_PROJECT);
+        } else if (doors.length) {
+            light = `( ${light} * doorStays( vLightMapUv ) )`;
+        }
         if (switches.length) {
             switches.forEach(({ luma, chroma: layerChroma, rect, gain }, k) => {
                 shader.uniforms[`switchLuma${k}`] = luma;
@@ -1956,13 +2474,172 @@ function decodeLightmap(material, encoding, chroma = null, layerEncoding = null)
 }
 
 /**
- * How many switches' layers a room's materials can add in: two textures
- * each, beside the surface's own texture and the lightmap's two, within
- * what this GPU can bind at once — and never more than six.
+ * A lit material's fragment shader for a surface whose ambient light is
+ * baked — its lightmap, its vertices' light, or a door's probes: none of
+ * the scene's ambient, hemisphere or probe light, which is there for what
+ * has no baked light, the people and the car; only the live lights on top
+ * of its own. The lightmap's chunk is written out, for decodeLightmap to
+ * find its light in, and `extra` GLSL adds to the ambient light.
+ *
+ * A ceiling's (`lid`) top — seen only from above, in the bird's-eye view
+ * of the floor over it, which takes the roof away — takes the sun
+ * unshadowed, as it was baked (blender/bake_public.py's roof_lifted): the
+ * roof still shades the rooms under it, drawing nothing.
  */
-function maxSwitchLayers(renderer) {
+function bakedAmbient(fragmentShader, extra = "", { lid = false } = {}) {
+    const begin = THREE.ShaderChunk.lights_fragment_begin;
+    const sunShadow = "directLight.color *= ( directLight.visible && receiveShadow ) ? getShadow( directionalShadowMap[ i ]";
+    const without = [
+        ["vec3 irradiance = getAmbientLightIrradiance( ambientLightColor );", "vec3 irradiance = vec3( 0.0 );"],
+        ["irradiance += getLightProbeIrradiance( lightProbe, geometryNormal );", ""],
+        ["irradiance += getHemisphereLightIrradiance( hemisphereLights[ i ], geometryNormal );", ""],
+        ...(lid
+            ? [
+                  [
+                      "vec3 geometryNormal = normal;",
+                      "vec3 geometryNormal = normal;\nbool lidTop = dot( geometryNormal, normalize( ( viewMatrix * vec4( 0.0, 1.0, 0.0, 0.0 ) ).xyz ) ) > 0.5;",
+                  ],
+                  [sunShadow, sunShadow.replace("receiveShadow )", "receiveShadow && ! lidTop )")],
+              ]
+            : []),
+    ];
+    if (without.some(([line]) => !begin.includes(line))) console.warn("Baked ambient light not kept apart: three's shader has changed");
+    const own = without.reduce((code, [line, instead]) => code.replace(line, instead), begin);
+    const maps = THREE.ShaderChunk.lights_fragment_maps + (extra && `\n#if defined( RE_IndirectDiffuse )\n\t${extra}\n#endif\n`);
+    return fragmentShader.replace("#include <lights_fragment_begin>", own).replace("#include <lights_fragment_maps>", maps);
+}
+
+/**
+ * Lit live, a thin face's vertices' baked light is all of its ambient
+ * light, as its lightmap is a wide face's: added to the light it gets,
+ * rather than multiplying its colour as vertex colours do.
+ */
+function lightByVertices(material) {
+    material.onBeforeCompile = (shader) => {
+        shader.fragmentShader = bakedAmbient(shader.fragmentShader.replace("#include <color_fragment>", ""), "irradiance += vColor.rgb * PI;");
+    };
+    material.customProgramCacheKey = () => "vertex-light";
+}
+
+/**
+ * A door leaf's light from its probes (tintDoors), given as emission: its
+ * `emissive` on the face towards the wall's +Z (the leaf's own, shut), the
+ * light of the probes that side; `userData.emissiveBack` on the other —
+ * a panel's mouldings too, however they slope; the edges between the two. Lit live, nothing of the scene's own ambient light
+ * on top.
+ */
+function litBySides(material, { live = false } = {}) {
+    const back = (material.userData.emissiveBack = { value: new THREE.Color() });
+    material.onBeforeCompile = (shader) => {
+        if (live) shader.fragmentShader = bakedAmbient(shader.fragmentShader);
+        shader.uniforms.emissiveBack = back;
+        const emission = "vec3 totalEmissiveRadiance = emissive;";
+        if (!shader.fragmentShader.includes(emission)) console.warn("Door leaf's sides not lit apart: three's shader has changed");
+        shader.vertexShader = shader.vertexShader
+            .replace("#include <common>", "#include <common>\nvarying float vLeafFront;")
+            .replace("#include <begin_vertex>", "#include <begin_vertex>\n\tvLeafFront = smoothstep( -0.25, 0.25, normal.z );");
+        shader.fragmentShader = shader.fragmentShader
+            .replace("#include <common>", "#include <common>\nuniform vec3 emissiveBack;\nvarying float vLeafFront;")
+            .replace(emission, "vec3 totalEmissiveRadiance = mix( emissiveBack, emissive, vLeafFront );");
+    };
+    material.customProgramCacheKey = () => `door-leaf${live ? "|live" : ""}`;
+    material.needsUpdate = true;
+}
+
+/**
+ * Drawn from the bake, where a thing that moves stands between a texel and
+ * the sun: the sun's shadow map (of what moves alone), where the texel is,
+ * sampled as three samples a PCF map — its depth packed in RGBA (three's
+ * MeshDepthMaterial), four taps half a texel apart — and the texel's share
+ * of the sun's light (its mask: encoded as a lightmap's brightness is, the
+ * bake's encode_mask), in the sun's colour, taken away as far as it is
+ * shaded.
+ */
+/** What every baked material's sun shade reads (decodeLightmap), shared. */
+function sunShadeUniforms() {
+    const none = new THREE.DataTexture(new Uint8Array([0]), 1, 1, THREE.RedFormat);
+    none.needsUpdate = true;
+    return {
+        sunMask: { value: none },
+        sunMaskScale: { value: 0 },
+        sunTint: { value: new THREE.Vector3(1, 1, 1) },
+        sunShadowMap: { value: null },
+        sunShadowMatrix: { value: new THREE.Matrix4() },
+        sunShadowSize: { value: new THREE.Vector2(1024, 1024) },
+        sunShadowBias: { value: 0 },
+        sunShadowNormalBias: { value: 0 },
+        sunShadowOn: { value: 0 },
+    };
+}
+
+const SUN_SHADE_VERTEX = /* glsl */ `
+uniform mat4 sunShadowMatrix;
+uniform float sunShadowNormalBias;
+varying vec4 vSunShadowCoord;
+`;
+const SUN_SHADE_PROJECT = /* glsl */ `#include <project_vertex>
+	vSunShadowCoord = sunShadowMatrix * ( modelMatrix * vec4( transformed, 1.0 ) + vec4( normalize( mat3( modelMatrix ) * normal ) * sunShadowNormalBias, 0.0 ) );
+`;
+const SUN_SHADE_FRAGMENT = /* glsl */ `
+uniform sampler2D sunMask;
+uniform float sunMaskScale;
+uniform vec3 sunTint;
+uniform sampler2D sunShadowMap;
+uniform vec2 sunShadowSize;
+uniform float sunShadowBias;
+uniform float sunShadowOn;
+varying vec4 vSunShadowCoord;
+float sunDepth( const in vec4 v ) {
+	return dot( v, ( 255.0 / 256.0 ) / vec4( 256.0 * 256.0 * 256.0, 256.0 * 256.0, 256.0, 1.0 ) );
+}
+float sunLit() {
+	if ( sunShadowOn < 0.5 ) return 1.0;
+	vec3 c = vSunShadowCoord.xyz / vSunShadowCoord.w;
+	if ( c.x < 0.0 || c.x > 1.0 || c.y < 0.0 || c.y > 1.0 || c.z > 1.0 ) return 1.0;
+	float z = c.z + sunShadowBias;
+	vec2 t = 0.5 / sunShadowSize;
+	return 0.25 * (
+		step( z, sunDepth( texture2D( sunShadowMap, c.xy + vec2( -t.x, -t.y ) ) ) ) +
+		step( z, sunDepth( texture2D( sunShadowMap, c.xy + vec2( t.x, -t.y ) ) ) ) +
+		step( z, sunDepth( texture2D( sunShadowMap, c.xy + vec2( -t.x, t.y ) ) ) ) +
+		step( z, sunDepth( texture2D( sunShadowMap, c.xy + vec2( t.x, t.y ) ) ) ) );
+}
+vec3 sunPart( vec2 uv ) {
+	float m = texture2D( sunMask, uv ).r;
+	float linear = m <= 0.04045 ? m / 12.92 : pow( ( m + 0.055 ) / 1.055, 2.4 );
+	float share = linear / max( 1.0 - linear, 1.0 / 65.0 );
+	// π, as a lightmap's light is here: three's PI is defined after this.
+	return 3.141592653589793 * sunMaskScale * share * sunTint;
+}
+`;
+
+/**
+ * A lightmap's light, drawn from the bake: the sun's straight light in it
+ * (sunPart) as far as nothing that moves shades it, and the rest as far as
+ * the room's doors let it stay (doorStays) — or, where neither takes any
+ * away, as it is.
+ */
+const BAKED_LIGHT = /* glsl */ `
+vec3 bakedLight( vec3 light, vec2 uv ) {
+	float stays = doorStays( uv );
+	float lit = sunLit();
+	if ( stays > 0.999 && lit > 0.999 ) return light;
+	vec3 sun = min( sunPart( uv ), light );
+	return ( light - sun ) * stays + sun * lit;
+}
+`;
+
+/**
+ * How many switches' layers a room's materials can add in: two textures
+ * each, beside the `reserved` others — the surface's own texture and the
+ * lightmap's two; lit live, the sun's and the lamps' shadows; drawn from
+ * the bake, the sun's mask and its shadow of what moves; and a room with
+ * doors, their atlas — within what this GPU can bind at once, and never
+ * more than six.
+ */
+function maxSwitchLayers(renderer, reserved = 3) {
     const units = renderer?.capabilities?.maxTextures ?? 16;
-    return Math.max(0, Math.min(6, Math.floor((units - 3) / 2)));
+    return Math.max(0, Math.min(6, Math.floor((units - reserved) / 2)));
 }
 
 /**
@@ -1975,6 +2652,7 @@ function maxSwitchLayers(renderer) {
  *          switch's place in `switches` and its layer's place in the atlas
  */
 function planSwitchLayers(switches, max) {
+    const limit = typeof max === "function" ? max : () => max;
     const byZone = new Map();
     switches.forEach((entry, index) => {
         for (const [zone, layer] of Object.entries(entry.layers || {})) {
@@ -1985,10 +2663,38 @@ function planSwitchLayers(switches, max) {
     });
     for (const [zone, layers] of byZone) {
         layers.sort((a, b) => b.strength - a.strength);
-        if (layers.length > max) layers.length = max;
+        if (layers.length > limit(zone)) layers.length = limit(zone);
         if (!layers.length) byZone.delete(zone);
     }
     return byZone;
+}
+
+/**
+ * Each room's doors (the bake's door states): which crop of the doors'
+ * atlas each room's materials read for each of its doors, and how much of
+ * the room's light stays with it shut, all told.
+ *
+ * @returns {Map<string, { id, rect, at, share }[]>} zone -> its doors
+ */
+function planDoorLayers(states) {
+    const byZone = new Map();
+    for (const [id, zones] of Object.entries(states?.doors ?? {})) {
+        for (const [zone, layer] of Object.entries(zones)) {
+            if (!byZone.has(zone)) byZone.set(zone, []);
+            byZone.get(zone).push({ id, rect: layer.rect, at: layer.at, share: layer.share ?? 1 });
+        }
+    }
+    return byZone;
+}
+
+/** The doors' atlas until it loads: all of the light stays. */
+let white = null;
+function whiteLayer() {
+    if (white) return white;
+    white = new THREE.DataTexture(new Uint8Array([255]), 1, 1, THREE.RedFormat);
+    white.colorSpace = THREE.NoColorSpace;
+    white.needsUpdate = true;
+    return white;
 }
 
 /**
@@ -2009,18 +2715,18 @@ function blankLayer() {
 }
 
 /**
- * Take each switch's vertex light — `_s0`, `_s1`… — off a vertex-lit
- * mesh's geometry, so it is not sent to the GPU with it: as plain numbers,
- * for mixVertexLight to add up.
+ * Take each switch's vertex light — `_s0`, `_s1`… and what its lamps
+ * bounce, `_s0_indirect`… — off a vertex-lit mesh's geometry, so it is not
+ * sent to the GPU with it: as plain numbers, for mixVertexLight to add up.
  *
- * @returns {{ index: number, values: Float32Array }[]}
+ * @returns {{ index: number, indirect: boolean, values: Float32Array }[]}
  */
 function takeSwitchLight(geometry) {
     const taken = [];
     for (const name of Object.keys(geometry.attributes)) {
-        const match = /^_s(\d+)$/.exec(name);
+        const match = /^_s(\d+)(_indirect)?$/.exec(name);
         if (!match) continue;
-        taken.push({ index: Number(match[1]), values: floatValues(geometry.getAttribute(name)).slice() });
+        taken.push({ index: Number(match[1]), indirect: Boolean(match[2]), values: floatValues(geometry.getAttribute(name)).slice() });
         geometry.deleteAttribute(name);
     }
     return taken;

@@ -37,8 +37,10 @@ def _put(col, parts, name, lift=0.0):
 
     Everything in joinery.py is modelled standing on z=0, so anything above
     the ground floor has to be lifted or it builds itself into the room below.
+    Its doors and drawers stay parts of their own, which the app opens
+    (geometry.join_piece).
     """
-    obj = g.join(parts, name, col)
+    obj = g.join_piece(parts, name, col)
     if lift:
         obj.location.z += lift
     return obj

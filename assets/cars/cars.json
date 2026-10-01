@@ -1,0 +1,10 @@
+{
+  "_about": "The cars the editor offers, each a model downloaded from Sketchfab and kept here as it came. blender/import_cars.py turns each into what the app drives (public/models/cars/<id>/); its credits are read from the file itself. `scale` or `length` (metres, nose to tail) puts it at real size; `forward` is the axis its nose points along in Blender after import.",
+  "default": "bmw-x6-m",
+  "cars": [
+    { "id": "bmw-x6-m", "name": "BMW X6 M", "file": "2016_bmw_x6_m.glb", "scale": 100, "forward": "-y" },
+    { "id": "chery-jaecoo-j7", "name": "Chery Jaecoo J7", "file": "2025_chery_jaecoo_j7.glb", "scale": 100, "forward": "-y" },
+    { "id": "bmw-m4-widebody", "name": "BMW M4 Widebody", "file": "bmw_m4_modified_widebody.glb", "length": 4.85, "forward": "-y" },
+    { "id": "ford-f150-raptor", "name": "Ford F-150 Raptor", "file": "ford_f150_raptor.glb", "scale": 1, "forward": "+y" }
+  ]
+}

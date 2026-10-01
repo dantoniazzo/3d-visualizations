@@ -8,8 +8,11 @@ import Collision from "./Collision.js";
 import Player from "./Player/Player.js";
 import BirdView from "./BirdView.js";
 import Switches from "./Switches.js";
+import LiveLamps from "./LiveLamps.js";
+import ProbeLight from "./ProbeLight.js";
 import Vegetation from "./Vegetation/Vegetation.js";
-import { chromaURL, lightmapURL } from "../Utils/device.js";
+import { chromaURL, doorStatesURL, lightingMode, lightmapURL, movingShadowsOnly, sunMaskURL } from "../Utils/device.js";
+import { groundGradient } from "../../../shared/vegetation.js";
 
 export default class World extends EventEmitter {
     constructor() {
@@ -47,11 +50,19 @@ export default class World extends EventEmitter {
                     if (!snapshot) {
                         this.sceneBuilder.optimizeForViewing();
                     } else {
-                        this.sceneBuilder.usePublishedView(snapshot, lighting, published.options);
+                        // All of its light from the bake, or the sun and the
+                        // lamps live on top of the rest of it.
+                        const live = Boolean(lighting) && lightingMode(lighting) === "live";
+                        // Drawn from the bake, as on a phone: what moves still
+                        // shades the sun in the house, and the light probes
+                        // light it, when the bake has them.
+                        const shade = movingShadowsOnly(lighting);
+                        const probes = Boolean(lighting?.probes);
+                        this.sceneBuilder.usePublishedView(snapshot, lighting, { ...published.options, live, shade, probes });
                         if (lighting) {
                             // The room lights are in the lightmaps now.
                             if (this.sceneBuilder.lights) this.sceneBuilder.lights.visible = false;
-                            this.environment.useBaked(lighting.view);
+                            this.environment.useBaked(lighting.view, { live: this.sceneBuilder.liveLight, shade, probes });
                             // Its light switches, when its fittings were baked apart.
                             if (lighting.switches?.length && lighting.variants) {
                                 this.switches = new Switches(this.sceneBuilder, published);
@@ -60,6 +71,15 @@ export default class World extends EventEmitter {
                                 const lights = (published.spec.lights || []).filter((light) => this.switches.byId.has(light.switch));
                                 this.sceneBuilder.buildLightTargets(lights);
                             }
+                            // Lit live: the lamps that are on nearest the
+                            // visitor, and when the shadows are drawn again.
+                            // Drawn from the bake, only the sun's shadow of what moves.
+                            if (this.sceneBuilder.liveLight) this.lamps = new LiveLamps(this);
+                            else if (this.sceneBuilder.sunShade) this.lamps = new LiveLamps(this, { lamps: 0, sway: false });
+                            // ...and the light probes that light the people and the car.
+                            if (probes) this.loadProbes(lighting.probes, { sunFromProbes: !this.sceneBuilder.liveLight });
+                            // How much of each room's light stays as its doors shut.
+                            if (lighting.doorStates) this.loadDoorStates(lighting.doorStates);
                             this.setLighting("day").then(() => {
                                 if (this.switches) this.emit("switches-ready", this.switches);
                             });
@@ -136,6 +156,10 @@ export default class World extends EventEmitter {
     async setLighting(variant) {
         const info = this.experience.published?.lighting?.variants?.[variant];
         if (!info || !this.sceneBuilder?.baked) return false;
+        // Lit live, the house takes all of its light but the sun's straight
+        // light from the bake: a lightmap of its own, its thin faces' light
+        // and its doors' without it.
+        const live = this.sceneBuilder.liveLight && info.indirect;
         this.lightmaps ??= new Map();
         if (!this.lightmaps.has(variant)) {
             // Its brightness, and its colour when that is apart from it.
@@ -146,13 +170,39 @@ export default class World extends EventEmitter {
             };
             this.lightmaps.set(
                 variant,
-                Promise.all([load(`lightmap:${variant}`, lightmapURL(info)), load(`lightmap:${variant}:chroma`, chromaURL(info))])
+                Promise.all([
+                    load(`lightmap:${variant}`, lightmapURL(info)),
+                    load(`lightmap:${variant}:chroma`, chromaURL(info)),
+                    live ? load(`lightmap:${variant}:indirect`, lightmapURL(info.indirect)) : null,
+                    live ? load(`lightmap:${variant}:indirect:chroma`, chromaURL(info.indirect)) : null,
+                ])
             );
         }
-        const [[texture, chroma]] = await Promise.all([this.lightmaps.get(variant), this.switches?.prepare(variant)]);
-        this.sceneBuilder.setLightingVariant(texture, info, chroma);
+        const [[texture, chroma, softTexture, softChroma]] = await Promise.all([this.lightmaps.get(variant), this.switches?.prepare(variant)]);
+        if (live) {
+            this.sceneBuilder.setLightingVariant(softTexture, { ...info, ...info.indirect }, softChroma);
+            // The grass still reads all of the ground's light, sun and all.
+            this.sceneBuilder.prepareLightmaps(texture, info, chroma);
+        } else {
+            this.sceneBuilder.setLightingVariant(texture, info, chroma);
+        }
+        // Drawn from the bake, the sun's share of the light, for what moves to shade.
+        const shade = this.sceneBuilder.sunShade && info.sun?.mask;
+        if (shade) {
+            this.sunMasks ??= new Map();
+            if (!this.sunMasks.has(variant)) {
+                // Without it, what moves shades nothing; the light is as baked.
+                const mask = new THREE.TextureLoader().loadAsync(sunMaskURL(info.sun)).catch((error) => {
+                    console.warn("The sun's mask did not load", error);
+                    return null;
+                });
+                this.sunMasks.set(variant, mask);
+            }
+            const mask = await this.sunMasks.get(variant);
+            if (mask) this.sceneBuilder.setSunShade(mask, info.sun);
+        }
         this.switches?.useVariant(variant);
-        this.environment.setVariant(variant);
+        this.environment.setVariant(variant, live || shade ? info.sun : null);
         // The grass lit by the lawn under it, the trees by the bake's sun and sky.
         this.vegetation?.useGroundLight(this.sceneBuilder, info, texture, chroma);
         this.vegetation?.setLight(variant);
@@ -161,10 +211,57 @@ export default class World extends EventEmitter {
         return true;
     }
 
+    /**
+     * The light probes of a view lit live (World/ProbeLight.js), once
+     * their file is here; until then what moves keeps the sky's light.
+     */
+    async loadProbes(description, options = {}) {
+        try {
+            const response = await fetch(description.file);
+            if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+            const buffer = await response.arrayBuffer();
+            if (!this.disposed) this.probes = new ProbeLight(this, description, buffer, options);
+        } catch (error) {
+            console.warn("The light probes did not load; the people and the car keep the sky's light.", error);
+        }
+    }
+
+    /**
+     * The doors' atlas (the bake's door states), once it is here: until then,
+     * or without it, a shut door dims no room — its light is as baked, with
+     * every door open.
+     */
+    async loadDoorStates(states) {
+        try {
+            const texture = await new THREE.TextureLoader().loadAsync(doorStatesURL(states));
+            if (!this.disposed) this.sceneBuilder.setDoorAtlas(texture);
+        } catch (error) {
+            console.warn("The doors' light did not load; a shut door dims no room.", error);
+        }
+    }
+
     /** The bird's-eye view of a floor, on or off. */
     toggleBirdView() {
         if (!this.birdView || this.player?.inVehicle) return false;
         return this.birdView.toggle();
+    }
+
+    /**
+     * The garden's settings have changed — the editor's Garden panel has put
+     * them in the spec — in one of its groups (shared/garden.js): how the
+     * view is drawn, where the ground's gradient lies, and the garden, at
+     * once; the hills, and whatever else has to be grown again, once the
+     * change has `settled`.
+     */
+    gardenChanged(group, settled = true) {
+        if (!this.sceneBuilder) return;
+        if (group === "colour") this.environment?.applyColour();
+        if (group === "ground") this.sceneBuilder.materials.textures.setGradient(groundGradient(this.spec));
+        if (settled && group === "hills") {
+            this.sceneBuilder.rebuildHills();
+            this.environment?.fitShadows();
+        }
+        this.vegetation?.settingsChanged(settled);
     }
 
     /** Swap a surface's finish and persist it to the spec. */
@@ -179,6 +276,9 @@ export default class World extends EventEmitter {
         if (this.sceneBuilder) this.sceneBuilder.updateDoors(delta);
         if (this.player) this.player.update();
         if (this.vegetation) this.vegetation.update(delta);
+        if (this.lamps) this.lamps.update(delta);
+        if (this.sceneBuilder?.sunShade) this.sceneBuilder.updateSunShade(this.environment.sun);
+        if (this.probes) this.probes.update(delta);
         if (this.editor) this.editor.update(delta);
         this.emit("tick", delta);
     }
@@ -186,6 +286,8 @@ export default class World extends EventEmitter {
     dispose() {
         this.disposed = true;
         this.birdView?.dispose();
+        this.lamps?.dispose();
+        this.probes?.dispose();
         this.editor?.dispose();
         this.vegetation?.dispose();
         this.sceneBuilder?.dispose();

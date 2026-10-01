@@ -43,9 +43,11 @@ an opening cannot be moved under furniture on the floor above.
 is pulled flush against it; and a piece that was standing on something keeps
 standing on whatever is under it. Hold `Shift` to place freely.
 
-**Finishes are procedural.** Parquet, tile, carpet, brick, plaster, pantiles,
-grass and tarmac are drawn to a canvas at runtime (`TextureLibrary`), so adding
+**Finishes are procedural.** Parquet, tile, carpet, brick, plaster, pantiles
+and tarmac are drawn to a canvas at runtime (`TextureLibrary`), so adding
 one is a data change in `shared/catalog.js` rather than a texture download.
+The garden's ground is the one image: Fluffy Tree's gradient, laid once
+over the whole garden rather than tiled.
 Tiling is baked into each surface's UVs, so one GPU texture serves every
 surface using a finish, and a 2 m cloakroom floor reads at the same scale as a
 9 m living room.
@@ -70,10 +72,11 @@ npm start         # http://localhost:3000
 ### Building the models
 
 **Every model is generated in Blender — nothing is downloaded.** The house,
-all of its furniture, the furniture catalogue, the car and the kit of parts
-doors, windows and stairs are dressed with are built from primitives by the
+all of its furniture, the furniture catalogue and the kit of parts doors,
+windows and stairs are dressed with are built from primitives by the
 scripts in `blender/`, at real-world size in metres, so what
-the app collides with is exactly what it draws. They are build outputs, not
+the app collides with is exactly what it draws. (The cars and the avatars
+are bought in; see below.) They are build outputs, not
 repository content, so build them once:
 
 ```bash
@@ -84,8 +87,8 @@ npm run seed
 That runs `build_house.py` (the .blend), `export_app.py` (Wrenfield's
 furnishings GLB and the spec its structure is built from),
 `export_furniture.py` (the catalogue),
-`export_car.py` (the car) and `export_kit.py` (the kit). `npm run furniture`,
-`npm run models -- --car` and `npm run models -- --kit` rebuild just those. Set `BLENDER=/path/to/blender` if it is not on `PATH` or
+`import_cars.py` (the cars) and `export_kit.py` (the kit). `npm run furniture`,
+`npm run models -- --cars` and `npm run models -- --kit` rebuild just those. Set `BLENDER=/path/to/blender` if it is not on `PATH` or
 in the usual place.
 
 The avatars are the exception: they are bought-in characters, kept as
@@ -107,37 +110,59 @@ the point for now is that they are the right size. Where they come from:
 |---|---|
 | `blender/lib/joinery.py` | Built-ins: kitchen runs, islands, appliances, beds, wardrobes, bathrooms |
 | `blender/lib/loose.py` | Loose pieces: sofas, chairs, stools, tables, bookcases, TVs, lamps, plants, decor |
-| `blender/export_car.py` | The car — a BMW X6 M Competition (below) — to the wheelbase, track and ride height `Car.js` drives with |
+| `blender/import_cars.py` | The cars the editor offers (below), each split into the body and wheels `Car.js` drives, with its wheelbase, tracks and wheel sizes measured |
 | `blender/lib/kit.py` | The kit of parts: panelled door leaves, levers, hinges and stops, skirting, mitred architraves, window frames, glazing bars and cills, stair treads, newels, turned balusters and handrails |
 
-**The car is modelled, not assembled.** It is a BMW X6 M Competition (G06,
-2023), built from the-blueprints.com's side, top, front and rear drawings
-the way a car modeller builds one — the method of Enpix's *Best Way To Model
-A Car In Blender*: the panels' outlines traced off the blueprints, each
-filled with an even grid of quads, the panels joined along the edges they
-share, one half built and mirrored, subdivided for smoothness. Here the
-tracing is numbers, measured off the drawings (`blender/lib/x6.py`): the
-lines that run along the car — the sills, the shoulder crease, the
-beltline, the window line, the roof rail, the centreline's profile — and a
-cross-section through them at every station. The body is one quad mesh of
-about 40 mm quads following those lines: its columns fall on the design's
-edges (the windscreen's base and top, the doors, the pillars, the rear
-window), its rows run along them, three rows loop round each wheel arch as
-a car's edge loops do, and the front and rear are patches filling the last
-columns' outlines (`blender/lib/carbody.py` has the curve and patch tools).
-Onto it are cut the kidneys and intakes (inset and sunk, the grille and
-fins behind them), the windows (set in, with their seals) and the shut
-lines of the doors and the bonnet (split and turned in); and on it are
-laid the parts a real car has as parts — the lamps with their bezels and
-light bars, the gill, the mirrors, the handles, the badges, the exhausts,
-the arch liners (`blender/lib/x6_parts.py`). The wheel is the 21-inch
-Y-spoke with the M brakes' blue caliper, which `Car.js` steers but does
-not spin (`blender/lib/x6_wheel.py`). Its silhouette matches the drawings
-in all four views: `export_car.py -- --views DIR` renders them at the
-drawings' scale to lay over them, and `--previews DIR` renders the car and
-its cage. `npm run models -- --car` also writes `blender/out/bmw_x6.blend`,
-the model with its Mirror and Subdivision modifiers still live, and packs
-the GLBs with meshopt (about 170 KB as sent).
+**The cars are bought in, like the avatars.** Each is a model downloaded
+from Sketchfab and kept as it came in `assets/cars/`, listed in
+`assets/cars/cars.json` — its id, its name, and the two things a model
+does not say about itself: its size (a `scale`, or its real `length`) and
+which way its nose points. The cars there now, and their licences (all
+non-commercial; credit the author, read from each file):
+
+| Car | Model by | Licence |
+| --- | --- | --- |
+| BMW X6 M (2016) | [Ddiaz Design](https://sketchfab.com/3d-models/2016-bmw-x6-m-9cba50132a864bd79bfab48bd631574d) | CC BY-NC-SA 4.0 |
+| Chery Jaecoo J7 (2025) | [Ddiaz Design](https://sketchfab.com/3d-models/2025-chery-jaecoo-j7-02e3ca1e9a8f4c7aad40617bd0693615) | CC BY-NC-SA 4.0 |
+| BMW M4 Widebody | [VTX](https://sketchfab.com/3d-models/bmw-m4-modified-widebody-61b1259b14ae4840ba1b0e9d819e60c1) | CC BY-NC-SA 4.0 |
+| Ford F-150 Raptor | [Outlaw Games™](https://sketchfab.com/3d-models/ford-f150-raptor-5bde9684bf6d40e0902ee8e482ad1063) | CC BY-NC 4.0 |
+
+`npm run models -- --cars` turns each into what the app drives, in
+`public/models/cars/<id>/`: `body.glb` (everything but the wheels — body,
+glass, lamps, interior), `wheels.glb` (a front and a rear wheel, each what
+turns and what does not — its caliper), a picture, and one
+`public/models/cars/index.json` of them all, with each car's wheelbase,
+tracks, wheel sizes and body extent, which `Car.js` drives it by. Nothing
+else about a model is known in advance, so `blender/import_cars.py` finds
+its wheels by their shape: the tyres are the parts round in side view that
+reach the ground at the four corners, each's axle the way it spreads least
+(a model posed with its front wheels steered, like the Raptor, has them
+straightened); everything inside a tyre turns with it, its tread blocks
+too, but for materials that sit off its axle, like a caliper. The files are
+packed for the web with meshopt and WebP textures of 2048 px at most — the
+four cars are 85 MB as downloaded and about 13 MB here. Each car's models
+were made for a viewer's image-based lighting, so `Car.js` gives all their
+metals the studio reflections the rest of the app gives only polished ones.
+
+In the editor, select the car and press **Change car…**: the cars on offer
+open in a ring round it, each its picture and name, the one it is marked;
+the hub in the middle names the car under the pointer, who made it and
+what choosing it downloads. Choosing one downloads it — the hub counts it
+in — and puts it on the car where it stands, one step to undo. A scene's
+vehicle stores which car it is (`model`, an id from the index); its own
+cars are loaded with it, any other only when chosen. To add a car, put its
+GLB in `assets/cars/`, list it in `cars.json`, and run `npm run models --
+--cars <id>`.
+
+The X6 was also modelled, and that is kept to take further:
+`blender/export_car.py` builds an X6 M as a quad cage the way a car
+modeller does — the method of Enpix's *Best Way To Model A Car In Blender*
+— from lines measured off the imported model (`blender/lib/x6.py`,
+`carbody.py`), shrinks the cage onto that model's surface as in retopology
+(`fit.py`, `x6_reference.py`), and adds its details and wheel
+(`x6_parts.py`, `x6_wheel.py`). It writes its GLBs and `bmw_x6.blend` to
+`blender/out/`, not to the app's models: run it with `blender --background
+--python blender/export_car.py`.
 
 The kit is how a building built from a scene spec gets real joinery while
 staying editable. The app still decides where every door, window and flight
@@ -352,10 +377,11 @@ night. The top of a ceiling is only ever seen from above, in the
 bird's-eye view of the floor over it, so it is baked as it is seen there,
 with the roof lifted off. That makes it the floor of an open doll's house
 rather than of a pitch-dark roof space. Door leaves,
-which move, are tinted from light probes baked either side of each. The
-public view then draws the house unlit, from what was baked: no live
-lights and no shadow map, which is most of what a phone was spending its
-frame on. **N**, or the sun and moon button, switches between day and
+which move, are tinted from light probes baked either side of each. On a
+phone the public view then draws the house unlit, from what was baked: no
+live lights and no shadow map, which is most of what a phone was spending
+its frame on. Elsewhere the sun and the lamps are live (*Live light*,
+below). **N**, or the sun and moon button, switches between day and
 night; the night lightmap is only downloaded the first time it is asked
 for.
 
@@ -381,27 +407,142 @@ is on to the day's or the night's (`World/Switches.js`), and lights its
 glass or bulb. By day every light starts off, and at night every ceiling
 light starts on; each keeps its own switches, so the two can be compared
 as they were left. A switch's light is only downloaded the first time it
-is turned on. A room's surfaces add up to six switches' light: where
+is turned on. A room's surfaces add up to six switches' light (four, lit
+live; five on a phone, drawn from a bake with the sun's share apart): where
 more reach it, the faintest (spill through a doorway) is left out.
 
-**The garden.** Every lawn grows grass, and the bigger lawns trees — in
-the editor, the walkthrough and the public view alike. Where the trees
-stand and how big they grow is worked out from the rooms alone
-(`shared/vegetation.js`): towards the edge of the plot, clear of the
-house, the paths and the drive, and of each other. The grass is instanced
-tufts, drawn square by square and only near enough to tell apart; the
-trees are fluffy crowns of leaf cards round a trunk and branches. Their
-shaders — the grass's wind and its colour from root to tip, the crowns'
-volumetric shading and gusting leaves — are adapted from
-[fluffytree-threejs](https://github.com/leoawen/fluffytree-threejs) (MIT;
-its notice is in `frontend/Experience/World/Vegetation/shaders.js`, and
-the tuft and leaf textures' in `public/textures/vegetation/`). They are
-drawn live, so the wind moves them, and never published or baked; but the
-bake is told where the trees are and casts their shade on the lawn and
-the house, and in a baked view each tuft of grass is lit by the light
-baked into the lawn at its root — the house's shadow, the trees' shade,
-day or night — so the grass and the lawn are lit as one. The trees' trunks
-are walked into, not through.
+**Live light.** The bake also keeps the sun's straight light apart from
+the rest — the sky's through the windows and everything bounced — and
+each switch's lamps' straight light apart from what they bounce. Except
+on a phone, the public view draws the house lit, as matt surfaces the way
+Blender baked them, with that rest of the light from the bake as all of
+their ambient light, and the sun and the lamps as live lights with
+shadows: the bake's own sun, at its strength (a Blender sun's W/m² is a
+DirectionalLight's intensity as it is; a lamp's watts over 4π a
+PointLight's). So shadows follow what moves. A shut door keeps the sun
+and the hall light out of a room (the bake has no door leaves, so baked
+light comes through a shut door), opening it lets them in, and the
+visitor and the car cast shadows by day and under the lamps at night. The four lamps
+that are on nearest the visitor are lit live, each with a shadow of its
+own (`World/LiveLamps.js`); the rest are drawn from the bake. Shadows are
+drawn again only when something near them moves. What moves has no light
+baked, so the bake also measures the light at a grid of points through
+the house and round it, a metre apart, each from six ways
+(`probes.bin`); the visitors and the car take theirs from the points round
+them, those in the room they are in first, instead of from a sky-coloured
+hemisphere light that lit them the same in the garage as on the lawn. Their
+reflections dim with it (`World/ProbeLight.js`). `?lighting=live` or
+`?lighting=baked` in the link picks either on any device, to compare
+them; a view baked before this is drawn baked until it is baked again.
+
+**On a phone.** Drawn from the bake, the house still shows what moves in
+the sun. The bake writes how much of the sun's (or the moon's) straight
+light each texel has (`day-sun.webp`, a grey lightmap); the phone draws a
+shadow map of what moves alone — the visitors, the car, the doors and the
+furniture's doors and drawers, not the house or the trees, whose shade is
+baked — and takes that share of the light away where it falls. So people
+and the car throw shadows in the sun on a phone too, and a shut door keeps
+the sun off the floor behind it; a floor the sun never reached is left
+alone. Each light probe also records how much of the sun reaches it, and
+on a phone the probes light what moves, with the sun on it only as far as
+it reaches: no longer through the walls at half strength. The shadow map
+is drawn again only when something moves. The lamps stay baked on a
+phone: they light what moves through the probes, but it casts no shadow
+from them.
+
+**Doors shut.** The bake has no door leaves, so its light comes through
+every doorway, shut or not: the live sun and lamps are shaded by the leaves,
+and on a phone the sun is too, but the light from the sky and everything
+bounced came through a shut door as through an open one — a windowless WC
+stayed lit with its door shut. So the bake shuts each room door in turn —
+a leaf in the doorway as `World/Door.js` hangs it — and bakes the rooms
+either side of it again, by day, those rooms alone, keeping how much of
+their light stays: texel by texel, in one grey atlas of every door's rooms
+at half the lightmap's texels (`doors.webp`, and a phone's copy), and for
+each room all told. The view dims each room by it as its doors close, eased
+as the leaf swings: the WC goes dark behind its shut door, a bedroom with a
+window hardly changes. It dims only that light, lit live or drawn from the
+bake; two doors of a room shut together each keep their share, and the
+night dims as the day does. A switch's light in a room next door that it
+reaches through doors alone is let in as far as they are open. The thin
+faces and the light probes, which have no texels of it, take the room's
+share of its light all told; and a leaf's two faces are lit apart, each by
+the probe on its own side, so a shut WC door is dark inside and lit by the
+hall light outside. A room with doors reads their atlas as one
+more texture, so lit live it adds three switches' light rather than four.
+
+**Doors and drawers.** The furniture's doors and drawers open: the
+wardrobes', the kitchen's cupboards and drawers, the tall units', the
+microwave's, the fridge's, the nightstands' and the vanities'. Point the
+crosshair at one within two and a half metres and press **E**. The
+builders in `blender/lib/joinery.py` mark each door as hinged on its edge
+and each drawer as sliding, and `geometry.join_piece` keeps each a part of
+its own, its origin on its hinge, what it does in its node's extras. The
+carcasses behind them are hollow, with shelves, rails, a hanging rail in a
+wardrobe, and in the fridge a white liner, glass shelves, bins in the doors
+and a light that comes on as a door opens. The doors and drawers are left
+out of the merged house, the snapshot, the bake and the collision; the
+bake lights the insides as they are seen with the doors open, and shut, a
+door hides it. They are drawn live (`World/Openables.js`); a published
+version's runtime file carries them, shut, and in a view lit live they
+are lit by the light probes and shade the lamps' and the sun's light as
+they move; drawn from the bake, as on a phone, they are lit by the light
+probes too, or, from a bake without them, like the door leaves, from the
+probes of the nearest door on their floor.
+
+**The garden.** Every lawn is grassed, fenced round, with bushes along
+the fence and trees in the back garden — in the editor, the walkthrough
+and the public view alike, all worked out from the rooms alone
+(`shared/vegetation.js`). The plot's front is the side the road is on:
+the fence runs along every edge of a lawn with nothing of the plot beyond
+it, leaving the path and the drive open as gates, in low white pickets in
+front of the house and tall timber boards beside and behind it
+(`World/Builders/FenceBuilder.js`). It is part of the house: drawn,
+published, baked — at coarser texels than the house's own — and walked
+into like a wall. Bushes of every size stand here and there along it,
+small along the pickets and bigger along the boards; the back garden's
+trees stand towards its edges, clear of the house, the patio and each
+other. Behind the back fence, small hills rise out of the fields — a
+band of rolling ground past the plot, a few hills on it, part of the
+house like the fence (`World/Builders/HillBuilder.js`).
+
+The garden is drawn as
+[fluffytree-threejs](https://github.com/leoawen/fluffytree-threejs)'s demo
+draws its own, when first opened. The ground under all of it — lawns,
+fields and hills — is its gradient, sand in the middle to green at the
+edge, laid once over the plot. The hills are grassed with its grass cards,
+in patches with bare ground between, as thick as in the demo; the trees
+are its tree (`public/models/fluffy-tree.glb`), a little shorter, one on
+each of the taller hills and a few on their slopes; and all of it is
+coloured as the demo colours it — its trees' volumetric gradient, its
+grass read back off the screen's own colours, which is what makes it so
+vivid, and its light — with three's ACES Filmic, as the demo is drawn.
+The lawns' grass is single blades, each bent from root to tip and swaying
+in a swell of wind, in the greens they are drawn in by Isaac Mason's
+[sketches](https://github.com/isaac-mason/sketches) (MIT). Both notices are
+in `frontend/Experience/World/Vegetation/shaders.js`, and the textures' in
+`public/textures/vegetation/`.
+
+All of it can be changed by hand in edit mode's **Garden** panel (the leaf
+in the header): Fluffy Tree's own controls — its lighting, its grass's
+colours and wind, its leaves' gradient and wind — and the sketch's for
+the blades, and how thick the grass grows, how far off it is drawn, how big
+the trees are and how many, the hills, where the gradient lies, and the
+tone mapping and exposure of the whole view (ACES, or Blender's Filmic, as
+the house was drawn before). The look follows as a control moves; the
+grass, trees and hills are grown again once it is let go. What differs
+from the defaults is saved with the space (`garden`, `shared/garden.js`),
+and a version published from it is drawn and baked with it. The blades'
+density goes up to 800 a square metre, for trying what a device can draw.
+
+The trees, bushes and grass are drawn live, never published or baked; but
+the bake is told where the trees and bushes are and casts their shade on
+the ground, the fence and the house, and in a baked view the grass takes
+its light from the ground's own lightmap — the sun's shade from the house
+and the trees, day or night. The trees' trunks are walked into, not
+through. Live, the sun's shadow reaches over the hills, so the trees and
+the grass shade them as in the demo; the shadow map is twice as big then
+(except on phones), so the house's own shadows stay as sharp.
 
 Phones and tablets draw at a pixel ratio of at most 1.5 with a smaller,
 harder-edged sun shadow, in the public view and the walkthrough alike.

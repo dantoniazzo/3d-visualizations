@@ -619,6 +619,282 @@ body.mode-edit {
     &.is-danger:hover {
         background: #8c3434 !important;
     }
+    &.is-primary {
+        background: var(--ed-active) !important;
+        border-color: #2e548f !important;
+        color: #fff;
+    }
+    &.is-primary:hover {
+        background: #5585cc !important;
+    }
+}
+
+/* A picture and a name at the top of a section — a car's. */
+.ed-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px;
+    border-radius: 6px;
+    background: var(--ed-bg-deep);
+    border: 1px solid var(--ed-border);
+
+    img {
+        width: 72px;
+        height: 72px;
+        object-fit: contain;
+        flex: none;
+        border-radius: 50%;
+        background: radial-gradient(circle at 50% 42%, #4b4b4b, #262626 72%);
+    }
+    div {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        min-width: 0;
+    }
+    b {
+        font-size: 13px;
+        font-weight: 600;
+    }
+    span {
+        color: var(--ed-text-dim);
+        font-size: 11px;
+        line-height: 1.35;
+    }
+}
+
+/* The car picker: the cars in a ring round the one selected, the hub in the
+   middle saying which is which, and how far a download has got. */
+.ed-carpicker {
+    position: absolute;
+    inset: 0;
+    pointer-events: auto;
+    z-index: 5;
+    --progress: 0;
+
+    &.is-closing {
+        pointer-events: none;
+        .ed-cp-backdrop {
+            opacity: 0;
+        }
+        .ed-cp-wheel {
+            opacity: 0;
+            transform: scale(0.92);
+        }
+    }
+}
+
+.ed-cp-backdrop {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at var(--cx) var(--cy), rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.18) 340px);
+    animation: ed-cp-fade 0.18s ease-out;
+    transition: opacity 0.15s;
+}
+
+.ed-cp-wheel {
+    position: absolute;
+    left: var(--cx);
+    top: var(--cy);
+    width: 0;
+    height: 0;
+    transition: opacity 0.15s, transform 0.15s;
+}
+
+.ed-cp-hub {
+    position: absolute;
+    left: -74px;
+    top: -74px;
+    width: 148px;
+    height: 148px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: #1b1b1b;
+    border: 1px solid #3a3a3a;
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55);
+    cursor: pointer;
+    animation: ed-cp-pop 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+.ed-cp-ring {
+    position: absolute;
+    inset: 4px;
+    width: calc(100% - 8px);
+    height: calc(100% - 8px);
+    transform: rotate(-90deg);
+    pointer-events: none;
+
+    circle {
+        fill: none;
+        stroke-width: 3;
+    }
+    .ed-cp-track {
+        stroke: transparent;
+    }
+    .ed-cp-bar {
+        stroke: var(--ed-active);
+        stroke-linecap: round;
+        stroke-dasharray: 100;
+        stroke-dashoffset: calc(100 - var(--progress) * 100);
+        opacity: 0;
+        transition: stroke-dashoffset 0.2s linear, opacity 0.2s;
+    }
+}
+
+.ed-carpicker.is-loading {
+    .ed-cp-track {
+        stroke: #2c2c2c;
+    }
+    .ed-cp-bar {
+        opacity: 1;
+    }
+    .ed-cp-hub {
+        cursor: default;
+    }
+}
+
+.ed-cp-hub-text {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    max-width: 112px;
+    text-align: center;
+    pointer-events: none;
+
+    b {
+        font-size: 13px;
+        font-weight: 600;
+        line-height: 1.2;
+    }
+    span {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        color: var(--ed-text-dim);
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+    }
+    small {
+        color: var(--ed-text-faint);
+        font-size: 10px;
+        line-height: 1.3;
+    }
+}
+
+.ed-cp-item {
+    position: absolute;
+    left: calc(var(--x) - 46px);
+    top: calc(var(--y) - 46px);
+    width: 92px;
+    height: 92px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--ed-text);
+    cursor: pointer;
+    animation: ed-cp-fan 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.15) backwards;
+    animation-delay: calc(var(--i) * 30ms);
+    outline: none;
+
+    .ed-cp-thumb {
+        display: grid;
+        place-items: center;
+        width: 92px;
+        height: 92px;
+        border-radius: 50%;
+        overflow: hidden;
+        background: radial-gradient(circle at 50% 42%, #505050, #242424 74%);
+        border: 2px solid #4a4a4a;
+        box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5);
+        transition: transform 0.12s, border-color 0.12s, box-shadow 0.12s;
+    }
+    img {
+        width: 108%;
+        height: 108%;
+        object-fit: contain;
+        pointer-events: none;
+    }
+    .ed-cp-label {
+        position: absolute;
+        left: 50%;
+        top: calc(100% + 5px);
+        transform: translateX(-50%);
+        max-width: 120px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        padding: 2px 7px;
+        border-radius: 9px;
+        background: rgba(20, 20, 20, 0.82);
+        font-size: 11px;
+        pointer-events: none;
+    }
+
+    &:hover .ed-cp-thumb,
+    &:focus-visible .ed-cp-thumb {
+        transform: scale(1.08);
+        border-color: var(--ed-active);
+        box-shadow: 0 0 0 3px rgba(71, 114, 179, 0.35), 0 10px 26px rgba(0, 0, 0, 0.55);
+    }
+    &.is-current .ed-cp-thumb {
+        border-color: var(--ed-select);
+    }
+    &.is-current::after {
+        content: "";
+        position: absolute;
+        right: 4px;
+        top: 4px;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: var(--ed-select) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.4l2.9 2.8 6.1-6.4' fill='none' stroke='%231d1d1d' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 12px no-repeat;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+    }
+}
+
+.ed-carpicker.is-loading .ed-cp-item {
+    cursor: default;
+    &:not(.is-chosen) {
+        opacity: 0.3;
+        transition: opacity 0.2s;
+    }
+    &.is-chosen .ed-cp-thumb {
+        transform: scale(1.08);
+        border-color: var(--ed-active);
+    }
+}
+
+@keyframes ed-cp-fade {
+    from {
+        opacity: 0;
+    }
+}
+@keyframes ed-cp-pop {
+    from {
+        transform: scale(0.6);
+        opacity: 0;
+    }
+}
+@keyframes ed-cp-fan {
+    from {
+        transform: translate(calc(-1 * var(--x)), calc(-1 * var(--y))) scale(0.3);
+        opacity: 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ed-cp-backdrop,
+    .ed-cp-hub,
+    .ed-cp-item {
+        animation: none;
+    }
+    .ed-cp-wheel,
+    .ed-cp-item .ed-cp-thumb {
+        transition: none;
+    }
 }
 
 .ed-props-empty {
@@ -986,4 +1262,34 @@ body.mode-edit {
     .ed-modes button span {
         display: none;
     }
+}
+
+/* The Garden panel (Editor/GardenPanel.js): lil-gui, in the viewport's top
+   right corner, clear of the header and the sidebar, and in the editor's
+   colours. In the walkthrough, where neither is there, the screen's. */
+.lil-gui.garden-panel {
+    --background-color: var(--ed-bg);
+    --widget-color: var(--ed-bg-field);
+    --hover-color: var(--ed-bg-field-hover);
+    --focus-color: var(--ed-bg-field-hover);
+    --number-color: #8fc1ff;
+    --string-color: #b4e28c;
+    --font-family: var(--ed-font);
+    --font-size: 11px;
+    --input-font-size: 11px;
+    --title-background-color: var(--ed-bg-deep);
+    top: calc(var(--ed-header) + 8px);
+    right: calc(var(--ed-sidebar) + 8px);
+    max-height: calc(100% - var(--ed-header) - var(--ed-status) - 16px);
+    border: 1px solid var(--ed-border);
+    border-radius: 4px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+body:not(.mode-edit) .lil-gui.garden-panel {
+    top: 8px;
+    right: 8px;
+    max-height: calc(100% - 16px);
+}
+body.mode-edit.ed-no-sidebar .lil-gui.garden-panel {
+    right: 8px;
 }

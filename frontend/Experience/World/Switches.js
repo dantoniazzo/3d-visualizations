@@ -135,22 +135,33 @@ export default class Switches extends EventEmitter {
     }
 
     loaded(index) {
-        return this.zones[index].every((zone) => this.textures.has(`${index}|${zone}`));
+        const indirect = this.sceneBuilder.liveLight ? this.entries[index].indirect?.layers : null;
+        return this.zones[index].every(
+            (zone) => this.textures.has(`${index}|${zone}`) && (!indirect?.[zone] || this.textures.has(`${index}|${zone}|indirect`))
+        );
     }
 
-    /** A switch's layers, in every room the view draws them in. */
+    /**
+     * A switch's layers, in every room the view draws them in — and, lit
+     * live, what its lamps bounce there, for when they are lit live
+     * (LiveLamps): all of its light is still needed for when they are not.
+     */
     load(index) {
         if (!this.loading.has(index)) {
-            const layers = this.entries[index].layers;
+            const entry = this.entries[index];
+            const live = this.sceneBuilder.liveLight && entry.indirect;
+            const layer = async (files, key) => {
+                const [luma, chroma] = await Promise.all([
+                    this.loader.loadAsync(lightmapURL(files)),
+                    this.loader.loadAsync(chromaURL(files)),
+                ]);
+                this.textures.set(key, { luma, chroma });
+            };
             const promise = Promise.all(
-                this.zones[index].map(async (zone) => {
-                    const layer = layers[zone];
-                    const [luma, chroma] = await Promise.all([
-                        this.loader.loadAsync(lightmapURL(layer)),
-                        this.loader.loadAsync(chromaURL(layer)),
-                    ]);
-                    this.textures.set(`${index}|${zone}`, { luma, chroma });
-                })
+                this.zones[index].flatMap((zone) => [
+                    layer(entry.layers[zone], `${index}|${zone}`),
+                    ...(live && entry.indirect.layers?.[zone] ? [layer(entry.indirect.layers[zone], `${index}|${zone}|indirect`)] : []),
+                ])
             ).catch((error) => {
                 // Tried again the next time it is turned on.
                 this.loading.delete(index);

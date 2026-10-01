@@ -1,5 +1,8 @@
-"""Export the drivable car as two GLBs: the body and one wheel — a BMW X6
-M Competition (G06, 2023), modelled from blueprints (lib/x6.py).
+"""The car modelled rather than imported: a BMW X6 M (F86, 2016) built as
+a quad cage and fitted to Ddiaz Design's model of it (lib/x6.py,
+lib/x6_reference.py), exported as two GLBs, the body and one wheel. The app
+drives imported models (import_cars.py); this is kept to take the
+modelling further, and writes to out/, not to the app's models.
 
 Frames, as the app sees them after glTF's Y-up conversion (Car.js):
   - body: origin at ride height, 0.45 m above the ground, midway between
@@ -10,11 +13,11 @@ Frames, as the app sees them after glTF's Y-up conversion (Car.js):
 
 In Blender, which is Z-up, that makes forward -Y and the ground z = -0.45.
 
-    npm run models -- --car      (this, then the GLBs packed for the web)
     blender --background --python export_car.py [-- --views DIR] [--previews DIR]
 
-With --views, renders the body side, top, front and rear instead, at the
-blueprints' scale, into DIR, for laying over them; with --previews,
+With --views, renders the body side, top, front and rear instead,
+orthographic at 3 mm a pixel, into DIR, for laying over drawings or the
+reference's own views; with --previews,
 perspective shots of the car and of its cage. Either leaves the GLBs be.
 The .blend (out/bmw_x6.blend) keeps the modelling live: the body's half
 with its Mirror and Subdivision modifiers, the car on its wheels.
@@ -31,9 +34,9 @@ import bmesh
 import bpy
 from mathutils import Vector
 
-from lib import carbody as cb, materials as m, x6, x6_parts, x6_wheel
+from lib import carbody as cb, fit as fitting, materials as m, x6, x6_parts, x6_reference, x6_wheel
 
-OUT = os.path.join(REPO, "public", "models")
+OUT = os.path.join(HERE, "out")
 BLEND = os.path.join(HERE, "out", "bmw_x6.blend")
 
 RIDE_HEIGHT = x6.RIDE_HEIGHT / 1000.0
@@ -52,61 +55,59 @@ def fresh():
 
 def car_materials():
     return {
-        # Brooklyn Grey, as the blueprints' car
+        # Long Beach Blue, as the reference's car.
         # Under half metallic: the app lights anything more metallic with a
-        # bright studio to reflect (Utils/reflections.js), which turns grey
-        # paint silver. The clear coat gives it its gloss instead.
-        "paint": m.plain("x6_paint", (0.24, 0.255, 0.27), rough=0.34, metal=0.3, coat=1.0, coat_rough=0.03),
+        # bright studio to reflect (Utils/reflections.js), which washes the
+        # paint out. The clear coat gives it its gloss instead.
+        "paint": m.plain("x6_paint", (0.0, 0.33, 0.78), rough=0.3, metal=0.35, coat=1.0, coat_rough=0.03),
         # Tinted, and opaque: there is no cabin to see.
         "glass": m.plain("x6_glass", (0.006, 0.007, 0.008), rough=0.03, coat=1.0, coat_rough=0.0),
-        "trim_black": m.plain("x6_trim_black", (0.012, 0.012, 0.013), rough=0.18, coat=0.6),
+        "trim_black": m.plain("x6_trim_black", (0.008, 0.008, 0.009), rough=0.12, coat=0.8),
         "rubber_seal": m.plain("x6_seal", (0.01, 0.01, 0.01), rough=0.7),
-        "grille": m.plain("x6_grille", (0.014, 0.014, 0.015), rough=0.55),
-        "lens_front": m.plain("x6_headlamp", (0.10, 0.105, 0.11), rough=0.04, metal=0.7, coat=1.0),
-        "lens_rear": m.emissive("x6_taillamp", (0.45, 0.012, 0.01), 0.35),
+        "grille": m.plain("x6_grille", (0.02, 0.02, 0.021), rough=0.6),
+        "lens_front": m.plain("x6_headlamp", (0.16, 0.165, 0.17), rough=0.05, metal=0.85, coat=1.0),
+        "lens_rear": m.plain("x6_taillamp", (0.20, 0.01, 0.012), rough=0.05, coat=1.0),
+        "lens_clear": m.plain("x6_lamp_clear", (0.55, 0.56, 0.58), rough=0.05, metal=0.9, coat=1.0),
         "reflector": m.plain("x6_reflector", (0.30, 0.01, 0.01), rough=0.25),
         "chrome": m.plain("x6_chrome", (0.9, 0.9, 0.92), rough=0.08, metal=1.0),
         "drl": m.emissive("x6_drl", (0.92, 0.95, 1.0), 3.0),
         "lamp_rear_bar": m.emissive("x6_taillamp_bar", (1.0, 0.05, 0.03), 2.5),
         "mirror": m.plain("x6_mirror", (0.85, 0.87, 0.9), rough=0.02, metal=1.0),
-        "exhaust": m.plain("x6_exhaust", (0.06, 0.06, 0.065), rough=0.22, metal=1.0),
+        "exhaust": m.plain("x6_exhaust", (0.8, 0.8, 0.82), rough=0.15, metal=1.0),
+        "plate": m.plain("x6_plate", (0.02, 0.02, 0.022), rough=0.4),
         "badge_black": m.plain("x6_badge_black", (0.01, 0.01, 0.01), rough=0.2, coat=1.0),
         "badge_blue": m.plain("x6_badge_blue", (0.02, 0.18, 0.62), rough=0.2, coat=1.0),
         "badge_white": m.plain("x6_badge_white", (0.9, 0.9, 0.9), rough=0.2, coat=1.0),
-        # The wheel: an Orbit-grey rim, as the blueprints', its hub darker;
+        # the M's three stripes
+        "m_light_blue": m.plain("x6_m_light_blue", (0.0, 0.42, 0.85), rough=0.2, coat=1.0),
+        "m_dark_blue": m.plain("x6_m_dark_blue", (0.08, 0.06, 0.45), rough=0.2, coat=1.0),
+        "m_red": m.plain("x6_m_red", (0.8, 0.03, 0.03), rough=0.2, coat=1.0),
+        # The wheel: the M double-spoke, its faces machined, the rest dark;
         # the M Compound brakes' blue caliper.
         "tyre": m.plain("x6_tyre", (0.018, 0.018, 0.019), rough=0.85),
-        "rim": m.plain("x6_rim", (0.32, 0.33, 0.35), rough=0.3, metal=0.85),
-        "rim_dark": m.plain("x6_rim_dark", (0.06, 0.062, 0.066), rough=0.35, metal=0.8),
+        "rim": m.plain("x6_rim", (0.6, 0.61, 0.63), rough=0.22, metal=0.8),
+        "rim_dark": m.plain("x6_rim_dark", (0.03, 0.031, 0.033), rough=0.3, metal=0.6),
         "rim_barrel": m.plain("x6_rim_barrel", (0.025, 0.026, 0.028), rough=0.5, metal=0.6),
         "brake_disc": m.plain("x6_brake_disc", (0.10, 0.10, 0.105), rough=0.5, metal=0.9),
         "caliper": m.plain("x6_caliper", (0.015, 0.16, 0.62), rough=0.3, coat=0.8),
-        # The details' patches, until shape_details models them in.
-        **{part: m.plain(f"x6_part_{part}", (1.0, 0.0, 1.0)) for part in ("kidney", "intake")},
     }
 
 
+def placeholders(mats):
+    """The details' patches, until shape_details models them in: a material
+    for each outline's part that is not a finished material already."""
+    for part in x6.CUT:
+        if part not in mats:
+            mats[part] = m.plain(f"x6_part_{part}", (1.0, 0.0, 1.0))
+    return mats
+
+
 def part_of(region, i, j):
-    """Which part a body face belongs to, by where it is on the grid (in
-    the layout's 80 mm units): windows, the pillars between them, the
-    black sills, the splitter and the diffuser."""
-    D = x6.D
-    if region == "band":
-        u, c = j / D, i / D
-        if 18 <= u < 26 and 15 <= c < 22:
-            return "glass"
-        if 18 <= u < 26 and 46 <= c < 56:
-            return "glass"
-        if 12 <= u < 16 and 17 <= c < 45:
-            if 29 <= c < 31 or 40 <= c < 41:
-                return "trim_black"
-            return "glass"
-    if region == "side" and j < D:
+    """Which part a body face belongs to, by where it is on the grid: the
+    sills' black foot. The glass, the grilles and the rest are drawn on by
+    their outlines (x6.FEATURES)."""
+    if region == "side" and j < 1:
         return "trim_black"
-    if region == "front" and j < D:
-        return "trim_black"
-    if region == "rear" and j < 3 * D:
-        return "grille"
     return "paint"
 
 
@@ -180,10 +181,15 @@ def inset(bm, faces, width, material=None, depth=0.0):
 
 # part: what its patches become — a list of steps
 DETAILS = {
-    "glass": [("recess", 0.014, "rubber_seal")],
+    "glass": [("recess", 0.012, "rubber_seal")],
+    "sunroof": [("recess", 0.006, "rubber_seal"), ("retag", "glass")],
     "trim_black": [],
-    "kidney": [("inset", 0.022, "trim_black", 0.006), ("recess", 0.05, "grille"), ("retag", "grille")],
-    "intake": [("inset", 0.014, None, 0.004), ("recess", 0.06, "grille"), ("retag", "grille")],
+    # the side glass: a black surround round it, the glass set in behind
+    "dlo": [("inset", 0.018, "trim_black", 0.0), ("recess", 0.01, "trim_black"), ("retag", "glass")],
+    # the kidneys: a chrome frame, the slats' black well behind it
+    "kidney": [("inset", 0.03, "chrome", 0.0), ("recess", 0.055, "grille"), ("retag", "grille")],
+    "intake": [("inset", 0.01, "trim_black", 0.003), ("recess", 0.03, "grille"), ("retag", "grille")],
+    "vent": [("inset", 0.008, "trim_black", 0.0), ("recess", 0.03, "grille"), ("retag", "grille")],
 }
 
 
@@ -270,6 +276,33 @@ def mirror_and_smooth(obj, levels=2):
     sub.render_levels = levels
 
 
+def mark_creases(obj, chains):
+    """The body's creases shaded sharp: the edges along each chain of points."""
+    from mathutils import kdtree
+    me = obj.data
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    bm.verts.ensure_lookup_table()
+    tree = kdtree.KDTree(len(bm.verts))
+    for v in bm.verts:
+        tree.insert(v.co, v.index)
+    tree.balance()
+    count = 0
+    for chain in chains:
+        verts = []
+        for p in chain:
+            _, index, distance = tree.find(Vector(to_blender(p)))
+            verts.append(bm.verts[index] if distance < 1e-4 else None)
+        for a, b in zip(verts, verts[1:]):
+            edge = a and b and bm.edges.get((a, b))
+            if edge:
+                edge.smooth = False
+                count += 1
+    bm.to_mesh(me)
+    bm.free()
+    print(f"  creases: {count} edges sharp")
+
+
 def cut_seams(obj, chains, depth=0.007, gap=0.0015):
     """The panels' shut lines cut in, as a modeller cuts them: the edges
     along each split, each side pulled back `gap` (m) from the other and
@@ -340,9 +373,19 @@ def build_body(col, mats):
     builder = cb.Builder()
     body.build(builder, part_of)
     print(f"  body half: {len(builder.verts)} vertices, {len(builder.faces)} faces")
+    if x6_reference.available():
+        reference = x6_reference.Reference()
+        hits, filled, rms = fitting.fit(builder, reference)
+        print(f"  fitted to the reference: {hits} on it, {filled} spanning its openings, {rms:.1f} mm rms move")
+    else:
+        print(f"  no reference at {x6_reference.PATH}: the body keeps its measured sections")
+    body.mark_features(builder)
+    # the lines along the cage, where the fit put them
+    on_body = lambda chains: [[builder.at(p) for p in chain] for chain in chains]
     obj = mesh_object("Chassis", builder, mats, col)
     shape_details(obj, mats)
-    cut_seams(obj, body.seams())
+    mark_creases(obj, on_body(body.creases()))
+    cut_seams(obj, on_body(body.seams()))
     mirror_and_smooth(obj)
     parts = x6_parts.build(obj, body, mats, col)
     return [obj] + parts
@@ -399,8 +442,8 @@ def place_wheels(col, wheel_objects):
     of the rear."""
     placed = []
     for side in (1, -1):
-        for axle, rear in ((x6.FRONT_AXLE, False), (x6.REAR_AXLE, True)):
-            at = Vector(to_blender((axle, side * x6.TRACK_HALF, x6.WHEEL_RADIUS)))
+        for axle, rear, track in ((x6.FRONT_AXLE, False, x6.TRACK_FRONT), (x6.REAR_AXLE, True, x6.TRACK_REAR)):
+            at = Vector(to_blender((axle, side * track, x6.WHEEL_RADIUS)))
             for src in wheel_objects:
                 dup = src.copy()
                 col.objects.link(dup)
@@ -414,10 +457,10 @@ def place_wheels(col, wheel_objects):
 
 
 # ---------------------------------------------------------------------
-# Views for checking against the blueprints
+# Views for checking against drawings of the car
 # ---------------------------------------------------------------------
 
-MM_PER_PX = 6.0710 / 2   # the blueprints' scale, doubled
+MM_PER_PX = 6.0710 / 2   # the-blueprints.com's drawings' scale, doubled
 
 
 def render_views(outdir):
@@ -531,7 +574,7 @@ def main():
     os.makedirs(OUT, exist_ok=True)
 
     fresh()
-    mats = car_materials()
+    mats = placeholders(car_materials())
     col = bpy.data.collections.new("car")
     bpy.context.scene.collection.children.link(col)
     objects = build_body(col, mats)

@@ -12,8 +12,27 @@ floor, carrying each material's colour. Output, for each lighting variant
     real shadows and bounce light that no real-time light on a phone could.
     A 4096² one for a final bake, about 2 cm a texel on the house, and a
     2048² copy for phones.
+  - a second lightmap with all of that light but the sun's straight light,
+    for a view that draws the sun live — its shadows following the doors,
+    the people and the car — on top of the rest of the light from here.
   - the same geometry, with a second set of UVs saying where on the
     lightmap each surface is.
+
+Each light switch's light is baked apart, room by room, to be added in
+when it is on: all of it, and only what its lamps bounce — for a view that
+lights the lamps themselves live. bake.json carries the sun and the lamps
+as they were baked, for such a view to light with the same.
+
+And light probes (probe_grid), for that view to light what moves — the
+people, the car — as the house around them is lit: a grid through the
+house, each point's light from six ways, the same parts of it apart
+(probes.bin).
+
+And each room door shut in turn (bake_door_states): the bake has no door
+leaves, so its light comes through every doorway; the rooms either side of
+a door are baked again with a leaf in it, and how much of their light
+stays, texel by texel, is kept (doors.webp) — for the view to dim a room
+as its doors close, and a windowless WC to go dark.
 
 The lightmap UVs (unwrap): each mesh is made whole first — T-junctions
 split, coincident vertices joined — then cut only where the surface turns
@@ -27,10 +46,11 @@ ground plane round the site at next to nothing.
 The bake: every step bakes one joined copy of the meshes (as_one) — a
 minute of setup each otherwise; portals in every outside opening, so the
 sky is sampled through the windows; ten bounces, so corners are as light
-as they would be. The light is baked in two passes (bake_lightmap): the
-light straight from the sun and lamps, sharp-edged but clean, at full
-size; the light bounced off everything else, grainy but slowly changing,
-at half the size with four times the samples a texel. A surface seen
+as they would be. The light is baked in passes (bake_lightmap): the light
+straight from the sun, and from the sky and lamps, sharp-edged but clean,
+at full size, each apart; the light bounced off everything else, grainy
+but slowly changing, at half the size with four times the samples a texel.
+A surface seen
 from both sides — a gable, a ceiling — is two copies set a few
 millimetres apart, back to back (part_twins), so no light leaks between
 them. The top of a ceiling is seen only from above, in the public view's
@@ -48,8 +68,9 @@ Narrow strips — a skirting board, a door casing, a window frame — go on
 the lightmap at half again the texels, so each is still several texels
 across. Only thin and small surfaces — a moulding's curve, balusters,
 handrails, a leaf — are lit through their vertices instead: split off into
-meshes of their own, their light baked into two vertex attributes, _DAY and
-_NIGHT, and smoothed of its grain. A vertex's light is sampled a little way off
+meshes of their own, their light baked into vertex attributes, _DAY and
+_NIGHT (and, without the sun's straight light, _DAY_INDIRECT and
+_NIGHT_INDIRECT), and smoothed of its grain. A vertex's light is sampled a little way off
 whatever it touches and out of anything solid, on probes that leave the
 geometry where it is (sample_points, vertex_probes), and long edges get
 extra vertices where the light along them changes (split_long_edges): a
@@ -64,7 +85,8 @@ settings.json (written by scripts/bake-public.mjs, which runs this) carries
 the spec's lighting preset, the room lights, the portals and which
 materials are outdoor ground. Writes, into --out: lit.glb, for each
 variant its lightmap as <variant>-luma.webp and <variant>-chroma.webp (and
-<variant>-phone-*.webp), and bake.json describing them.
+<variant>-phone-*.webp), the one without the sun as <variant>-indirect-*,
+and bake.json describing them.
 
 The lightmap is laid out room by room — a square of it for each room's
 surfaces, and their meshes cut up by room (zone_split, pack_zones) — so
@@ -81,7 +103,7 @@ import math
 import os
 import sys
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 
 import bmesh
 import bpy
@@ -153,6 +175,8 @@ def density(obj, settings):
     lo, hi = bounds(obj)
     if max(hi.x - lo.x, hi.y - lo.y) > 100:
         return 40.0
+    if obj.get("material") in settings.get("coarseMaterials", {}):
+        return float(settings["coarseMaterials"][obj.get("material")])
     if obj.get("material") in settings["groundMaterials"]:
         return 6.0
     if obj.get("kind") == "roof":
@@ -917,17 +941,22 @@ def world(zenith, horizon, ground, strength):
 
 
 def sun(name, position, color, strength, angle=1.0):
-    """A sun shining from `position` (the app's Y-up axes) towards the origin."""
+    """A sun shining from `position` (the app's Y-up axes) towards the origin.
+    Returns it as the public view lights with it when its light is live:
+    where it shines from, its colour (linear), its strength in W/m² — which
+    a three.js DirectionalLight takes as its intensity as it is — and its
+    size in the sky, in degrees."""
     data = bpy.data.lights.new(name, "SUN")
     data.energy = strength
     data.color = color
     data.angle = math.radians(angle)
     obj = bpy.data.objects.new(name, data)
+    obj["sun"] = True
     bpy.context.scene.collection.objects.link(obj)
     x, y, z = position
     direction = Vector((x, -z, y)).normalized()
     obj.rotation_euler = direction.to_track_quat("Z", "Y").to_euler()
-    return obj
+    return {"position": list(position), "color": [round(c, 5) for c in color], "strength": strength, "angle": angle}
 
 
 def room_lights(rooms, power_per_m2, color):
@@ -950,13 +979,14 @@ def room_lights(rooms, power_per_m2, color):
 CROWN_OPENNESS = 0.25
 
 
-def tree_shade(trees):
-    """A stand-in for each of the garden's trees (shared/vegetation.js),
-    for the shade they cast on the lawn and the house: an opaque trunk,
-    and a crown of the tree's size that lets a little light through. The
-    public view draws the trees themselves, live; these are never baked or
-    exported, only in the way of the light."""
-    if not trees:
+def tree_shade(trees, bushes=()):
+    """A stand-in for each of the garden's trees and bushes
+    (shared/vegetation.js), for the shade they cast on the lawn and the
+    house: a tree's opaque trunk, and a crown of each's size that lets a
+    little light through. The public view draws the trees and bushes
+    themselves, live; these are never baked or exported, only in the way
+    of the light."""
+    if not trees and not bushes:
         return []
     bark = bpy.data.materials.new("tree-bark")
     bark.diffuse_color = (0.12, 0.08, 0.05, 1.0)
@@ -981,7 +1011,16 @@ def tree_shade(trees):
             obj.name = f"{tree['id']}-shade"
             obj.visible_camera = False
         made += [trunk, crown]
-    log(len(trees), "trees' shade")
+    for bush in bushes:
+        x, y, z = bush["x"], bush["y"], bush["z"]
+        bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=1, radius=1.0, location=(x, -z, y + bush["height"] * 0.5))
+        crown = bpy.context.active_object
+        crown.scale = (bush["radius"], bush["radius"], bush["height"] * 0.5)
+        crown.data.materials.append(leaves)
+        crown.name = f"{bush['id']}-shade"
+        crown.visible_camera = False
+        made.append(crown)
+    log(len(trees), "trees' and", len(bushes), "bushes' shade")
     return made
 
 
@@ -1007,6 +1046,8 @@ def portals(openings):
 
 
 def light(variant, settings):
+    """Light the scene for a variant. Returns its sun (or moon), as sun()
+    describes it."""
     for obj in [o for o in bpy.data.objects if o.type == "LIGHT"]:
         bpy.data.objects.remove(obj, do_unlink=True)
     portals(settings.get("portals", []))
@@ -1015,7 +1056,7 @@ def light(variant, settings):
         sky = srgb(preset["hemi"]["sky"])
         world(zenith=sky, horizon=srgb(preset["background"]), ground=srgb(preset["hemi"]["ground"]),
               strength=settings["day"]["sky"])
-        sun("sun", preset["sun"]["position"], srgb(preset["sun"]["color"]), settings["day"]["sun"])
+        shining = sun("sun", preset["sun"]["position"], srgb(preset["sun"]["color"]), settings["day"]["sun"])
         # A space published before it had light fittings of its own: a
         # light in every room, baked in, as then.
         if settings["day"].get("lights"):
@@ -1023,9 +1064,37 @@ def light(variant, settings):
     else:
         world(zenith=srgb("#1a2440"), horizon=srgb("#2a3350"), ground=srgb("#0c0d10"),
               strength=settings["night"]["sky"])
-        sun("moon", [-9, 16, -6], srgb("#b8c8ff"), settings["night"]["moon"], angle=0.6)
+        shining = sun("moon", [-9, 16, -6], srgb("#b8c8ff"), settings["night"]["moon"], angle=0.6)
         if settings["night"].get("lights"):
             room_lights(settings["rooms"], settings["night"]["lights"], srgb("#ffd6a3"))
+    return shining
+
+
+@contextmanager
+def lit_by(part):
+    """Part of the light meanwhile: "sun", the sun (or the moon) alone —
+    the sky dark and every other light off — or "rest", everything but it.
+
+    A public view whose light is live draws the sun's straight light
+    itself, with shadows that follow the doors, the people and the car, and
+    takes the rest from a lightmap without it: the sky's light through the
+    windows, and everything bounced. So the two are baked apart."""
+    lights = [obj for obj in bpy.data.objects if obj.type == "LIGHT" and not obj.data.cycles.is_portal]
+    off = [obj for obj in lights if bool(obj.get("sun")) != (part == "sun")]
+    hidden = [obj.hide_render for obj in off]
+    for obj in off:
+        obj.hide_render = True
+    background = bpy.context.scene.world.node_tree.nodes.get("Background") if bpy.context.scene.world else None
+    strength = background.inputs["Strength"].default_value if background else None
+    if background and part == "sun":
+        background.inputs["Strength"].default_value = 0.0
+    try:
+        yield
+    finally:
+        for obj, was in zip(off, hidden):
+            obj.hide_render = was
+        if background:
+            background.inputs["Strength"].default_value = strength
 
 
 def light_switch(switch):
@@ -1247,34 +1316,42 @@ def bake_pass(objects, size, samples, parts):
 
 
 def bake_lightmap(objects, variant, size, samples, written, covered, normal, debug=None):
-    """The light on every wide face, denoised, as an array.
+    """The light on every wide face, denoised, as arrays: all of it, and all
+    but the sun's straight light (lit_by) — what a public view whose light
+    is live takes from the lightmap, drawing the sun itself.
 
-    Baked in two passes. The light straight from the sun, the sky and the
-    lamps has the sharp edges — a window's shadow on the floor — but little
-    grain, so it is baked at the lightmap's full size with a quarter of the
-    samples. The light bounced off everything else has the grain — the
-    sunlit patch of floor, found only now and then by a ray from across
-    the room, is most of it — but changes slowly across a surface, so it is
-    baked at half the size with four times the samples, for the same time:
-    four times the samples a texel, half the grain. Each is denoised, and
-    the bounced light scaled up to go with the other.
+    The light straight from the sun, the sky and the lamps has the sharp
+    edges — a window's shadow on the floor — but little grain, so it is
+    baked at the lightmap's full size with a quarter of the samples: the
+    sun's apart from the rest's. The light bounced off everything else has
+    the grain — the sunlit patch of floor, found only now and then by a ray
+    from across the room, is most of it — but changes slowly across a
+    surface, so it is baked at half the size with four times the samples,
+    for the same time: four times the samples a texel, half the grain. Each
+    is denoised, and the bounced light scaled up to go with the others.
 
     Covered texels, and the empty atlas round the islands, are filled from
     the light round them first (spread)."""
     t = time.time()
-    direct = bake_pass(objects, size, max(32, samples // 4), {"DIRECT"})
+    with lit_by("rest"):
+        direct = bake_pass(objects, size, max(32, samples // 4), {"DIRECT"})
+    with lit_by("sun"):
+        sun = bake_pass(objects, size, max(32, samples // 4), {"DIRECT"})
     bounced = bake_pass(objects, size // 2, samples * 4, {"INDIRECT"})
     log(variant, "lightmap baked", round(time.time() - t, 1), "s")
 
     valid = written & ~covered
     direct = denoise(spread(direct, valid), normal)
+    sun = denoise(spread(sun, valid), normal)
     valid_half = shrink(valid, every=True)
     normal_half = spread(half(normal), shrink(written))
     bounced = denoise(spread(bounced, valid_half), normal_half)
     if debug:
         save_exr(direct, f"{debug}-direct.exr")
+        save_exr(sun, f"{debug}-sun.exr")
         save_exr(bounced, f"{debug}-bounced.exr")
-    return direct + double(bounced)
+    soft = direct + double(bounced)
+    return soft + sun, soft
 
 
 #: A switch's light is saved zone by zone, as crops of the atlas this many
@@ -1300,13 +1377,21 @@ def crop_box(rect, size):
             min(size, snap((u + w) * size, True)), min(size, snap((v + h) * size, True))]
 
 
-def bake_switch(objects, zones, rects, size, samples, written, covered, normal, seams):
+def bake_switch(objects, zones, rects, size, samples, written, covered, normal, seams, part=None, label="switch"):
     """One switch's light on the wide faces of the rooms it reaches, zone by
     zone: baked as the day's is (bake_lightmap), then spread, denoised and
     stitched over each zone's crop of the atlas alone — its own texels and
-    no one else's — rather than over the whole of it. Returns {zone: rgb}."""
+    no one else's — rather than over the whole of it. Returns {zone: (rgb,
+    bounced)}: all of its light, and only what is bounced — what a public
+    view whose light is live takes from the lightmap, lighting the lamps
+    themselves.
+
+    With `part` ("rest", lit_by), the light straight from the lights is
+    only that part of it: so a door's rooms are baked again shut
+    (bake_door_states), the light bounced all of it."""
     t = time.time()
-    direct = bake_pass(objects, size, max(32, samples // 4), {"DIRECT"})
+    with lit_by(part) if part else nullcontext():
+        direct = bake_pass(objects, size, max(32, samples // 4), {"DIRECT"})
     bounced = bake_pass(objects, size // 2, samples * 4, {"INDIRECT"})
     valid = written & ~covered
     out = {}
@@ -1321,9 +1406,10 @@ def bake_switch(objects, zones, rects, size, samples, written, covered, normal, 
         light = denoise(spread(direct[y0:y1, x0:x1], here), normal[y0:y1, x0:x1])
         here_half = shrink(here, every=True)
         normal_half = spread(half(normal[y0:y1, x0:x1]), shrink(written[y0:y1, x0:x1] & own))
-        light = light + double(denoise(spread(bounced[y0 // 2:y1 // 2, x0 // 2:x1 // 2], here_half), normal_half))
-        out[zone] = stitch_crop(light, seams, (x0, y0, x1, y1), size)
-    log("switch baked over", len(zones), "zones", round(time.time() - t, 1), "s")
+        bounce = double(denoise(spread(bounced[y0 // 2:y1 // 2, x0 // 2:x1 // 2], here_half), normal_half))
+        box = (x0, y0, x1, y1)
+        out[zone] = (stitch_crop(light + bounce, seams, box, size), stitch_crop(bounce, seams, box, size))
+    log(label, "baked over", len(zones), "zones", round(time.time() - t, 1), "s")
     return out
 
 
@@ -1339,6 +1425,202 @@ def stitch_crop(rgb, seams, box, size):
     keep = inside(uv_a) & inside(uv_b)
     local = lambda uv: (uv[keep] * size - (x0, y0)) / (x1 - x0, y1 - y0)
     return stitch(rgb, local(uv_a), local(uv_b))
+
+
+#: A door's light is kept at half the lightmap's texels each way
+#: (bake_door_states): what a door lets through changes slowly across a
+#: room, and there is a crop of a room for each of its doors.
+DOOR_SHRINK = 2
+#: Round each crop in the doors' atlas, texels of its own edge carried on,
+#: so the GPU blending texels never reaches the next one's.
+DOOR_PAD = 4
+
+
+def door_leaf(door):
+    """A room door's leaf, shut: a box square in the doorway, the colour of
+    its paint (scripts/bake-public.mjs has it as World/Door.js hangs it).
+    What is in the way of the light, and throws some of it back, while the
+    rooms either side are baked with it shut."""
+    (x, y, z), (w, h, t), (dx, dz) = door["centre"], door["size"], door["direction"]
+    along, across = np.array([dx, 0.0, dz]), np.array([-dz, 0.0, dx])
+    up = np.array([0.0, 1.0, 0.0])
+    corners = []
+    for a in (-1, 1):
+        for b in (-1, 1):
+            for c in (-1, 1):
+                p = np.array([x, y, z]) + along * a * w / 2 + up * b * h / 2 + across * c * t / 2
+                # The app's (x, y, z) is Blender's (x, -z, y).
+                corners.append((p[0], -p[2], p[1]))
+    faces = [(0, 1, 3, 2), (4, 6, 7, 5), (0, 4, 5, 1), (2, 3, 7, 6), (0, 2, 6, 4), (1, 5, 7, 3)]
+    me = bpy.data.meshes.new(f"leaf:{door['id']}")
+    me.from_pydata(corners, [], faces)
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bm.to_mesh(me)
+    bm.free()
+    mat = bpy.data.materials.new(me.name)
+    mat.use_nodes = True
+    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    if bsdf:
+        bsdf.inputs["Base Color"].default_value = (*srgb(door["color"]), 1.0)
+        bsdf.inputs["Roughness"].default_value = 0.6
+    me.materials.append(mat)
+    obj = bpy.data.objects.new(me.name, me)
+    bpy.context.scene.collection.objects.link(obj)
+    return obj
+
+
+def box_sum(values, reach):
+    """Each texel's sum over the box `reach` texels each way round it."""
+    k = 2 * reach + 1
+    c = np.cumsum(np.pad(values.astype(np.float64), reach), axis=0)
+    c = np.vstack([np.zeros((1, c.shape[1])), c])
+    rows = c[k:] - c[:-k]
+    c = np.cumsum(rows, axis=1)
+    c = np.hstack([np.zeros((c.shape[0], 1)), c])
+    return c[:, k:] - c[:, :-k]
+
+
+def door_ratio(closed, opened, valid, reach=4):
+    """How much of a room's light stays with a door shut, texel by texel:
+    the light baked with it shut over the light baked with it open, each
+    averaged over the `valid` texels a few round it first — two bakes'
+    grain, over each other, would otherwise come out as speckle. 0 to 1:
+    where the leaf throws back more than it keeps out, as it is taken as
+    leaving the light as it was. Returns the ratio, and the share of the
+    room's light that stays, all told."""
+    weights = np.array([0.2126, 0.7152, 0.0722])
+    shut, open_ = closed @ weights, opened @ weights
+    count = np.maximum(box_sum(valid, reach), 1e-9)
+    shut_near = box_sum(shut * valid, reach) / count
+    open_near = box_sum(open_ * valid, reach) / count
+    floor = 0.01 * float(np.percentile(open_[valid], 99)) if valid.any() else 1e-6
+    ratio = np.clip((shut_near + floor) / (open_near + floor), 0.0, 1.0)
+    share = float(np.clip(shut[valid].sum() / max(open_[valid].sum(), 1e-9), 0.0, 1.0)) if valid.any() else 1.0
+    return ratio, share
+
+
+def pack_crops(crops, width, pad):
+    """Crops of one value (arrays), shelf by shelf, tallest first, into an
+    atlas `width` texels wide, each with `pad` texels of its edge carried
+    on round it; the rest of it 1. Returns the atlas (rows from the bottom,
+    as Blender's images) and each crop's bottom-left corner in it."""
+    order = sorted(range(len(crops)), key=lambda i: -crops[i].shape[0])
+    at = [None] * len(crops)
+    x = y = shelf = 0
+    for i in order:
+        h, w = crops[i].shape
+        if x + w + 2 * pad > width:
+            x, y, shelf = 0, y + shelf, 0
+        at[i] = (x + pad, y + pad)
+        x += w + 2 * pad
+        shelf = max(shelf, h + 2 * pad)
+    height = max(16, int(math.ceil((y + shelf) / 16)) * 16)
+    atlas = np.ones((height, width), dtype=np.float32)
+    for crop, (x, y) in zip(crops, at):
+        h, w = crop.shape
+        atlas[y - pad:y + h + pad, x - pad:x + w + pad] = np.pad(crop, pad, mode="edge")
+    return atlas, at
+
+
+def bake_door_states(objects, doors, rects, size, samples, written, covered, normal, seams, out, skip=None):
+    """Each room door shut in turn, its leaf in the doorway (door_leaf),
+    and the rooms either side baked again (bake_switch, the light but the
+    sun's straight light — what the view's indirect lightmap holds, baked
+    with every door open, as the house has no leaves). What stays of the
+    light, texel by texel, is kept (door_ratio), for the view to dim a room
+    by as its doors close — a windowless WC to next to nothing, a bedroom
+    with a window hardly at all — the sun's and the lamps' straight light
+    shaded by the leaves themselves. `skip`, texels baked otherwise (the
+    ceiling tops, roof off), are left as they are.
+
+    What each is held against is those rooms baked again too, every door
+    open, the same way, room by room: Cycles samples a texel alike in both,
+    so where a door makes no difference the two bakes' grain is the same
+    grain, and cancels — against the lightmap, denoised over the whole
+    atlas, a dark room's grain alone came out as a door's doing.
+
+    A room's doors each shut on their own: with two shut, what stays of
+    each is taken together. Only by day: at night what comes through a
+    door is as much of what there is, near enough.
+
+    Written as one grey atlas of every door's rooms' crops at half the
+    lightmap's texels (DOOR_SHRINK), and a phone's copy. Returns what
+    bake.json says of it, or None with no doors."""
+    t = time.time()
+    valid = written & ~covered
+    if skip is not None:
+        valid = valid & ~skip
+    crops, places = [], []
+    rooms = sorted({zone for door in doors for zone in door["zones"] if zone in rects})
+    everyone = [obj for obj in objects if obj.get("zone") in rooms]
+    opened = bake_switch(everyone, rooms, rects, size, samples, written, covered, normal, seams, part="rest",
+                         label="doors open") if everyone else {}
+    for door in doors:
+        here = [zone for zone in door["zones"] if zone in rects]
+        members = [obj for obj in objects if obj.get("zone") in here]
+        if not members:
+            continue
+        leaf = door_leaf(door)
+        try:
+            layers = bake_switch(members, here, rects, size, samples, written, covered, normal, seams, part="rest",
+                                 label="door shut")
+        finally:
+            material, mesh = leaf.data.materials[0], leaf.data
+            bpy.data.objects.remove(leaf, do_unlink=True)
+            bpy.data.meshes.remove(mesh)
+            bpy.data.materials.remove(material)
+        for zone, (closed, _) in layers.items():
+            x0, y0, x1, y1 = crop_box(rects[zone], size)
+            u, v, w, h = rects[zone]
+            own = np.zeros((y1 - y0, x1 - x0), dtype=bool)
+            own[max(0, int(v * size) - y0):int(math.ceil((v + h) * size)) - y0,
+                max(0, int(u * size) - x0):int(math.ceil((u + w) * size)) - x0] = True
+            here_valid = valid[y0:y1, x0:x1] & own
+            ratio, share = door_ratio(closed, opened[zone][0], here_valid)
+            # What was not baked here as the rest was stays as it is, and
+            # the empty atlas round the islands carries their edges on.
+            kept = here_valid.copy()
+            if skip is not None:
+                kept |= skip[y0:y1, x0:x1]
+            ratio[~here_valid] = 1.0
+            ratio = spread(ratio[..., None], kept, reach=16)[..., 0]
+            small = ratio
+            for _ in range(DOOR_SHRINK - 1):
+                small = half(small[..., None])[..., 0]
+            crops.append(small.astype(np.float32))
+            places.append((door["id"], zone, (x0, y0, x1, y1), share))
+        log("door", door["id"], "shut:", ", ".join(f"{zone} keeps {share * 100:.0f}%" for _, zone, _, share in places[-len(layers):]))
+    log("door states baked:", len(doors), "doors,", len(crops), "rooms,", round(time.time() - t, 1), "s")
+    if not crops:
+        return None
+
+    width = size // DOOR_SHRINK
+    atlas, at = pack_crops(crops, width, DOOR_PAD)
+    height = atlas.shape[0]
+    write_webp(np.repeat(atlas[..., None], 3, axis=-1), os.path.join(out, "doors.webp"), 90)
+    description = {"file": "doors.webp", "size": [width, height], "doors": {}}
+    if size > PHONE_SIZE:
+        small, at_size = atlas, size
+        while at_size > PHONE_SIZE:
+            small, at_size = half(small[..., None])[..., 0], at_size // 2
+        write_webp(np.repeat(small[..., None], 3, axis=-1), os.path.join(out, "doors-phone.webp"), 90)
+        description["filePhone"] = "doors-phone.webp"
+    log("wrote doors", f"{width}x{height}", f"{os.path.getsize(os.path.join(out, 'doors.webp')) / 1024:.0f} KB")
+    for (door, zone, (x0, y0, x1, y1), share), crop, (x, y) in zip(places, crops, at):
+        h, w = crop.shape
+        description["doors"].setdefault(door, {})[zone] = {
+            # Its room's crop of the lightmap, and where that is in the
+            # doors' atlas, both in the view's (glTF) UVs — v down from the
+            # top: [u, v, width, height].
+            "rect": [x0 / size, 1 - y1 / size, (x1 - x0) / size, (y1 - y0) / size],
+            "at": [x / width, 1 - (y + h) / height, w / width, h / height],
+            # How much of the room's light stays, all told: for its thin
+            # faces, and the light probes, which have no texels of it.
+            "share": round(share, 4),
+        }
+    return description
 
 
 def shrink(mask, every=False):
@@ -1614,7 +1896,7 @@ def sample_points(obj, tree, offset=0.01, clearance=0.008):
     return points, facings
 
 
-def vertex_probes(objects, tree, size=0.002):
+def vertex_probes(objects, tree, size=0.002, grid=None):
     """What the light of the thin faces' vertices is baked on: a tiny
     triangle at each vertex's sampling point (sample_points), facing the
     way its faces do, all in one object that no ray sees.
@@ -1625,16 +1907,38 @@ def vertex_probes(objects, tree, size=0.002):
     it, half in its own shadow: the skirting came out at half the light
     of the wall above it. The probes leave the geometry where it is.
 
+    Points of the light probes' grid (probe_grid) can be given too,
+    `grid`: their indices and positions (Blender's axes); each is six
+    triangles after the vertices', one facing each way (GRID_FACINGS), and
+    the probe keeps their indices as "grid" and where they start as
+    "grid_from", for read_grid. One object for both: Blender takes the
+    best part of a second to set up each object it bakes.
+
     Returns the probe object and how many vertices each object has, in
     order, for bake_vertices to hand the light back."""
-    points, facings, counts = [], [], []
+    points, facings, counts = [np.empty((0, 3))], [np.empty((0, 3))], []
     for obj in objects:
         p, f = sample_points(obj, tree)
         points.append(p)
         facings.append(f)
         counts.append(len(p))
-    points = np.concatenate(points)
-    facings = np.concatenate(facings)
+    start = sum(counts)
+    if grid is not None:
+        indices, at = grid
+        points.append(np.repeat(at, 6, axis=0))
+        facings.append(np.tile(GRID_FACINGS, (len(indices), 1)))
+    probe = probe_mesh("vertex-probes", np.concatenate(points), np.concatenate(facings), size)
+    if grid is not None:
+        probe["grid"] = [int(i) for i in grid[0]]
+        probe["grid_from"] = start
+    return probe, counts
+
+
+def probe_mesh(name, points, facings, size=0.002):
+    """An object of tiny triangles, one at each point facing the way given
+    (Blender's axes), that no ray sees: what light is baked on at points
+    in space (bake_vertices), each triangle's light that arriving there
+    from the way it faces."""
     # Two directions across each facing, for the triangle's corners.
     up = np.where(np.abs(facings[:, 2:3]) > 0.9, [[1.0, 0.0, 0.0]], [[0.0, 0.0, 1.0]])
     across = np.cross(facings, up)
@@ -1646,36 +1950,204 @@ def vertex_probes(objects, tree, size=0.002):
         points + size * (-0.5 * across - 0.866 * other),
     ], axis=1).reshape(-1, 3)
     faces = np.arange(len(corners)).reshape(-1, 3)
-    me = bpy.data.meshes.new("vertex-probes")
+    me = bpy.data.meshes.new(name)
     me.from_pydata(corners.tolist(), [], faces.tolist())
     me.update()
-    for name in VERTEX_ATTRIBUTES.values():
-        me.color_attributes.new(name=name, type="FLOAT_COLOR", domain="POINT")
-    probe = bpy.data.objects.new("vertex-probes", me)
+    for attribute in VERTEX_ATTRIBUTES.values():
+        me.color_attributes.new(name=attribute, type="FLOAT_COLOR", domain="POINT")
+    probe = bpy.data.objects.new(name, me)
     bpy.context.scene.collection.objects.link(probe)
     for ray in ("visible_diffuse", "visible_glossy", "visible_transmission", "visible_volume_scatter", "visible_shadow"):
         setattr(probe, ray, False)
-    return probe, counts
+    return probe
 
 
 
 
-def zone_probes(objects, tree):
+def zone_probes(objects, tree, grid=None):
     """The probes the vertices' light is baked on (vertex_probes), one set
-    for each zone's objects — the thin faces, and the doors' probes — so a
-    switch's light is baked on the probes of the rooms it reaches alone.
+    for each zone's objects — the thin faces, and the doors' probes — and
+    the light probes' grid points in it (probe_grid), so a switch's light
+    is baked on the probes of the rooms it reaches alone. Grid points
+    inside the house's walls and floors are left out.
     Returns {zone: (objects, probe, counts)}."""
     by_zone = {}
     for obj in objects:
         by_zone.setdefault(obj.get("zone", OUTSIDE), []).append(obj)
-    return {zone: (members, *vertex_probes(members, tree)) for zone, members in by_zone.items()}
+    points = {}
+    if grid is not None:
+        for zone in set(grid["zone"][~grid["solid"]]):
+            indices = np.flatnonzero((grid["zone"] == zone) & ~grid["solid"])
+            # In Blender's axes: the app's (x, y, z) is (x, -z, y).
+            at = grid["points"][indices][:, [0, 2, 1]] * np.array([1.0, -1.0, 1.0])
+            points[zone] = (indices, at)
+    return {zone: (by_zone.get(zone, []), *vertex_probes(by_zone.get(zone, []), tree, grid=points.get(zone)))
+            for zone in sorted(set(by_zone) | set(points))}
 
 
-def bake_vertices(sets, name, samples):
+#: The light probes' grid, in metres: across, up, and along (the app's x, y, z).
+GRID_STEP = (1.0, 0.8, 1.0)
+#: How far past the house's rooms it reaches, for the garden by the house...
+GRID_MARGIN = 2.0
+#: ...and how high above the ground floor, outside.
+GRID_OUTSIDE_HEIGHT = 3.0
+#: The six ways each probe looks, in the app's axes — +x, -x, +y, -y, +z, -z
+#: — and in Blender's, which are (x, -z, y).
+GRID_FACINGS_APP = ((1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1))
+GRID_FACINGS = np.array([(x, -z, y) for x, y, z in GRID_FACINGS_APP], dtype=np.float64)
+
+
+def probe_grid(rooms, solids):
+    """The light probes that light what moves in a view lit live — the
+    people, the car: a grid of points through the house's rooms and a
+    little way round them (GRID_STEP, GRID_MARGIN), each measuring the light
+    arriving from six ways, as a surface facing each way would have it
+    (the "ambient cube" of a probe). Which room holds each point, and which
+    are inside the house's own walls and floors (the spec's solids, as
+    bake_hidden has them): those measure nothing.
+
+    Returns {origin, step, size, points (app axes), zone per point, solid
+    per point — or outside, up by the roofs, where nothing that moves goes;
+    neither is baked}."""
+    xs = [x for room in rooms for x, _ in room["polygon"]]
+    zs = [z for room in rooms for _, z in room["polygon"]]
+    lows = [room["elevation"] for room in rooms]
+    highs = [room["elevation"] + room["height"] for room in rooms]
+    sx, sy, sz = GRID_STEP
+    origin = np.array([min(xs) - GRID_MARGIN, min(lows) + sy / 2, min(zs) - GRID_MARGIN])
+    top = np.array([max(xs) + GRID_MARGIN, max(highs), max(zs) + GRID_MARGIN])
+    size = np.floor((top - origin) / GRID_STEP).astype(int) + 1
+    ix, iy, iz = np.meshgrid(np.arange(size[0]), np.arange(size[1]), np.arange(size[2]), indexing="ij")
+    # x fastest, then y, then z — as the public view indexes them.
+    index = np.stack([ix, iy, iz], axis=-1).transpose(2, 1, 0, 3).reshape(-1, 3)
+    points = origin + index * np.array(GRID_STEP)
+    x, y, z = points[:, 0], points[:, 1], points[:, 2]
+
+    zone = np.full(len(points), OUTSIDE, dtype=object)
+    best = np.full(len(points), np.inf)
+    for room in rooms:
+        low, high = room["elevation"], room["elevation"] + room["height"]
+        inside = (y >= low) & (y <= high) & in_polygon(x, z, room["polygon"]) & (y - low < best)
+        zone[inside] = room["id"]
+        best[inside] = (y - low)[inside]
+
+    solid = np.zeros(len(points), dtype=bool)
+    for box in solids.get("walls", []):
+        (wx, wz), (dx, dz) = box["start"], box["direction"]
+        rx, rz = x - wx, z - wz
+        along = rx * dx + rz * dz
+        across = rz * dx - rx * dz
+        solid |= (y > box["bottom"]) & (y < box["top"]) & (along > box["from"]) & (along < box["to"]) & (np.abs(across) < box["half"])
+    for slab in solids.get("slabs", []):
+        inside = (y > slab["bottom"]) & (y < slab["top"]) & in_polygon(x, z, slab["polygon"])
+        for hole in slab.get("holes", []):
+            inside &= ~in_polygon(x, z, hole)
+        solid |= inside
+    # Outside, only near the ground, where the people and the car are: not
+    # up by the roofs.
+    aloft = (zone == OUTSIDE) & (y > min(lows) + GRID_OUTSIDE_HEIGHT)
+    log("light probes:", len(points), "on a", "×".join(str(n) for n in size), "grid,", int(solid.sum()),
+        "inside walls and floors,", int((aloft & ~solid).sum()), "up by the roofs")
+    return {"origin": origin, "step": GRID_STEP, "size": size, "points": points, "zone": zone, "solid": solid | aloft}
+
+
+def read_grid(sets, count, names):
+    """The light the grid's probes (probe_grid), baked with the vertices'
+    (zone_probes), had baked into attributes `names`, added up, as an array
+    (count, 6, 3) — the light on a surface facing each of the six ways at
+    each point of the grid; zero at points not baked."""
+    out = np.zeros((count, 6, 3), dtype=np.float32)
+    for _, probe, _ in (sets.values() if isinstance(sets, dict) else sets):
+        if "grid" not in probe:
+            continue
+        members = np.array(probe["grid"], dtype=np.int64)
+        start = int(probe["grid_from"])
+        attributes = probe.data.color_attributes
+        for name in names:
+            if name not in attributes:
+                continue
+            light = np.empty(len(probe.data.vertices) * 4, dtype=np.float32)
+            attributes[name].data.foreach_get("color", light)
+            out[members] += light.reshape(-1, 3, 4).mean(axis=1)[start:, :3].reshape(-1, 6, 3)
+    return out
+
+
+def write_grid(path, grid, valid, variants, switches, sun=None):
+    """The light probes as the public view reads them: in one file, as
+    little-endian arrays one after another, each at a byte offset the
+    description returned gives —
+
+      - `zones`: each point's room, a byte, as an index into `zoneIds`
+        (255 where nothing is measured: inside a wall, a floor or a sofa);
+      - each variant's (`variants`: `light` and `sun`), at the points that
+        measure something alone, in order (`layout` 2): its light but the
+        sun's straight light, half floats, 18 a point (six ways, red,
+        green, blue), and how much of the sun reaches it, a byte;
+      - each switch's, at the points of the rooms it reaches (`indices`,
+        16-bit): all of it, and only what its lamps bounce.
+
+    Returns that description, for bake.json."""
+    blobs = []
+    offset = 0
+
+    def add(array):
+        nonlocal offset
+        data = np.ascontiguousarray(array).tobytes()
+        at = offset
+        blobs.append(data)
+        offset += len(data)
+        pad = (-offset) % 4
+        if pad:
+            blobs.append(b"\0" * pad)
+            offset += pad
+        return at
+
+    zone_ids = sorted(set(grid["zone"]))
+    zone_index = {zone: k for k, zone in enumerate(zone_ids)}
+    zones = np.array([zone_index[zone] for zone in grid["zone"]], dtype=np.uint8)
+    zones[~valid] = 255
+    kept = np.flatnonzero(valid)
+    description = {
+        "file": os.path.basename(path),
+        "layout": 2,
+        "origin": [round(float(v), 4) for v in grid["origin"]],
+        "step": list(grid["step"]),
+        "size": [int(n) for n in grid["size"]],
+        "zoneIds": zone_ids,
+        "zones": add(zones),
+        "variants": {
+            name: {
+                "light": add(light[kept].astype("<f2")),
+                **({"sun": add(np.round(sun[name][kept] * 255).astype(np.uint8))} if sun and name in sun else {}),
+            }
+            for name, light in variants.items()
+        },
+        "switches": [],
+    }
+    for entry in switches:
+        if entry is None:
+            description["switches"].append(None)
+            continue
+        indices, full, indirect = entry
+        description["switches"].append({
+            "count": int(len(indices)),
+            "indices": add(indices.astype("<u2")),
+            "full": add(full.astype("<f2")),
+            "indirect": add(indirect.astype("<f2")),
+        })
+    with open(path, "wb") as f:
+        for blob in blobs:
+            f.write(blob)
+    log("wrote", os.path.basename(path), f"{offset / 1024:.0f} KB")
+    return description
+
+
+def bake_vertices(sets, name, samples, parts=frozenset({"DIRECT", "INDIRECT"})):
     """The light at every vertex of the thin faces, and at the doors'
     probes, into attribute `name`: baked on their probes (zone_probes),
     every set given at once, each probe's three corners averaged and handed
-    back to the vertex it stands for."""
+    back to the vertex it stands for. `parts`: which of the light, straight
+    and bounced."""
     cycles(samples)
     t = time.time()
     for objects, probe, counts in sets:
@@ -1684,7 +2156,7 @@ def bake_vertices(sets, name, samples):
             attributes.new(name=name, type="FLOAT_COLOR", domain="POINT")
         attributes.active_color = attributes[name]
     select_only([probe for _, probe, _ in sets])
-    bpy.ops.object.bake(type="DIFFUSE", pass_filter={"DIRECT", "INDIRECT"}, target="VERTEX_COLORS")
+    bpy.ops.object.bake(type="DIFFUSE", pass_filter=set(parts), target="VERTEX_COLORS")
     for objects, probe, counts in sets:
         light = np.empty(len(probe.data.vertices) * 4, dtype=np.float32)
         probe.data.color_attributes[name].data.foreach_get("color", light)
@@ -1697,6 +2169,50 @@ def bake_vertices(sets, name, samples):
             attributes[name].data.foreach_set("color", light[start:start + count].ravel())
             start += count
     log(name, "vertices baked", round(time.time() - t, 1), "s")
+
+
+#: What an attribute's name gains for its light without what a public view
+#: whose light is live draws itself: the sun's straight light, or a lamp's.
+INDIRECT = "_INDIRECT"
+
+
+def add_attributes(sets, total, names, drop=()):
+    """Attribute `total` on every object of the sets (the thin faces, the
+    doors' probes) as the sum of attributes `names`; those in `drop` are
+    then removed."""
+    for objects, _, _ in sets:
+        for obj in objects:
+            attributes = obj.data.color_attributes
+            if not all(name in attributes for name in names):
+                continue
+            n = len(obj.data.vertices)
+            sum_ = np.zeros(n * 4, dtype=np.float32)
+            values = np.empty(n * 4, dtype=np.float32)
+            for name in names:
+                attributes[name].data.foreach_get("color", values)
+                sum_ += values
+            sum_[3::4] = 1.0
+            if total not in attributes:
+                attributes.new(name=total, type="FLOAT_COLOR", domain="POINT")
+            attributes[total].data.foreach_set("color", sum_)
+            for name in drop:
+                attributes.remove(attributes[name])
+
+
+def bake_vertex_light(sets, name, samples):
+    """A variant's light at every vertex (bake_vertices), all of it into
+    `name` and, into `name` + INDIRECT, all but the sun's straight light:
+    the sky's straight light and everything bounced, as the lightmaps have
+    them apart (bake_lightmap)."""
+    # The sky's straight light, through the windows, has the grain; the
+    # sun's, from one direction, little.
+    with lit_by("rest"):
+        bake_vertices(sets, "_rest", samples, {"DIRECT"})
+    with lit_by("sun"):
+        bake_vertices(sets, "_sun", max(32, samples // 4), {"DIRECT"})
+    bake_vertices(sets, "_bounced", samples, {"INDIRECT"})
+    add_attributes(sets, name + INDIRECT, ["_rest", "_bounced"])
+    add_attributes(sets, name, ["_rest", "_bounced", "_sun"], drop=["_rest", "_bounced", "_sun"])
 
 
 def smooth_vertex_light(objects, name, rounds=3):
@@ -1791,6 +2307,22 @@ def read_probes(objects, name):
         rgb = np.array([list(d.color)[:3] for d in data]).mean(axis=0)
         by_door.setdefault(obj["probe"], []).append(rgb)
     return {door: [round(float(v), 4) for v in np.mean(sides, axis=0)] for door, sides in by_door.items()}
+
+
+def read_probe_sides(objects, name):
+    """Each door's baked light in attribute `name`, a side at a time: the
+    light on a leaf's face that way (add_probes' side 0, the wall's +Z, then
+    side 1) — a shut door's two faces are lit by the two rooms apart. A
+    side without the attribute, in a room a switch does not reach, is dark."""
+    by_door = {}
+    for obj in objects:
+        sides = by_door.setdefault(obj["probe"], [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
+        if name not in obj.data.color_attributes:
+            continue
+        data = obj.data.color_attributes[name].data
+        rgb = np.array([list(d.color)[:3] for d in data]).mean(axis=0)
+        sides[obj["side"]] = [round(float(v), 4) for v in rgb]
+    return by_door
 
 
 def bake_guides(objects, size):
@@ -2199,6 +2731,45 @@ def encode(rgb, base, scale=None, quality=90, chroma_quality=95):
     return scale
 
 
+def encode_mask(values, path, scale=None, quality=90):
+    """A lightmap of one quantity, as one 8-bit grey WebP: scaled, squeezed
+    and sRGB encoded as encode does a lightmap's brightness. Returns the
+    scale it multiplies back by."""
+    if scale is None:
+        lit = values[values > 1e-5]
+        scale = max(float(np.percentile(lit, 99.7)) if lit.size else 1.0, 0.05)
+    x = np.clip(values / scale, 0, HEADROOM)
+    v = x / (1.0 + x)
+    v = np.where(v <= 0.0031308, v * 12.92, 1.055 * np.power(v, 1 / 2.4) - 0.055)
+    write_webp(np.repeat(v[..., None], 3, axis=-1), path, quality)
+    log("wrote", os.path.basename(path), f"{values.shape[1]}²", f"{os.path.getsize(path) / 1024:.0f} KB", "scale", round(scale, 3))
+    return scale
+
+
+def sun_mask(full, soft, color):
+    """How much of the sun's (or the moon's) straight light each texel has,
+    as a share of its colour: the lightmap with it less the one without,
+    over the brightest of its channels — for a phone's view to take away
+    where something that moves stands in its way (SceneBuilder's
+    decodeLightmap)."""
+    return np.clip((full - soft).max(axis=2), 0, None) / max(max(color), 1e-6)
+
+
+def sun_visibility(light, sun):
+    """How much of the sun reaches each light probe (probe_grid): the sun's
+    straight light each measured from its six ways (`light`, count × 6 × 3),
+    over what they would have measured in the open — for a phone's view,
+    which draws the sun on what moves unshadowed by the house, to dim it
+    where the house shades it. 0 to 1."""
+    to_sun = np.array(sun["position"], dtype=np.float64)
+    to_sun /= np.linalg.norm(to_sun)
+    facing = np.clip(np.array(GRID_FACINGS_APP, dtype=np.float64) @ to_sun, 0, None)
+    weights = np.array([0.2126, 0.7152, 0.0722])
+    open_air = float(np.dot(sun["color"], weights)) * sun["strength"] / math.pi * facing.sum()
+    measured = (light @ weights).sum(axis=1)
+    return np.clip(measured / max(open_air, 1e-6), 0, 1)
+
+
 def write_webp(values, path, quality):
     """Values in [0, 1], written as they are to an 8-bit WebP."""
     h, w, _ = values.shape
@@ -2337,7 +2908,7 @@ def main():
         bpy.ops.wm.save_as_mainfile(filepath=os.path.join(args.out, "unwrapped.blend"))
         return
     use_gpu()
-    tree_shade(settings.get("trees", []))
+    tree_shade(settings.get("trees", []), settings.get("bushes", []))
     probes = add_probes(settings.get("probes", []))
     for obj in vertex_lit + probes:
         for name in VERTEX_ATTRIBUTES.values():
@@ -2348,7 +2919,11 @@ def main():
             setattr(obj, ray, False)
         obj["zone"] = face_zones(obj, rooms)[0]
     t = time.time()
-    sets = zone_probes(vertex_lit + probes, tree)
+    # The light probes that light what moves (probe_grid), baked with the
+    # vertices, room by room.
+    grid = probe_grid(rooms, settings.get("solids", {})) if rooms else None
+    grid_light, grid_sun, grid_seen, grid_switches = {}, {}, None, []
+    sets = zone_probes(vertex_lit + probes, tree, grid)
     log("vertex probes placed:", sum(sum(counts) for _, _, counts in sets.values()), "in", len(sets), "zones,",
         round(time.time() - t, 1), "s")
     normal, written = bake_guides(lightmapped, args.size)
@@ -2375,40 +2950,93 @@ def main():
     t = time.time()
     seams = seam_samples(lightmapped, args.size, texel)
     log("seams to stitch:", len(seams[0]), "points,", round(time.time() - t, 1), "s")
+    def write_lightmap(rgb, base, scale=None):
+        """A lightmap, or a crop of one, and a phone's copy of it when the
+        atlas is bigger than a phone is given — halved as the atlas is:
+        its files, as bake.json names them, and its scale."""
+        scale = encode(rgb, os.path.join(args.out, base), scale=scale)
+        # The lightmap is its brightness; its colour is beside it.
+        files = {"lightmap": f"{base}-luma.webp", "chroma": f"{base}-chroma.webp"}
+        if args.size > PHONE_SIZE:
+            small, at = rgb, args.size
+            while at > PHONE_SIZE:
+                small, at = half(small), at // 2
+            encode(small, os.path.join(args.out, f"{base}-phone"), scale=scale)
+            files["lightmapPhone"] = f"{base}-phone-luma.webp"
+            files["chromaPhone"] = f"{base}-phone-chroma.webp"
+        return files, scale
+
     variants = {}
-    for variant in args.variants.split(","):
-        light(variant, settings)
-        clean = bake_lightmap(lightmapped, variant, args.size, args.samples, written, covered, normal,
-                              debug=os.path.join(args.out, variant) if args.debug else None)
+    door_states = None
+    order = args.variants.split(",")
+    for variant in order:
+        shining = light(variant, settings)
+        clean, soft = bake_lightmap(lightmapped, variant, args.size, args.samples, written, covered, normal,
+                                    debug=os.path.join(args.out, variant) if args.debug else None)
         if lids:
             t = time.time()
             with roof_lifted(objects):
-                lid = bake_lightmap(lids, variant, args.size, args.samples, lid_written, lid_covered, lid_normal)
+                lid, lid_soft = bake_lightmap(lids, variant, args.size, args.samples, lid_written, lid_covered, lid_normal)
             clean[lid_core] = lid[lid_core]
+            soft[lid_core] = lid_soft[lid_core]
             log(variant, "ceiling tops baked, roof off", round(time.time() - t, 1), "s")
-        bake_vertices(list(sets.values()), VERTEX_ATTRIBUTES[variant], args.samples)
-        smooth_vertex_light(vertex_lit, VERTEX_ATTRIBUTES[variant])
+        attribute = VERTEX_ATTRIBUTES[variant]
+        bake_vertex_light(list(sets.values()), attribute, args.samples)
+        if grid is not None:
+            count = len(grid["points"])
+            grid_light[variant] = read_grid(sets, count, ["_rest", "_bounced"])
+            sunlit = read_grid(sets, count, ["_sun"])
+            grid_sun[variant] = sun_visibility(sunlit, shining)
+            # A probe inside a sofa or a cupboard sees no light at all.
+            seen = (grid_light[variant] + sunlit).max(axis=(1, 2)) > 1e-5
+            grid_seen = seen if grid_seen is None else grid_seen | seen
+        smooth_vertex_light(vertex_lit, attribute)
+        smooth_vertex_light(vertex_lit, attribute + INDIRECT)
         t = time.time()
         rgb = stitch(clean, *seams)
+        soft = stitch(soft, *seams)
         log(variant, "seams stitched", round(time.time() - t, 1), "s")
-        scale = encode(rgb, os.path.join(args.out, variant))
+        files, scale = write_lightmap(rgb, variant)
+        soft_files, soft_scale = write_lightmap(soft, f"{variant}-indirect")
+        # The sun's share of it, texel by texel, and a phone's copy.
+        mask = sun_mask(rgb, soft, shining["color"])
+        mask_scale = encode_mask(mask, os.path.join(args.out, f"{variant}-sun.webp"))
+        shining = {**shining, "mask": f"{variant}-sun.webp", "maskScale": mask_scale}
+        if args.size > PHONE_SIZE:
+            small, at = mask, args.size
+            while at > PHONE_SIZE:
+                small, at = half(small[..., None])[..., 0], at // 2
+            encode_mask(small, os.path.join(args.out, f"{variant}-sun-phone.webp"), scale=mask_scale)
+            shining["maskPhone"] = f"{variant}-sun-phone.webp"
         variants[variant] = {
-            # The lightmap is its brightness; its colour is beside it.
-            "lightmap": f"{variant}-luma.webp",
-            "chroma": f"{variant}-chroma.webp",
+            **files,
             "storage": STORAGE,
             "scale": scale,
             "encoding": ENCODING,
-            "attribute": VERTEX_ATTRIBUTES[variant],
-            "doors": read_probes(probes, VERTEX_ATTRIBUTES[variant]),
+            "attribute": attribute,
+            "doors": read_probes(probes, attribute),
+            "doorSides": read_probe_sides(probes, attribute),
+            # The sun (or the moon) it was lit by, for a view that draws
+            # its straight light live — and its share of the light at every
+            # texel (`mask`), for a phone's view to take away where
+            # something that moves shades it...
+            "sun": shining,
+            # ...and all the rest of its light, for that view to take from
+            # a lightmap: the sky's straight light, and everything bounced.
+            "indirect": {
+                **soft_files,
+                "scale": soft_scale,
+                "attribute": attribute + INDIRECT,
+                "doors": read_probes(probes, attribute + INDIRECT),
+                "doorSides": read_probe_sides(probes, attribute + INDIRECT),
+            },
         }
-        if args.size > PHONE_SIZE:
-            small = rgb
-            while small.shape[0] > PHONE_SIZE:
-                small = half(small)
-            encode(small, os.path.join(args.out, f"{variant}-phone"), scale=scale)
-            variants[variant]["lightmapPhone"] = f"{variant}-phone-luma.webp"
-            variants[variant]["chromaPhone"] = f"{variant}-phone-chroma.webp"
+        # Each room door shut in turn, the rooms either side baked again —
+        # by day, which the night's dimming follows (bake_door_states).
+        if variant == ("day" if "day" in order else order[0]):
+            door_states = bake_door_states([obj for obj in lightmapped if obj not in lids], settings.get("doors", []), zones,
+                                           args.size, args.samples, written, covered, normal, seams, args.out,
+                                           skip=lid_core if lids else None)
 
     # Each switch's light, on its own, in the rooms it reaches: added to the
     # day's or the night's in the public view when the switch is on.
@@ -2421,19 +3049,32 @@ def main():
         t = time.time()
         light_switch(switch)
         layers = bake_switch(members, here, zones, args.size, args.samples, written, covered, normal, seams)
-        lit = np.concatenate([rgb.max(axis=2).ravel() for rgb in layers.values()])
-        lit = lit[lit > 1e-5]
-        scale = max(float(np.percentile(lit, 99.7)) if lit.size else 1.0, 0.05)
+
+        def scale_of(images):
+            lit = np.concatenate([rgb.max(axis=2).ravel() for rgb in images])
+            lit = lit[lit > 1e-5]
+            return max(float(np.percentile(lit, 99.7)) if lit.size else 1.0, 0.05)
+
+        scale = scale_of([rgb for rgb, _ in layers.values()])
+        bounce_scale = scale_of([bounce for _, bounce in layers.values()])
         name = f"_S{i}"
+        # Its thin faces' and doors' probes in those rooms, and the light
+        # probes' there, for what moves.
         probed = [sets[zone] for zone in here if zone in sets]
         if probed:
-            bake_vertices(probed, name, args.samples)
+            # Its lamps' straight light and what they bounce, apart (INDIRECT).
+            bake_vertices(probed, "_straight", max(32, args.samples // 4), {"DIRECT"})
+            bake_vertices(probed, name + INDIRECT, args.samples, {"INDIRECT"})
+            add_attributes(probed, name, ["_straight", name + INDIRECT], drop=["_straight"])
             thin = [obj for objs, _, _ in probed for obj in objs if obj in vertex_lit]
             smooth_vertex_light(thin, name)
+            smooth_vertex_light(thin, name + INDIRECT)
             # Where it hardly reaches — a room over from the lamp — the thin
             # faces keep none of it (SWITCH_SPILL).
             own = switch["zones"][0]
             for obj in thin:
+                if name not in obj.data.color_attributes:
+                    continue
                 data = obj.data.color_attributes[name].data
                 values = np.empty(len(data) * 4, dtype=np.float32)
                 data.foreach_get("color", values)
@@ -2443,7 +3084,21 @@ def main():
                 else:
                     keep = values.size and values.mean() >= SWITCH_SPILL * scale
                 if not keep:
-                    obj.data.color_attributes.remove(obj.data.color_attributes[name])
+                    for drop in (name, name + INDIRECT):
+                        if drop in obj.data.color_attributes:
+                            obj.data.color_attributes.remove(obj.data.color_attributes[drop])
+        # The light probes' share of it (probe_grid), for what moves: all of
+        # it, and what the lamps bounce.
+        gridded = [np.array(probe["grid"], dtype=np.int64) for _, probe, _ in probed if "grid" in probe]
+        if gridded:
+            count = len(grid["points"])
+            indices = np.sort(np.concatenate(gridded))
+            straight = read_grid(probed, count, ["_straight"])[indices]
+            bounced = read_grid(probed, count, [name + INDIRECT])[indices]
+            grid_switches.append((indices, straight + bounced, bounced))
+        else:
+            grid_switches.append(None)
+        nearby = [obj for obj in probes if obj.get("zone") in here]
         entry = {
             "id": switch["id"],
             "label": switch.get("label"),
@@ -2452,16 +3107,32 @@ def main():
             "storage": STORAGE,
             # Its light on the thin faces of those rooms, and on their doors.
             "attribute": name,
-            "doors": read_probes([obj for obj in probes if obj.get("zone") in here], name),
+            "doors": read_probes(nearby, name),
+            "doorSides": read_probe_sides(nearby, name),
             "layers": {},
+            # Its lamps as they were baked, for a view that lights them live —
+            # a three.js PointLight takes a lamp's power in watts over 4π as
+            # its intensity — and the light they bounce, for that view to take
+            # from its layers instead.
+            "lights": [{key: fitting[key] for key in ("kind", "position", "power", "color", "size") if key in fitting}
+                       for fitting in switch["lights"]],
+            # The rooms next door it lights through doors alone, and which:
+            # the view lets less of its light into each as they shut.
+            "through": {zone: doors for zone, doors in switch.get("through", {}).items() if zone in layers},
+            "indirect": {
+                "scale": bounce_scale,
+                "attribute": name + INDIRECT,
+                "doors": read_probes(nearby, name + INDIRECT),
+                "doorSides": read_probe_sides(nearby, name + INDIRECT),
+                "layers": {},
+            },
         }
-        for zone, rgb in layers.items():
+        for zone, (rgb, bounce) in layers.items():
             base = f"s{i}-{zone}"
-            encode(rgb, os.path.join(args.out, base), scale=scale)
             x0, y0, x1, y1 = crop_box(zones[zone], args.size)
-            layer = {
-                "lightmap": f"{base}-luma.webp",
-                "chroma": f"{base}-chroma.webp",
+            files, _ = write_lightmap(rgb, base, scale=scale)
+            entry["layers"][zone] = {
+                **files,
                 # How much of its light falls here, for the view to keep the
                 # strongest where more reach a room than it has room for.
                 "strength": round(float(rgb.mean()), 6),
@@ -2469,16 +3140,16 @@ def main():
                 # v down from the top: [u, v, width, height].
                 "rect": [x0 / args.size, 1 - y1 / args.size, (x1 - x0) / args.size, (y1 - y0) / args.size],
             }
-            if args.size > PHONE_SIZE:
-                small, at = rgb, args.size
-                while at > PHONE_SIZE:
-                    small, at = half(small), at // 2
-                encode(small, os.path.join(args.out, f"{base}-phone"), scale=scale)
-                layer["lightmapPhone"] = f"{base}-phone-luma.webp"
-                layer["chromaPhone"] = f"{base}-phone-chroma.webp"
-            entry["layers"][zone] = layer
+            entry["indirect"]["layers"][zone], _ = write_lightmap(bounce, f"{base}-indirect", scale=bounce_scale)
         switches.append(entry)
         log("switch", switch["id"], "done", round(time.time() - t, 1), "s")
+
+    # The light probes, for a view lit live to light what moves with.
+    grid_description = None
+    if grid is not None:
+        valid = ~grid["solid"] & (grid_seen if grid_seen is not None else True)
+        log("light probes that see light:", int(valid.sum()), "of", len(valid))
+        grid_description = write_grid(os.path.join(args.out, "probes.bin"), grid, valid, grid_light, grid_switches, grid_sun)
 
     for obj in probes + [probe for _, probe, _ in sets.values()]:
         bpy.data.objects.remove(obj, do_unlink=True)
@@ -2499,6 +3170,10 @@ def main():
                "zones": {zone: [round(c, 6) for c in rect] for zone, rect in zones.items()},
                # Each switch's light, room by room (above).
                "switches": switches,
+               # The light probes, and where in their file each part is (write_grid).
+               **({"probes": grid_description} if grid_description else {}),
+               # How much of each room's light stays as each of its doors shuts.
+               **({"doorStates": door_states} if door_states else {}),
                "meshes": len(objects), "triangles": sum(len(o.data.polygons) for o in objects)},
               open(os.path.join(args.out, "bake.json"), "w"), indent=2)
 

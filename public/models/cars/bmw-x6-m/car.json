@@ -1,0 +1,35 @@
+{
+  "id": "bmw-x6-m",
+  "name": "BMW X6 M",
+  "credit": {
+    "title": "2016 BMW X6 M",
+    "author": "Ddiaz Design (https://sketchfab.com/ddiaz-design)",
+    "license": "CC-BY-NC-SA-4.0 (http://creativecommons.org/licenses/by-nc-sa/4.0/)",
+    "source": "https://sketchfab.com/3d-models/2016-bmw-x6-m-9cba50132a864bd79bfab48bd631574d"
+  },
+  "rideHeight": 0.45,
+  "wheels": {
+    "front": {
+      "x": 0.8073,
+      "z": 1.4651,
+      "radius": 0.3787
+    },
+    "rear": {
+      "x": 0.7899,
+      "z": -1.4651,
+      "radius": 0.3787
+    }
+  },
+  "body": {
+    "min": [
+      -1.0927,
+      -0.284,
+      -2.5427
+    ],
+    "max": [
+      1.0927,
+      1.2683,
+      2.3655
+    ]
+  }
+}

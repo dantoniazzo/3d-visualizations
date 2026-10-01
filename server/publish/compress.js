@@ -106,7 +106,9 @@ export async function compressRuntime(glb, { draco: useDraco = true } = {}) {
 
     await document.transform(
         dedup(),
-        prune(),
+        // Keeping what says what it is: a light inside a piece of furniture
+        // is a node with nothing in it but that (World/Openables.js).
+        prune({ keepExtras: true }),
         ...(useDraco ? [draco({ quantizePosition: 16, quantizeNormal: 10, quantizeTexcoord: 14, quantizeColor: 8 })] : [])
     );
     return { glb: Buffer.from(await io.writeBinary(document)), collision: { before, after } };

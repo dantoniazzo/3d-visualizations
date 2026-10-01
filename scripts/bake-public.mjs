@@ -15,7 +15,12 @@
  * room lights and every bounce between them — for day and for night, then
  * updates the published version in place: its view gains lightmap UVs and
  * baked vertex light, and the lightmaps sit beside it. The public view then
- * draws the house unlit, from what was baked, rather than lighting it live.
+ * draws the house from what was baked: on a phone all of its light, unlit;
+ * elsewhere all but the sun's and the lamps' straight light, which it draws
+ * live, with shadows that follow the doors, the people and the car
+ * (frontend/Experience/Utils/device.js's lightingMode). Each room door is
+ * baked shut too, the rooms either side of it, for the view to dim them as
+ * it closes (doors.webp).
  *
  * One bake at a time: Blender takes the whole GPU.
  *
@@ -27,8 +32,8 @@ import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { ENVIRONMENT_PRESETS, FINISHES } from "../shared/catalog.js";
-import { planTrees } from "../shared/vegetation.js";
+import { ENVIRONMENT_PRESETS, FINISHES, TRIM_MATERIALS } from "../shared/catalog.js";
+import { planBushes, planFence, planHillTrees, planTrees } from "../shared/vegetation.js";
 import { rectCorners } from "../frontend/Experience/Utils/geometry.js";
 import { compressView } from "../server/publish/compress.js";
 import { PUBLISH_DIR, latestManifest, updateVersion, versionManifest } from "../server/publish/store.js";
@@ -243,10 +248,17 @@ for (const room of indoor) {
 const roomAt = (x, y, z) =>
     indoor.find((room) => y >= room.elevation - 0.05 && y < room.elevation + room.height + 0.3 && insidePolygon(x, z, room.polygon)) ?? null;
 const neighbours = new Map(indoor.map((room) => [room.id, new Set()]));
-const connect = (a, b) => {
+// What joins each two rooms: the doors with leaves by their ids, and
+// anything always open — a doorway, a stairwell — as null.
+const links = new Map();
+const linkKey = (a, b) => [a, b].sort().join("|");
+const connect = (a, b, door = null) => {
     if (!a || !b || a === b) return;
     neighbours.get(a.id)?.add(b.id);
     neighbours.get(b.id)?.add(a.id);
+    const key = linkKey(a.id, b.id);
+    if (!links.has(key)) links.set(key, []);
+    links.get(key).push(door);
 };
 for (const wall of spec.walls || []) {
     const [x1, z1] = wall.start;
@@ -261,7 +273,7 @@ for (const wall of spec.walls || []) {
         const x = x1 + dx * opening.offset;
         const z = z1 + dz * opening.offset;
         const y = wall.base_height + 1.0;
-        connect(roomAt(x - dz * side, y, z + dx * side), roomAt(x + dz * side, y, z - dx * side));
+        connect(roomAt(x - dz * side, y, z + dx * side), roomAt(x + dz * side, y, z - dx * side), opening.type === "door" ? opening.id : null);
     }
 }
 for (const hole of spec.floor_openings || []) {
@@ -272,10 +284,18 @@ const switches = new Map();
 for (const light of spec.lights || []) {
     if (!light.room || !neighbours.has(light.room)) continue;
     if (!switches.has(light.switch)) {
+        // The rooms next door it reaches through doors alone, and which:
+        // the view lets less of its light into each as they close.
+        const through = {};
+        for (const zone of neighbours.get(light.room)) {
+            const joins = links.get(linkKey(light.room, zone)) ?? [];
+            if (joins.length && joins.every(Boolean)) through[zone] = joins;
+        }
         switches.set(light.switch, {
             id: light.switch,
             label: light.label,
             zones: [light.room, ...neighbours.get(light.room)],
+            through,
             lights: [],
         });
     }
@@ -290,15 +310,58 @@ for (const light of spec.lights || []) {
     });
 }
 
+// Every room door's leaf, shut, and the rooms either side of it: those
+// rooms are baked again with it shut (blender/bake_public.py's
+// bake_door_states), for the view to dim them as it closes — the light
+// from the sky and everything bounced; the sun's and the lamps' straight
+// light the view shades itself. A leaf as World/Door.js hangs it: the
+// doorway's width and height less a few millimetres, LEAF_T thick, square
+// in the wall. Outside, a front door makes no difference worth baking.
+const LEAF_T = 0.04;
+const doors = [];
+for (const wall of spec.walls || []) {
+    const [x1, z1] = wall.start;
+    const [x2, z2] = wall.end;
+    const length = Math.hypot(x2 - x1, z2 - z1);
+    if (!length) continue;
+    const dx = (x2 - x1) / length;
+    const dz = (z2 - z1) / length;
+    const side = wall.thickness / 2 + 0.3;
+    for (const opening of wall.openings || []) {
+        if (opening.type !== "door") continue;
+        const x = x1 + dx * opening.offset;
+        const z = z1 + dz * opening.offset;
+        const y = wall.base_height + 1.0;
+        const zones = [roomAt(x - dz * side, y, z + dx * side), roomAt(x + dz * side, y, z - dx * side)]
+            .filter(Boolean)
+            .map((room) => room.id);
+        if (!zones.length || zones[0] === zones[1]) continue;
+        doors.push({
+            id: opening.id,
+            zones,
+            centre: [x, wall.base_height + opening.height / 2, z],
+            size: [opening.width - 0.01, opening.height - 0.02, LEAF_T],
+            direction: [dx, dz],
+            color: TRIM_MATERIALS[opening.door?.leaf]?.color ?? TRIM_MATERIALS.trim_white.color,
+        });
+    }
+}
+
 const settings = {
     preset,
     rooms,
     probes,
+    doors,
     portals,
     switches: [...switches.values()],
-    // The garden's trees, as the view grows them (shared/vegetation.js):
-    // not baked themselves, but casting their shade.
-    trees: planTrees(spec),
+    // The garden's trees and bushes, and the hills', as the view grows them
+    // (shared/vegetation.js): not baked themselves, but casting their shade.
+    trees: [...planTrees(spec), ...planHillTrees(spec)],
+    bushes: planBushes(spec, planFence(spec), planTrees(spec)),
+    // Surfaces with coarser texels than the house's own, by how much: the
+    // fence (FenceBuilder), a couple of hundred metres of it round the plot;
+    // and the hills behind it (HillBuilder), seen only from a distance.
+    coarseMaterials: { fence_timber: 3, fence_paint: 3, hill_grass: 16 },
     solids: { walls: solidWalls, slabs },
     groundMaterials: Object.keys(FINISHES).filter((id) => FINISHES[id].kind === "ground"),
     // Sun and sky in W/m², matched to the app's own lights. Light fittings
@@ -344,6 +407,14 @@ const lightmaps = Object.fromEntries(
         ])
     )
 );
+// What the bake describes, with every file it names as it is served:
+// beside the rest of this bake.
+const served = (value) => {
+    if (typeof value === "string") return /\.(webp|bin)$/.test(value) ? `${version}/${bakeName}/${value}` : value;
+    if (Array.isArray(value)) return value.map(served);
+    if (value === null || typeof value !== "object") return value;
+    return Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, served(inner)]));
+};
 await updateVersion(sceneId, version, {
     view: `${version}/${bakeName}/view.glb`,
     options: { ...manifest.options, bake: bake.samples >= 256 ? "final" : "draft" },
@@ -358,44 +429,27 @@ await updateVersion(sceneId, version, {
         ...(bake.view && { view: bake.view }),
         // Each room's square of the lightmap.
         ...(bake.zones && { zones: bake.zones }),
-        // Each switch's light, room by room, its files beside the rest.
-        ...(bake.switches?.length && {
-            switches: bake.switches.map((entry) => ({
-                ...entry,
-                layers: Object.fromEntries(
-                    Object.entries(entry.layers).map(([zone, layer]) => [
-                        zone,
-                        Object.fromEntries(
-                            Object.entries(layer).map(([key, value]) => [
-                                key,
-                                typeof value === "string" ? `${version}/${bakeName}/${value}` : value,
-                            ])
-                        ),
-                    ])
-                ),
-            })),
-        }),
-        variants: Object.fromEntries(
-            Object.entries(bake.variants).map(([name, variant]) => [
-                name,
-                {
-                    lightmap: `${version}/${bakeName}/${variant.lightmap}`,
-                    // Half the size or less, for phones.
-                    ...(variant.lightmapPhone && { lightmapPhone: `${version}/${bakeName}/${variant.lightmapPhone}` }),
-                    // Its colour, when the lightmap is its brightness alone.
-                    ...(variant.chroma && { chroma: `${version}/${bakeName}/${variant.chroma}` }),
-                    ...(variant.chromaPhone && { chromaPhone: `${version}/${bakeName}/${variant.chromaPhone}` }),
-                    ...(variant.storage && { storage: variant.storage }),
-                    scale: variant.scale,
-                    // How the lightmap's 8 bits hold its light.
-                    ...(variant.encoding && { encoding: variant.encoding }),
-                    attribute: variant.attribute,
-                    doors: variant.doors,
-                },
-            ])
-        ),
+        // The light probes, for a view lit live to light what moves with.
+        ...(bake.probes && { probes: served(bake.probes) }),
+        // Each switch's light, room by room — all of it, and what its lamps
+        // bounce (`indirect`) — and its lamps as they were baked.
+        ...(bake.switches?.length && { switches: served(bake.switches) }),
+        // How much of each room's light stays as each of its doors shuts.
+        ...(bake.doorStates && { doorStates: served(bake.doorStates) }),
+        // Day and night: each one's lightmap (its brightness, its colour
+        // beside it, and half-size copies for phones), how its 8 bits hold
+        // the light, the light on the thin faces and the doors; its sun, and
+        // all of its light but the sun's straight light (`indirect`), for a
+        // view that draws the sun live.
+        variants: served(bake.variants),
     },
-    sizes: { ...manifest.sizes, view: view.length, lightmaps },
+    sizes: {
+        ...manifest.sizes,
+        view: view.length,
+        lightmaps,
+        ...(bake.probes && { probes: await size(join(bakeDir, bake.probes.file)) }),
+        ...(bake.doorStates && { doorStates: await size(join(bakeDir, bake.doorStates.file)) }),
+    },
 });
 
 // Earlier bakes of this version are no longer referenced.

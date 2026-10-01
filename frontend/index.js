@@ -174,39 +174,17 @@ async function findPublished(sceneId, version = null) {
         const manifest = await response.json();
         const spec = await (await fetch(`${base}/${manifest.spec}`)).json();
         // Baked lighting (npm run bake), when there is any: a lightmap for
-        // each of day and night.
-        const lighting = manifest.lighting && {
-            ...manifest.lighting,
-            variants: Object.fromEntries(
-                Object.entries(manifest.lighting.variants).map(([name, variant]) => [
-                    name,
-                    {
-                        ...variant,
-                        lightmap: `${base}/${variant.lightmap}`,
-                        lightmapPhone: variant.lightmapPhone && `${base}/${variant.lightmapPhone}`,
-                        chroma: variant.chroma && `${base}/${variant.chroma}`,
-                        chromaPhone: variant.chromaPhone && `${base}/${variant.chromaPhone}`,
-                    },
-                ])
-            ),
-            // Each light switch's light, room by room, when the fittings
-            // were baked apart.
-            switches: manifest.lighting.switches?.map((entry) => ({
-                ...entry,
-                layers: Object.fromEntries(
-                    Object.entries(entry.layers).map(([zone, layer]) => [
-                        zone,
-                        {
-                            ...layer,
-                            lightmap: `${base}/${layer.lightmap}`,
-                            chroma: `${base}/${layer.chroma}`,
-                            lightmapPhone: layer.lightmapPhone && `${base}/${layer.lightmapPhone}`,
-                            chromaPhone: layer.chromaPhone && `${base}/${layer.chromaPhone}`,
-                        },
-                    ])
-                ),
-            })),
+        // each of day and night — and one without the sun, for a view that
+        // draws it live — each light switch's light, room by room, when the
+        // fittings were baked apart, and the light probes; every file it
+        // names, served from beside the manifest.
+        const served = (value) => {
+            if (typeof value === "string") return /\.(webp|png|jpe?g|ktx2|bin)$/.test(value) ? `${base}/${value}` : value;
+            if (Array.isArray(value)) return value.map(served);
+            if (value === null || typeof value !== "object") return value;
+            return Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, served(inner)]));
         };
+        const lighting = manifest.lighting && served(manifest.lighting);
         return {
             spec,
             view: `${base}/${manifest.view}`,
@@ -468,14 +446,16 @@ function renderFinishGrid(target) {
         )
         .join("");
 
-    // Paint each swatch from the same generated texture the world uses.
+    // Paint each swatch from the same texture the world uses: generated, or
+    // an image's own.
     const textures = experience?.world.sceneBuilder?.materials?.textures;
     if (!textures) return;
 
     for (const node of dom.finishGrid.querySelectorAll("[data-preview]")) {
-        const texture = textures.get(node.dataset.preview);
-        if (texture?.image) {
-            node.style.backgroundImage = `url(${texture.image.toDataURL()})`;
+        const image = textures.get(node.dataset.preview)?.image;
+        const url = image?.toDataURL ? image.toDataURL() : FINISHES[node.dataset.preview]?.image;
+        if (url) {
+            node.style.backgroundImage = `url(${url})`;
             node.style.backgroundSize = "cover";
         }
     }

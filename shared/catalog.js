@@ -29,6 +29,11 @@ export const SURFACE_KINDS = ["floor", "wall", "ceiling", "roof", "ground"];
  * `generator` + `params` drive the canvas texture; `tile` is how many metres
  * one repeat of the texture covers, so a finish looks the same size whether
  * it is on a 2 m cloakroom floor or a 9 m living room.
+ *
+ * A finish can be an image instead (`image`, under public/): the grass's is
+ * Fluffy Tree's ground, one gradient laid over the whole garden once
+ * (`gradient`: TextureLibrary.setGradient places it, from the garden's
+ * settings) rather than tiled. `grass` marks a ground that grass grows on.
  */
 export const FINISHES = {
     // --- Floors: wood ---------------------------------------------------
@@ -256,19 +261,48 @@ export const FINISHES = {
     },
 
     // --- Ground (outdoor) -----------------------------------------------
+    // The garden's ground, under its grass (World/Vegetation): Fluffy Tree's,
+    // sand where the gradient is centred to green at its edge — the lawns,
+    // the field past the plot and the hills behind it, as one. Mapped in
+    // metres; as rough as Fluffy Tree's ground.
     lawn: {
         label: "Lawn",
         kind: "ground",
-        generator: "grass",
-        tile: 2.2,
-        params: { base: "#4f7a37", blade: "#6d9c4a", dark: "#3a5c28" },
+        grass: true,
+        image: "/textures/vegetation/ground-gradient.jpg",
+        gradient: true,
+        tile: 1,
+        roughness: 0.9,
     },
+    // The field past the plot.
     rough_grass: {
-        label: "Rough grass",
+        label: "Field",
         kind: "ground",
-        generator: "grass",
-        tile: 3.4,
-        params: { base: "#61784a", blade: "#7f9560", dark: "#48583a" },
+        grass: true,
+        image: "/textures/vegetation/ground-gradient.jpg",
+        gradient: true,
+        tile: 1,
+        roughness: 0.9,
+    },
+    // The small hills behind the plot (shared/vegetation.js): the field's
+    // ground, a finish apart so the bake can give them coarser texels.
+    hill_grass: {
+        label: "Hill grass",
+        kind: "ground",
+        grass: true,
+        image: "/textures/vegetation/ground-gradient.jpg",
+        gradient: true,
+        tile: 1,
+        roughness: 0.9,
+    },
+    // The back garden's fence (shared/vegetation.js): stained boards, stood
+    // on end (FenceBuilder turns the planks upright).
+    fence_timber: {
+        label: "Fence boards",
+        kind: "fence",
+        generator: "planks",
+        tile: 1.2,
+        params: { base: "#7a5f45", grain: "#6a5139", gap: "#3f3022", rows: 8, stagger: 0 },
     },
     paving_slab: {
         label: "Paving slabs",
@@ -332,6 +366,8 @@ export const TRIM_MATERIALS = {
     metal_black: { color: "#2a2b2e", roughness: 0.4, metalness: 0.85 },
     glass: { color: "#dfe5f5", roughness: 0.05, metalness: 0, transparent: true, opacity: 0.28 },
     frosted_glass: { color: "#e8ecf2", roughness: 0.5, metalness: 0, transparent: true, opacity: 0.55 },
+    // The front garden's picket fence.
+    fence_paint: { color: "#eeece6", roughness: 0.8, metalness: 0 },
     // A ceiling light's glass (World/Fittings.js): lit from within, live.
     opal_glass: { color: "#f6f2ea", roughness: 0.35, metalness: 0, glow: "#ffe3bf" },
 };
@@ -451,7 +487,8 @@ export const ENVIRONMENT_PRESET_NAMES = Object.keys(ENVIRONMENT_PRESETS);
 /** Ground surrounding a building, for exterior views. */
 export const GROUND_TYPES = {
     none: { label: "None" },
-    grass: { color: "#5f8a45", roughness: 1 },
+    // Beyond the plot: a field, unmown.
+    grass: { color: "#ffffff", roughness: 1, finish: "rough_grass" },
     gravel: { color: "#8b8781", roughness: 1 },
     paving: { color: "#a5a29c", roughness: 0.85 },
     sand: { color: "#d9c9a3", roughness: 1 },

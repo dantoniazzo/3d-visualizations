@@ -9,7 +9,7 @@ import math
 
 import bmesh
 import bpy
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
 
 # ---------------------------------------------------------------------
@@ -389,6 +389,130 @@ def join(objs, name=None, col=None):
     if col:
         link(target, col)
     return target
+
+
+# ---------------------------------------------------------------------
+# Parts that open
+# ---------------------------------------------------------------------
+
+_units = iter(range(1, 1 << 30))
+
+
+def hinged(parts, hinge, angle, col=None):
+    """Mark `parts` as one leaf — a cupboard door and its handle — that
+    swings on a vertical hinge through `hinge` (x, y, z), fully open at
+    `angle` radians about +Z (anticlockwise seen from above; its sign says
+    which way). Returns the parts and the marker that says so, for
+    join_piece."""
+    return _openable(parts, hinge, 0.0, {"type": "hinge", "angle": round(angle, 5)}, col)
+
+
+def sliding(parts, at, direction, distance, col=None):
+    """Mark `parts` as one drawer that slides `distance` metres out along
+    `direction` (x, y) in plan. Returns the parts and the marker, for
+    join_piece."""
+    heading = math.atan2(direction[1], direction[0])
+    return _openable(parts, at, heading, {"type": "slide", "distance": round(distance, 4)}, col)
+
+
+def _openable(parts, at, heading, opens, col):
+    unit = next(_units)
+    for part in parts:
+        part["unit"] = unit
+    marker = bpy.data.objects.new("opens", None)
+    marker.location = at
+    marker.rotation_euler = (0, 0, heading)
+    marker["unit"] = unit
+    marker["opens"] = opens
+    if col:
+        link(marker, col)
+    return list(parts) + [marker]
+
+
+def fixture(name, at, props, col=None, aim=None):
+    """A point inside a piece carrying `props` as its extras — the light
+    inside a fridge — kept as a node of its own by join_piece; `aim`, the
+    way a light there shines (x, y, z), which join_piece adds to its
+    `light` as `aim`, in the app's axes."""
+    marker = bpy.data.objects.new(name, None)
+    marker.location = at
+    if aim is not None:
+        # Its X along the aim, so the aim turns with the piece (joinery._rotate).
+        marker.rotation_euler = Vector(aim).to_track_quat("X", "Z").to_euler()
+        marker["aimed"] = True
+    marker["fixture"] = props
+    if col:
+        link(marker, col)
+    return marker
+
+
+def join_piece(objs, name, col=None):
+    """Join a piece of furniture: everything that stays put into one object,
+    as join does, and each leaf or drawer marked by hinged or sliding into
+    one of its own, parented to it with its origin on its hinge (or where
+    it slides from) and what it does as its `opens` — exported as its
+    node's extras, which the app opens it by:
+
+        {"type": "hinge", "angle": radians about the up axis}
+        {"type": "slide", "distance": metres, "direction": [x, y, z]}
+
+    the direction in the app's axes (glTF's: x, z, -y of Blender's). A
+    fixture marker stays an empty node of the piece, its extras kept."""
+    objs = [o for o in objs if o is not None]
+    markers = [o for o in objs if o.type == "EMPTY"]
+    units, still = {}, []
+    for o in objs:
+        if o.type == "EMPTY":
+            continue
+        unit = o.get("unit")
+        if unit is None:
+            still.append(o)
+        else:
+            units.setdefault(unit, []).append(o)
+    body = join(still, name, col)
+    if body is None:
+        return None
+    counts = {}
+    for marker in markers:
+        m = world_matrix(marker)
+        if "opens" in marker:
+            leaf = join(units.pop(marker["unit"], []), None, col)
+            if leaf is not None:
+                opens = marker["opens"].to_dict()
+                kind = "door" if opens["type"] == "hinge" else "drawer"
+                counts[kind] = counts.get(kind, 0) + 1
+                leaf.name = leaf.data.name = f"{name}.{kind}{counts[kind]}"
+                pivot = m.to_translation()
+                leaf.data.transform(Matrix.Translation(-pivot))
+                leaf.location = pivot
+                leaf.parent = body
+                if opens["type"] == "slide":
+                    d = m.to_3x3() @ Vector((1, 0, 0))
+                    opens["direction"] = [round(d.x, 5), round(d.z, 5), round(-d.y, 5)]
+                if "unit" in leaf:
+                    del leaf["unit"]
+                leaf["opens"] = opens
+            bpy.data.objects.remove(marker, do_unlink=True)
+        elif "fixture" in marker:
+            if marker.get("aimed") and "light" in marker["fixture"]:
+                d = (m.to_3x3() @ Vector((1, 0, 0))).normalized()
+                marker["fixture"]["light"]["aim"] = [round(d.x, 4), round(d.z, 4), round(-d.y, 4)]
+                del marker["aimed"]
+            marker.matrix_basis = m
+            marker.name = f"{name}.{marker.name}"
+            marker.parent = body
+            if col:
+                link(marker, col)
+        else:
+            bpy.data.objects.remove(marker, do_unlink=True)
+    # A unit whose marker went missing stays part of the piece.
+    for leftovers in units.values():
+        for o in leftovers:
+            del o["unit"]
+        body = join([body] + leftovers, name, col)
+    if "unit" in body:
+        del body["unit"]
+    return body
 
 
 def apply_modifiers(obj):

@@ -70,6 +70,83 @@ def _drawer_front(col, mats, w, h, x, y, z, mat, facing=-1, segments=32):
 
 
 # ---------------------------------------------------------------------
+# Doors and drawers that open
+# ---------------------------------------------------------------------
+
+#: How far a cupboard door swings open.
+SWING = math.radians(105)
+#: A carcass's panels.
+PANEL_T = 0.018
+#: The deepest a drawer's box is.
+DRAWER_DEPTH = 0.55
+
+
+def _hinged_door(col, mats, w, h, x, y, z, mat, handle_side=1, gap=FRONT_GAP, facing=-1, handle=True):
+    """A _door_front hung on its edge away from the handle, at the back of
+    its thickness, swinging out towards `facing` (geometry.hinged)."""
+    parts = _door_front(col, mats, w, h, x, y, z, mat, handle_side=handle_side, gap=gap, facing=facing,
+                        handle=handle)
+    hinge = (x - handle_side * (w / 2 - gap), y - facing * FRONT_T / 2, z)
+    return g.hinged(parts, hinge, facing * handle_side * SWING, col)
+
+
+def _drawer(col, mats, w, h, x, y, z, mat, facing=-1, depth=0.45, segments=32):
+    """A _drawer_front and the box behind it — a floor, two sides and a
+    back, no deeper than a kitchen's (DRAWER_DEPTH) however deep the unit —
+    sliding out towards `facing` (geometry.sliding) by three quarters of
+    its depth."""
+    depth = min(depth, DRAWER_DEPTH)
+    parts = _drawer_front(col, mats, w, h, x, y, z, mat, facing=facing, segments=segments)
+    inside = mats.get("cab_white", mat)
+    t = 0.012
+    tw = w - 0.06
+    th = max(0.05, h - 0.06)
+    back = y - facing * (FRONT_T / 2 + depth)
+    mid = y - facing * (FRONT_T / 2 + depth / 2)
+    floor = z - h / 2 + 0.025
+    parts += [
+        g.box("tray", (tw, depth, t), loc=(x, mid, floor + t / 2), col=col, mat=inside),
+        g.box("tray", (t, depth, th), loc=(x - tw / 2 + t / 2, mid, floor + th / 2), col=col, mat=inside),
+        g.box("tray", (t, depth, th), loc=(x + tw / 2 - t / 2, mid, floor + th / 2), col=col, mat=inside),
+        g.box("tray", (tw - 2 * t, t, th), loc=(x, back + facing * t / 2, floor + th / 2), col=col, mat=inside),
+    ]
+    return g.sliding(parts, (x, y, z), (0, facing), depth * 0.75, col)
+
+
+def _shell(col, mat, x0, x1, back, front, z0, z1, t=PANEL_T, columns=(), dividers=(), shelves=(),
+           inside=None):
+    """A carcass with its front open: a back, two sides, a top and a
+    bottom `t` thick, from `back` (the wall) to `front` in Y. `columns`
+    are the xs of upright partitions, `dividers` the heights of full-depth
+    rails between drawers, `shelves` the heights of shelves set back a
+    centimetre from the front — the inside a cupboard door opens on.
+    `inside`, the partitions' and shelves' material if not the carcass's."""
+    inner = inside or mat
+    s = 1 if front > back else -1
+    depth = abs(front - back)
+    w = x1 - x0
+    cx = (x0 + x1) / 2
+    cy = (back + front) / 2
+    h = z1 - z0
+    parts = [
+        g.box("carcass", (w, t, h), loc=(cx, back + s * t / 2, (z0 + z1) / 2), col=col, mat=mat),
+        g.box("carcass", (t, depth, h), loc=(x0 + t / 2, cy, (z0 + z1) / 2), col=col, mat=mat),
+        g.box("carcass", (t, depth, h), loc=(x1 - t / 2, cy, (z0 + z1) / 2), col=col, mat=mat),
+        g.box("carcass", (w - 2 * t, depth - t, t), loc=(cx, cy + s * t / 2, z1 - t / 2), col=col, mat=mat),
+        g.box("carcass", (w - 2 * t, depth - t, t), loc=(cx, cy + s * t / 2, z0 + t / 2), col=col, mat=mat),
+    ]
+    for x in columns:
+        parts.append(g.box("partition", (t, depth - t, h - 2 * t), loc=(x, cy + s * t / 2, (z0 + z1) / 2),
+                           col=col, mat=inner))
+    for z in dividers:
+        parts.append(g.box("rail", (w - 2 * t, depth - t, t), loc=(cx, cy + s * t / 2, z), col=col, mat=inner))
+    for z in shelves:
+        parts.append(g.box("shelf", (w - 2 * t - 0.004, depth - t - 0.02, t),
+                           loc=(cx, cy + s * t / 2 - s * 0.01, z), col=col, mat=inner))
+    return parts
+
+
+# ---------------------------------------------------------------------
 # Kitchen
 # ---------------------------------------------------------------------
 
@@ -108,8 +185,8 @@ def base_run(col, mats, x0, x1, y, facing, carcass="cab_sage", worktop="worktop"
             # Open at the top for the bowl: sides and a back to the worktop,
             # a base below the bowl's floor, a rail behind the fronts.
             low = height - 0.26
-            parts.append(g.box("carcass", (w, body, low - PLINTH),
-                               loc=(cx, body_y, PLINTH + (low - PLINTH) / 2), col=col, mat=cab))
+            # A cupboard under it, for its doors to open on.
+            parts += _shell(col, cab, cx - w / 2, cx + w / 2, y, y + facing * body, PLINTH, low)
             for s in (-1, 1):
                 parts.append(g.box("carcass", (0.018, body, height - low),
                                    loc=(cx + s * (w / 2 - 0.009), body_y, (low + height) / 2),
@@ -118,6 +195,17 @@ def base_run(col, mats, x0, x1, y, facing, carcass="cab_sage", worktop="worktop"
                                loc=(cx, y + facing * 0.009, (low + height) / 2), col=col, mat=cab))
             parts.append(g.box("carcass", (w - 0.036, 0.018, 0.08),
                                loc=(cx, y + facing * (body - 0.009), height - 0.04), col=col, mat=cab))
+        elif kind in ("door", "drawers"):
+            # Hollow, for the door or the drawers to open on: a shelf
+            # behind a door, a rail between each two drawers.
+            rails = []
+            if kind == "drawers":
+                z = PLINTH + 0.015
+                for share in (0.22, 0.34):
+                    z += front_h * share
+                    rails.append(z)
+            parts += _shell(col, cab, cx - w / 2, cx + w / 2, y, y + facing * body, PLINTH, height,
+                            dividers=rails, shelves=[PLINTH + (height - PLINTH) * 0.5] if kind == "door" else [])
         elif kind != "slot":
             parts.append(g.box("carcass", (w, body, height - PLINTH),
                                loc=(cx, body_y, PLINTH + (height - PLINTH) / 2), col=col, mat=cab))
@@ -137,16 +225,16 @@ def base_run(col, mats, x0, x1, y, facing, carcass="cab_sage", worktop="worktop"
             z = PLINTH + 0.015
             for share in (0.22, 0.34, 0.44):
                 h = front_h * share
-                parts += _drawer_front(col, mats, w, h, cx, front_y, z + h / 2, cab, facing=facing)
+                parts += _drawer(col, mats, w, h, cx, front_y, z + h / 2, cab, facing=facing, depth=body - 0.06)
                 z += h
         elif kind == "door":
-            parts += _door_front(col, mats, w, front_h, cx, front_y, front_z, cab,
-                                 handle_side=1 if i % 2 == 0 else -1, facing=facing)
+            parts += _hinged_door(col, mats, w, front_h, cx, front_y, front_z, cab,
+                                  handle_side=1 if i % 2 == 0 else -1, facing=facing)
         elif kind == "sink":
             sink_x = cx
             for s in (-1, 1):
-                parts += _door_front(col, mats, w / 2, front_h, cx + s * w / 4, front_y, front_z,
-                                     cab, handle_side=-s, facing=facing)
+                parts += _hinged_door(col, mats, w / 2, front_h, cx + s * w / 4, front_y, front_z,
+                                      cab, handle_side=-s, facing=facing)
         elif kind == "appliance":
             # Integrated front: a dishwasher behind a matching door, its
             # handle a bar along the top.
@@ -192,16 +280,17 @@ def wall_run(col, mats, x0, x1, y, facing, z=1.50, carcass="cab_sage", modules=N
     cab = mats[carcass]
     total = x1 - x0
     body = WALL_UNIT_D - FRONT_SET
-    parts.append(g.box("carcass", (total, body, WALL_UNIT_H),
-                       loc=(x0 + total / 2, y + facing * body / 2, z + WALL_UNIT_H / 2),
-                       col=col, mat=cab))
     front_y = y + facing * (WALL_UNIT_D - FRONT_T / 2)
     n = max(1, round(total / 0.5)) if modules is None else len(modules)
     w = total / n
+    # Hollow, a partition between each two doors and a shelf behind them.
+    parts += _shell(col, cab, x0, x1, y, y + facing * body, z, z + WALL_UNIT_H,
+                    columns=[x0 + k * 2 * w for k in range(1, (n + 1) // 2) if k * 2 < n],
+                    shelves=[z + WALL_UNIT_H * 0.5])
     for i in range(n):
         cx = x0 + (i + 0.5) * w
-        parts += _door_front(col, mats, w, WALL_UNIT_H, cx, front_y, z + WALL_UNIT_H / 2, cab,
-                             handle_side=-1 if i % 2 else 1, facing=facing)
+        parts += _hinged_door(col, mats, w, WALL_UNIT_H, cx, front_y, z + WALL_UNIT_H / 2, cab,
+                              handle_side=-1 if i % 2 else 1, facing=facing)
     return parts
 
 
@@ -214,20 +303,26 @@ def island(col, mats, cx, cy, w, d, carcass="cab_navy", worktop="worktop",
     h = COUNTER_H
     body_d = d - FRONT_SET
     body_cy = cy + FRONT_SET / 2
-    parts.append(g.box("carcass", (w, body_d, h - PLINTH), loc=(cx, body_cy, PLINTH + (h - PLINTH) / 2),
-                       col=col, mat=cab))
-    parts.append(g.box("plinth", (w - 0.06, body_d - 0.06, PLINTH), loc=(cx, body_cy, PLINTH / 2),
-                       col=col, mat=mats["trim_charcoal"] if "trim_charcoal" in mats else cab))
-
     front_y = cy - d / 2 + FRONT_T / 2
     front_h = h - PLINTH - 0.03
     n = max(2, round(w / 0.6))
+    # Hollow, for the drawers: a partition between each stack of them, a
+    # rail between each two.
+    rails, z = [], PLINTH + 0.015
+    for share in (0.22, 0.34):
+        z += front_h * share
+        rails.append(z)
+    parts += _shell(col, cab, cx - w / 2, cx + w / 2, cy + d / 2, cy - d / 2 + FRONT_SET, PLINTH, h,
+                    columns=[cx - w / 2 + k * w / n for k in range(1, n)], dividers=rails)
+    parts.append(g.box("plinth", (w - 0.06, body_d - 0.06, PLINTH), loc=(cx, body_cy, PLINTH / 2),
+                       col=col, mat=mats["trim_charcoal"] if "trim_charcoal" in mats else cab))
+
     for i in range(n):
         x = cx - w / 2 + (i + 0.5) * (w / n)
         z = PLINTH + 0.015
         for share in (0.22, 0.34, 0.44):
             dh = front_h * share
-            parts += _drawer_front(col, mats, w / n, dh, x, front_y, z + dh / 2, cab)
+            parts += _drawer(col, mats, w / n, dh, x, front_y, z + dh / 2, cab, depth=body_d - 0.06)
             z += dh
 
     parts.append(g.box("top", (w + 0.06, d + overhang + 0.06, 0.042),
@@ -364,17 +459,46 @@ def tap(col, mats, x, y, z, height=0.36, reach=0.19, towards=-1):
 
 
 def fridge(col, mats, cx, cy, facing=-1, w=0.91, d=0.70, h=1.79):
-    """An American-style fridge-freezer in brushed steel."""
-    steel = mats["steel"]
-    parts = [g.box("fridge", (w, d, h), loc=(cx, cy, h / 2), col=col, mat=steel, bevel=0.008)]
-    fy = cy + facing * (d / 2 - 0.004)
+    """An American-style fridge-freezer in brushed steel: a freezer and a
+    fridge side by side behind a door each, hung on their outer edges.
+    Inside, white, with glass shelves in the fridge, white ones in the
+    freezer, bins on the insides of the doors, and a light at the top that
+    comes on when a door opens (the "light" fixture)."""
+    steel, liner, glass = mats["steel"], mats["cab_white"], mats["glass"]
+    dt = 0.03                                    # the doors' thickness
+    back = cy - facing * d / 2
+    front = cy + facing * (d / 2 - dt - 0.002)   # the cabinet's, behind the doors
+    parts = _shell(col, steel, cx - w / 2, cx + w / 2, back, front, 0, h, t=0.012)
+    # The white liner, the walls' insulation behind it, and the partition.
+    parts += _shell(col, liner, cx - w / 2 + 0.012, cx + w / 2 - 0.012, back + facing * 0.012, front,
+                    0.012, h - 0.012, t=0.035, columns=[cx])
+    for z in (0.45, 0.80, 1.15, 1.45):
+        for s in (-1, 1):
+            parts.append(g.box("shelf", (w / 2 - 0.08, d - dt - 0.14, 0.008),
+                               loc=(cx + s * w / 4, cy - facing * 0.02, z), col=col,
+                               mat=glass if s > 0 else liner))
+    fy = cy + facing * (d / 2 - dt / 2)
     for s in (-1, 1):
-        parts.append(g.box("fr_door", (w / 2 - 0.008, 0.03, h - 0.06),
-                           loc=(cx + s * w / 4, fy, h / 2), col=col, mat=steel, bevel=0.006))
-        parts += _handle(col, mats, cx + s * (w / 4 + (0.16 * -s)), fy + facing * 0.02,
-                         h * 0.62, 0.55, vertical=True)
-    parts.append(g.box("fr_gap", (0.012, 0.035, h - 0.08), loc=(cx, fy + facing * 0.004, h / 2),
-                       col=col, mat=mats["black_metal"]))
+        dw = w / 2 - 0.008
+        dx = cx + s * w / 4
+        door = [g.box("fr_door", (dw, dt, h - 0.06), loc=(dx, fy, h / 2), col=col, mat=steel, bevel=0.006)]
+        door += _handle(col, mats, cx + s * (w / 4 + (0.16 * -s)), fy + facing * 0.02,
+                        h * 0.62, 0.55, vertical=True)
+        # Its inside: a white liner and three bins.
+        inner = fy - facing * (dt / 2 + 0.01)
+        door.append(g.box("fr_liner", (dw - 0.06, 0.02, h - 0.2), loc=(dx, inner, h / 2), col=col, mat=liner))
+        for z in (0.5, 0.95, 1.4):
+            door.append(g.box("fr_bin", (dw - 0.1, 0.09, 0.012), loc=(dx, inner - facing * 0.055, z),
+                              col=col, mat=liner))
+            door.append(g.box("fr_bin", (dw - 0.1, 0.008, 0.07),
+                              loc=(dx, inner - facing * 0.096, z + 0.035), col=col, mat=glass))
+        hinge = (cx + s * (w / 2 - 0.004), fy - facing * dt / 2, h / 2)
+        parts += g.hinged(door, hinge, facing * -s * SWING, col)
+    # At the front of the top, shining down on the shelves and out of an
+    # open door — not back through the fridge onto the wall behind it.
+    parts.append(g.fixture("light", (cx, front - facing * 0.08, h - 0.10),
+                           {"light": {"power": 3.0, "color": "#eef4ff", "reach": 1.8}}, col,
+                           aim=(0, facing * 0.45, -1)))
     return parts
 
 
@@ -395,22 +519,26 @@ def tall_housing(col, mats, x0, x1, y, facing, h=2.20, d=0.62, carcass="cab_sage
     front_y = y + facing * (d - FRONT_T / 2)
     face = y + facing * d
     plinth = mats["trim_charcoal"] if "trim_charcoal" in mats else cab
-    parts = [g.box("tall", (total, body, h - PLINTH),
-                   loc=(x0 + total / 2, y + facing * body / 2, PLINTH + (h - PLINTH) / 2), col=col, mat=cab),
-             g.box("plinth", (total, body - 0.05, PLINTH),
+    parts = [g.box("plinth", (total, body - 0.05, PLINTH),
                    loc=(x0 + total / 2, y + facing * (body - 0.05) / 2, PLINTH / 2), col=col, mat=plinth)]
 
     def door(cx, w, z0, z1, side):
-        return _door_front(col, mats, w, z1 - z0, cx, front_y, (z0 + z1) / 2, cab,
-                           handle_side=side, facing=facing)
+        return _hinged_door(col, mats, w, z1 - z0, cx, front_y, (z0 + z1) / 2, cab,
+                            handle_side=side, facing=facing)
 
     x = x0
     for i, (kind, w) in enumerate(columns):
         cx = x + w / 2
         side = -1 if i % 2 else 1
         z0 = PLINTH + 0.015
+        # Each column hollow, for its doors to open on: rails where its
+        # doors meet, shelves behind them.
+        rails, shelves = {"ovens": ([0.60, 1.70], [1.95]), "microwave": ([1.38, 1.74], [0.75, 1.95])}.get(
+            kind, ([1.70], [0.55, 0.95, 1.35, 1.95]))
+        parts += _shell(col, cab, x, x + w, y, y + facing * body, PLINTH, h, dividers=rails, shelves=shelves)
         if kind == "ovens":
-            parts += _drawer_front(col, mats, w, 0.60 - z0, cx, front_y, (z0 + 0.60) / 2, cab, facing=facing)
+            parts += _drawer(col, mats, w, 0.60 - z0, cx, front_y, (z0 + 0.60) / 2, cab, facing=facing,
+                             depth=body - 0.06)
             parts += _oven(col, mats, cx, face, 0.62, w, facing=facing, h=0.59)
             parts += _oven(col, mats, cx, face, 1.23, w, facing=facing, h=0.45)
             parts += door(cx, w, 1.70, h - 0.015, side)
@@ -444,11 +572,18 @@ def microwave(col, mats, cx, cy, z, facing=-1, w=0.55, d=0.38, h=0.32):
     """A microwave whose front is at `cy`, facing `facing`, standing at `z`."""
     steel, black = mats["steel"], mats["black_metal"]
     f = facing
-    return [g.box("mw", (w, d, h), loc=(cx, cy - f * d / 2, z + h / 2), col=col, mat=steel, bevel=0.005),
-            g.box("mw_glass", (w * 0.62, 0.008, h - 0.09), loc=(cx - w * 0.16, cy + f * 0.002, z + h / 2),
-                  col=col, mat=black),
-            g.box("mw_panel", (w * 0.24, 0.008, h - 0.09), loc=(cx + w * 0.33, cy + f * 0.002, z + h / 2),
+    # Hollow behind its door, a glass plate on its floor; the controls to
+    # the right of the door, which is hung on its left edge.
+    parts = _shell(col, steel, cx - w / 2, cx + w / 2, cy - f * d, cy - f * 0.012, z, z + h, t=0.01)
+    parts.append(g.cylinder("mw_plate", 0.11, 0.006, loc=(cx - w * 0.12, cy - f * d / 2, z + 0.02),
+                            col=col, mat=mats["glass"]))
+    parts.append(g.box("mw_panel", (w * 0.24, 0.012, h - 0.02), loc=(cx + w * 0.37, cy - f * 0.006, z + h / 2),
+                       col=col, mat=black))
+    door = [g.box("mw_door", (w * 0.745, 0.012, h - 0.02), loc=(cx - w * 0.1225, cy - f * 0.006, z + h / 2),
+                  col=col, mat=steel, bevel=0.003),
+            g.box("mw_glass", (w * 0.56, 0.004, h - 0.09), loc=(cx - w * 0.15, cy + f * 0.001, z + h / 2),
                   col=col, mat=black)]
+    return parts + g.hinged(door, (cx - w / 2, cy - f * 0.012, z + h / 2), f * SWING, col)
 
 
 # ---------------------------------------------------------------------
@@ -543,12 +678,12 @@ def vanity(col, mats, x, y, w=1.10, d=0.50, rot=0.0, carcass="cab_oak", basins=1
     front = y + d
 
     # The carcass stops 2 cm short of the front so the drawer fronts sit on
-    # it with a millimetre's gap, not buried in it.
-    parts = [g.box("vanity", (w, d - 0.02, h), loc=(x, y + (d - 0.02) / 2, z0 + h / 2),
-                   col=col, mat=cab, bevel=0.004)]
+    # it with a millimetre's gap, not buried in it; hollow, for its two
+    # drawers, a rail between them.
+    parts = _shell(col, cab, x - w / 2, x + w / 2, y, y + d - 0.02, z0, z0 + h, dividers=[z0 + h / 2])
     for i in range(2):
-        parts += _drawer_front(col, mats, w - 0.02, h / 2 - 0.008, x, front - 0.0095,
-                               z0 + h * (0.27 + 0.5 * i), cab, facing=1, segments=10)
+        parts += _drawer(col, mats, w - 0.02, h / 2 - 0.008, x, front - 0.0095,
+                         z0 + h * (0.27 + 0.5 * i), cab, facing=1, depth=d - 0.08, segments=10)
     parts.append(g.box("top", (w + 0.02, d + 0.02, 0.030), loc=(x, y + d / 2, z0 + h + 0.015),
                        col=col, mat=mats["worktop"], bevel=0.003))
 
@@ -950,12 +1085,13 @@ def nightstand(col, mats, x, y, rot=0.0, w=0.46, d=0.40, h=0.52, carcass="cab_oa
     """Two drawers facing -Y at `rot` 0, on four short legs."""
     cab = mats[carcass]
     body = d - FRONT_SET
-    parts = [g.box("ns", (w, body, h - 0.10), loc=(x, y + FRONT_SET / 2, 0.10 + (h - 0.10) / 2), col=col,
-                   mat=cab, bevel=0.005)]
+    # Hollow, for its two drawers, a rail between them.
+    parts = _shell(col, cab, x - w / 2, x + w / 2, y + d / 2, y - d / 2 + FRONT_SET, 0.10, h,
+                   dividers=[0.10 + (h - 0.10) / 2])
     front_y = y - d / 2 + FRONT_T / 2
     for i in range(2):
-        parts += _drawer_front(col, mats, w, (h - 0.10) / 2, x, front_y,
-                               0.10 + (h - 0.10) * (0.25 + 0.5 * i), cab)
+        parts += _drawer(col, mats, w, (h - 0.10) / 2, x, front_y,
+                         0.10 + (h - 0.10) * (0.25 + 0.5 * i), cab, depth=body - 0.05)
     for sx in (-1, 1):
         for sy in (-1, 1):
             parts.append(g.cylinder("leg", 0.016, 0.10,
@@ -971,17 +1107,23 @@ def wardrobe(col, mats, x0, x1, y, facing=-1, h=2.30, d=0.62, carcass="cab_white
     total = x1 - x0
     body = d - FRONT_SET
     front_y = y + facing * (d - FRONT_T / 2)
-    parts = [g.box("wr", (total, body, h), loc=(x0 + total / 2, y + facing * body / 2, h / 2), col=col,
-                   mat=cab, bevel=0.004),
-             g.bar("cornice", g.CORNICE, total + 0.04,
-                   loc=(x0 - 0.02, y + facing * (d + 0.02), h),
-                   rot=(0, 0, 0 if facing < 0 else math.pi), col=col, mat=mats["trim_white"])]
     n = max(2, round(total / 0.60))
     w = total / n
+    # Hollow, a bay behind each pair of doors: a partition between them, a
+    # shelf across the top and a rail to hang clothes on under it.
+    bays = [x0 + k * 2 * w for k in range((n + 1) // 2 + 1)]
+    bays[-1] = min(bays[-1], x1)
+    parts = _shell(col, cab, x0, x1, y, y + facing * body, 0, h, columns=bays[1:-1], shelves=[h - 0.35])
+    parts.append(g.bar("cornice", g.CORNICE, total + 0.04,
+                       loc=(x0 - 0.02, y + facing * (d + 0.02), h),
+                       rot=(0, 0, 0 if facing < 0 else math.pi), col=col, mat=mats["trim_white"]))
+    for a, b in zip(bays, bays[1:]):
+        parts.append(g.cylinder("rail", 0.012, b - a - 0.05, loc=((a + b) / 2, y + facing * body / 2, h - 0.45),
+                                rot=(0, math.pi / 2, 0), col=col, mat=mats["steel"]))
     for i in range(n):
         cx = x0 + (i + 0.5) * w
-        parts += _door_front(col, mats, w, h - 0.06, cx, front_y, h / 2 + 0.01, cab,
-                             handle_side=-1 if i % 2 else 1, facing=facing)
+        parts += _hinged_door(col, mats, w, h - 0.06, cx, front_y, h / 2 + 0.01, cab,
+                              handle_side=-1 if i % 2 else 1, facing=facing)
     return parts
 
 

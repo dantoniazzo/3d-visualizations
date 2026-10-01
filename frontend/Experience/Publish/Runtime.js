@@ -31,6 +31,8 @@ import { canMerge, listStatic, materialKeys } from "../World/StaticBatcher.js";
 export async function buildRuntime(experience) {
     const builder = experience.world.sceneBuilder;
     await builder.furnitureReady;
+    // Every door and drawer shut, as the pieces collide and are published.
+    builder.openables.resetAll();
     builder.refreshCollision();
     const options = builder.staticOptions();
     const scene = new THREE.Scene();
@@ -84,12 +86,63 @@ export async function buildRuntime(experience) {
     };
     visit(builder.root);
 
+    // The furniture's doors and drawers, and the lights inside it, drawn
+    // live (World/Openables.js): each part shut, where its piece has it,
+    // saying what it does, which piece it is part of, and its floor.
+    const openable = new THREE.Group();
+    openable.name = "openable";
+    scene.add(openable);
+    const local = new THREE.Matrix4();
+    const inverse = new THREE.Matrix4();
+    for (const [id, { group }] of builder.furniture) {
+        group.updateWorldMatrix(true, true);
+        group.traverse((node) => {
+            const { opens, fixture } = node.userData ?? {};
+            if (!opens && !fixture) return;
+            const part = builder.openables.of(node);
+            const holder = new THREE.Group();
+            holder.name = node.name;
+            local.compose(part?.restPosition ?? node.position, part?.restQuaternion ?? node.quaternion, node.scale);
+            holder.applyMatrix4(node.parent.matrixWorld.clone().multiply(local));
+            // A light's aim, like the part, from the piece's frame to the world's.
+            const aim = fixture?.light?.aim;
+            const placed = aim
+                ? { ...fixture, light: { ...fixture.light, aim: new THREE.Vector3(...aim).transformDirection(node.parent.matrixWorld).toArray() } }
+                : fixture;
+            holder.userData = { piece: id, label: group.userData.label, ...(opens && { opens }), ...(placed && { fixture: placed }) };
+            if (opens) {
+                inverse.copy(node.matrixWorld).invert();
+                box.setFromObject(node);
+                const level = options.levelOf(node, box);
+                node.traverse((mesh) => {
+                    if (!mesh.isMesh || !mesh.geometry?.attributes.position) return;
+                    const geometry = mesh.geometry.clone().applyMatrix4(inverse.clone().multiply(mesh.matrixWorld));
+                    disposables.push(geometry);
+                    const copy = new THREE.Mesh(
+                        geometry,
+                        Array.isArray(mesh.material) ? mesh.material.map((m) => exportable(m, disposables)) : exportable(mesh.material, disposables)
+                    );
+                    copy.name = mesh.name;
+                    copy.userData = { level };
+                    holder.add(copy);
+                });
+            }
+            openable.add(holder);
+        });
+    }
+
     scene.userData = { runtime: 1, levels: options.levels };
     const glb = await new GLTFExporter().parseAsync(scene, { binary: true });
     for (const item of disposables) item.dispose();
     return {
         glb,
-        stats: { triangles, labels: labels.count, materials: keys.size, glass: glass.children.length },
+        stats: {
+            triangles,
+            labels: labels.count,
+            materials: keys.size,
+            glass: glass.children.length,
+            openable: openable.children.filter((node) => node.userData.opens).length,
+        },
     };
 }
 
@@ -210,7 +263,8 @@ function exportable(material, disposables) {
     const copy = material.clone();
     disposables.push(copy);
     copy.userData = { ...material.userData };
-    const finish = FINISHES[material.name] && material.map?.image instanceof HTMLCanvasElement ? material.name : null;
+    // A finish's own texture, generated or an image, by the finish it is named for.
+    const finish = FINISHES[material.name] && material.map?.name === material.name ? material.name : null;
     if (finish) {
         copy.map = null;
         copy.userData.finish = finish;

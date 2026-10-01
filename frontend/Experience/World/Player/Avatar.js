@@ -36,6 +36,9 @@ export default class Avatar {
         this.avatar.traverse((child) => {
             if (child.isMesh) {
                 child.castShadow = true;
+                // In the shade indoors — and, where the lamps are lit live,
+                // not lit through the wall by the lamp next door.
+                child.receiveShadow = true;
                 child.frustumCulled = false;
             }
         });
