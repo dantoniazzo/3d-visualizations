@@ -182,7 +182,7 @@ export default class Environment {
      * house's shadows (fitShadows) at full strength (setVariant): what the
      * house takes from the lightmap then is all its light but the sun's.
      */
-    useBaked(view = null, { live = false, shade = false, probes = false } = {}) {
+    useBaked(view = null, { live = false, shade = false, probes = false, still = false } = {}) {
         this.baked = true;
         this.live = live;
         // Drawn from the bake, the sun's shadow map is of what moves alone,
@@ -193,8 +193,10 @@ export default class Environment {
         // Unshadowed by the house, the sun would light people indoors as if
         // outdoors — unless the light probes say how much of it reaches them.
         this.sunScale = live || probes ? 1 : 0.5;
-        this.sun.castShadow = live || this.shade || !LOW_POWER;
-        this.renderer.renderer.shadowMap.enabled = live || this.shade || !LOW_POWER;
+        // Fully baked (`still`), no shadow map is drawn at all.
+        const shadows = !still && (live || this.shade || !LOW_POWER);
+        this.sun.castShadow = shadows;
+        this.renderer.renderer.shadowMap.enabled = shadows;
         if (live) {
             // Texels of a centimetre or so over the house: a small offset.
             this.sun.shadow.bias = -0.00015;

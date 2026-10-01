@@ -3,7 +3,8 @@ import { io } from "socket.io-client";
 
 import Experience from "./Experience/Experience.js";
 import elements from "./Experience/Utils/functions/elements.js";
-import { setQuality } from "./Experience/Utils/device.js";
+import { setLighting, setQuality } from "./Experience/Utils/device.js";
+import { chooseLighting, chosenLighting } from "./Experience/Utils/viewerChoices.js";
 import { finishesFor, FINISHES } from "../shared/catalog.js";
 import { publishOptions } from "../shared/publishOptions.js";
 
@@ -37,6 +38,11 @@ const dom = elements({
     lightsPanel: "#lights-panel",
     lightsList: "#lights-list",
     lightsAllOff: "#lights-all-off",
+    lightingSection: "#lighting-section",
+    lightingChoices: "#lighting-choices",
+    lightingNote: "#lighting-note",
+    scenerySection: "#scenery-section",
+    sceneryList: "#scenery-list",
     pickLabel: "#pick-label",
     menuPanel: "#menu-panel",
     menuSceneName: "#menu-scene-name",
@@ -147,6 +153,8 @@ async function openScene(sceneId, options = {}) {
         if (wantPublished && version && !published) throw new Error(`There is no published version ${version} of this space.`);
         if (published) {
             setQuality(published.options.quality);
+            // As the version is published, unless its visitor has chosen otherwise.
+            setLighting(published.options.lighting, chosenLighting());
             enterScene(sceneId, published.spec, { ...options, published });
             return;
         }
@@ -247,6 +255,7 @@ function enterScene(sceneId, spec, options = {}) {
     world.on("publish", () => startPublish());
     world.on("lighting", updateLightingToggle);
     world.on("switches-ready", setupLights);
+    world.on("scenery-ready", setupViewOptions);
     world.on("switches", renderLights);
     world.on("bird-hover", showPickLabel);
     world.on("bird-ready", setupFloorPicker);
@@ -734,6 +743,71 @@ dom.lightsList.addEventListener("click", (event) => {
 });
 
 dom.lightsAllOff.addEventListener("click", () => experience?.world?.switches?.allOff());
+
+// ---------------------------------------------------------------------
+// The view's options: lighting and scenery, for a slow phone
+// ---------------------------------------------------------------------
+
+/** The lighting a visitor can pick (Utils/device.js's lightingMode), "auto" as published. */
+const LIGHTING_CHOICES = [
+    { id: "auto", label: "Auto", note: "as this version is published, for this device" },
+    { id: "live", label: "Best", note: "the sun and the lamps live, with shadows" },
+    { id: "baked", label: "Balanced", note: "baked light; people and the car shade the sun" },
+    { id: "static", label: "Fastest", note: "baked light alone, nothing live" },
+];
+
+/**
+ * The menu's lighting and scenery, once a public view is up: how it is lit
+ * — only once baked, and "Best" only where the bake has its light apart —
+ * and what of the scenery (World/Scenery.js) it has to hide.
+ */
+function setupViewOptions(scenery) {
+    const lighting = experience.published?.lighting;
+    if (lighting?.variants) {
+        const choices = LIGHTING_CHOICES.filter((choice) => choice.id !== "live" || lighting.variants.day?.indirect);
+        const chosen = chosenLighting() ?? "auto";
+        dom.lightingChoices.innerHTML = choices
+            .map(
+                (choice) =>
+                    `<button class="chip" data-lighting="${choice.id}" aria-pressed="${choice.id === chosen}">${escapeHtml(choice.label)}</button>`
+            )
+            .join("");
+        const now = LIGHTING_CHOICES.find((choice) => choice.id === experience.world.lightingMode);
+        dom.lightingNote.textContent = `${now ? `Now ${now.label.toLowerCase()}: ${now.note}. ` : ""}Changing it reloads the view.`;
+        dom.lightingSection.hidden = false;
+    }
+    renderScenery(scenery);
+    scenery.on("change", () => renderScenery(scenery));
+}
+
+function renderScenery(scenery) {
+    const pieces = scenery.pieces;
+    dom.scenerySection.hidden = !pieces.length;
+    dom.sceneryList.innerHTML = pieces
+        .map(
+            (piece) => `<button class="light-switch${piece.shown ? " is-on" : ""}" data-scenery="${piece.id}" aria-pressed="${piece.shown}">
+                <span class="light-switch-label">${escapeHtml(piece.label)}</span>
+                <span class="light-switch-toggle" aria-hidden="true"></span>
+            </button>`
+        )
+        .join("");
+}
+
+dom.lightingChoices.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-lighting]");
+    if (!button || button.getAttribute("aria-pressed") === "true") return;
+    chooseLighting(button.dataset.lighting === "auto" ? null : button.dataset.lighting);
+    // A link's own ?lighting= would overrule it.
+    const url = new URL(window.location.href);
+    url.searchParams.delete("lighting");
+    window.location.replace(url);
+});
+
+dom.sceneryList.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-scenery]");
+    const scenery = experience?.world?.scenery;
+    if (button && scenery) scenery.set(button.dataset.scenery, button.getAttribute("aria-pressed") !== "true");
+});
 
 /** From above, the light under the mouse and what a click will do to it. */
 function showPickLabel(hover) {

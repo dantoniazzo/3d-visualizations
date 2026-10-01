@@ -10,6 +10,7 @@ import BirdView from "./BirdView.js";
 import Switches from "./Switches.js";
 import LiveLamps from "./LiveLamps.js";
 import ProbeLight from "./ProbeLight.js";
+import Scenery from "./Scenery.js";
 import Vegetation from "./Vegetation/Vegetation.js";
 import { chromaURL, doorStatesURL, lightingMode, lightmapURL, movingShadowsOnly, sunMaskURL } from "../Utils/device.js";
 import { groundGradient } from "../../../shared/vegetation.js";
@@ -52,17 +53,21 @@ export default class World extends EventEmitter {
                     } else {
                         // All of its light from the bake, or the sun and the
                         // lamps live on top of the rest of it.
-                        const live = Boolean(lighting) && lightingMode(lighting) === "live";
+                        this.lightingMode = lighting ? lightingMode(lighting) : null;
+                        const live = this.lightingMode === "live";
+                        // Fully baked: nothing drawn live at all.
+                        const still = this.lightingMode === "static";
                         // Drawn from the bake, as on a phone: what moves still
                         // shades the sun in the house, and the light probes
                         // light it, when the bake has them.
                         const shade = movingShadowsOnly(lighting);
-                        const probes = Boolean(lighting?.probes);
-                        this.sceneBuilder.usePublishedView(snapshot, lighting, { ...published.options, live, shade, probes });
+                        const probes = Boolean(lighting?.probes) && !still;
+                        const doors = !still;
+                        this.sceneBuilder.usePublishedView(snapshot, lighting, { ...published.options, live, shade, probes, doors });
                         if (lighting) {
                             // The room lights are in the lightmaps now.
                             if (this.sceneBuilder.lights) this.sceneBuilder.lights.visible = false;
-                            this.environment.useBaked(lighting.view, { live: this.sceneBuilder.liveLight, shade, probes });
+                            this.environment.useBaked(lighting.view, { live: this.sceneBuilder.liveLight, shade, probes, still });
                             // Its light switches, when its fittings were baked apart.
                             if (lighting.switches?.length && lighting.variants) {
                                 this.switches = new Switches(this.sceneBuilder, published);
@@ -79,12 +84,15 @@ export default class World extends EventEmitter {
                             // ...and the light probes that light the people and the car.
                             if (probes) this.loadProbes(lighting.probes, { sunFromProbes: !this.sceneBuilder.liveLight });
                             // How much of each room's light stays as its doors shut.
-                            if (lighting.doorStates) this.loadDoorStates(lighting.doorStates);
+                            if (doors && lighting.doorStates) this.loadDoorStates(lighting.doorStates);
                             this.setLighting("day").then(() => {
                                 if (this.switches) this.emit("switches-ready", this.switches);
                             });
                         }
                     }
+                    // The scenery its visitor can hide, as they last left it.
+                    this.scenery = new Scenery(this, this.experience.hiddenScenery);
+                    this.emit("scenery-ready", this.scenery);
                     // From opening the page, for the ?stats readout.
                     this.readyIn = { ms: performance.now(), built: !runtime };
                     // Each floor from above, once its meshes say which floor they are.

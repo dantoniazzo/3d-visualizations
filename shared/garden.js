@@ -44,6 +44,7 @@ export const GARDEN = {
     },
     tufts: {
         label: "Hills' grass",
+        enabled: { label: "Show the hills' grass", value: true },
         // Fluffy Tree's grass grows in patches, sand between them: as thick
         // as this in a patch's middle, patches over this much of the ground.
         density: { label: "Tufts a m² (in a patch)", value: 36, min: 0, max: 100, step: 0.5 },
@@ -64,6 +65,7 @@ export const GARDEN = {
     },
     trees: {
         label: "Trees",
+        enabled: { label: "Show the trees and bushes", value: true },
         scale: { label: "Size", value: 0.7, min: 0.3, max: 1.5, step: 0.01 },
         gardenArea: { label: "m² of back garden a tree", value: 55, min: 15, max: 400, step: 1 },
         hillTrees: { label: "Trees on the hills", value: 5, min: 0, max: 20, step: 1 },

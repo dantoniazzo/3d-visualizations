@@ -166,6 +166,7 @@ export function planFence(spec) {
  * @returns {{ id, x, z, y, radius, height, seed }[]}
  */
 export function planBushes(spec, fence = planFence(spec), trees = planTrees(spec)) {
+    if (!gardenSettings(spec).trees.enabled) return [];
     const lawns = lawnRooms(spec);
     const random = mulberry32(seedOf(spec.rooms || []) ^ 0x5bd1e995);
     const bushes = [];
@@ -225,7 +226,7 @@ export function planTrees(spec) {
     const rooms = spec.rooms || [];
     const ground = rooms.filter((room) => FINISHES[room.floor_finish]?.kind === "ground");
     const lawns = backGardenLawns(spec);
-    if (!lawns.length) return [];
+    if (!lawns.length || !gardenSettings(spec).trees.enabled) return [];
     const paving = ground.filter((room) => !isLawn(room));
     const house = rooms.filter((room) => FINISHES[room.floor_finish]?.kind !== "ground");
     const site = bounds(ground.filter((room) => !isRoad(room)));
@@ -383,7 +384,7 @@ export function hillOutline(hills) {
  */
 export function planHillTrees(spec, hills = planHills(spec)) {
     const settings = gardenSettings(spec).trees;
-    if (!hills || !settings.hillTrees) return [];
+    if (!hills || !settings.enabled || !settings.hillTrees) return [];
     const random = mulberry32(seedOf(spec.rooms || []) ^ 0x1b873593);
     const at = (u, v) => [hills.across[0] * u + hills.dir[0] * v, hills.across[1] * u + hills.dir[1] * v];
     const places = [];

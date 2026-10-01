@@ -33,6 +33,9 @@ import { applySettings, barkMaterial, bladeMaterial, canopyMaterial, lawnMateria
  * Each is cut into squares (build.js's CHUNK), each drawn only when on
  * screen and near enough, a far square of blades with fewer of them.
  *
+ * A visitor can hide each of it (show, World/Scenery.js): the trees and
+ * bushes, the grass, and with the hills their trees and grass.
+ *
  * Its light is Fluffy Tree's (shaders.js), its sun the view's:
  *   - live, the scene's sun, and its shadow;
  *   - in a baked view, which has no shadows, the grass takes the sun's
@@ -84,9 +87,39 @@ export default class Vegetation {
         this.leafTexture.anisotropy = 4;
 
         this.settings = gardenSettings(this.spec);
+        /** What a visitor has not hidden (show). */
+        this.shown = { trees: true, hills: true, grass: true };
         applySettings(this.settings);
         this.grow();
         this.setLight("day");
+    }
+
+    /**
+     * Show or hide parts of it (World/Scenery.js): `trees`, the trees and
+     * the bushes; `hills`, the trees and the grass on the hills; `grass`,
+     * every blade and tuft. Hidden, they are not drawn, and the trees are
+     * not walked into.
+     *
+     * @param {{ trees?: boolean, hills?: boolean, grass?: boolean }} shown
+     */
+    show(shown) {
+        const before = JSON.stringify(this.shown);
+        Object.assign(this.shown, shown);
+        if (JSON.stringify(this.shown) === before) return;
+        this.showTrees();
+        if (this.bushLeaves) this.bushLeaves.visible = this.shown.trees;
+        this.buildTrunks();
+        // The grass is shown or not as it is drawn (update).
+        if (!this.shown.grass || !this.shown.hills) for (const chunk of this.tuftChunks ?? []) chunk.mesh.visible = false;
+        if (!this.shown.grass) {
+            for (const chunk of this.bladeChunks ?? []) chunk.mesh.visible = false;
+            for (const piece of this.pieces ?? []) piece.mesh.visible = false;
+        }
+    }
+
+    /** Whether the tree planted `index`th is shown: a hill's only with the hills. */
+    treeShown(index) {
+        return this.shown.trees && (index < this.gardenTreeCount || this.shown.hills);
     }
 
     /**
@@ -106,7 +139,7 @@ export default class Vegetation {
         const { hills, trees, tufts, blades, shells } = this.settings;
         const keys = {
             plan: JSON.stringify([hills, trees]),
-            tufts: JSON.stringify([hills, trees, tufts.density, tufts.coverage, tufts.patchSize]),
+            tufts: JSON.stringify([hills, trees, tufts.enabled, tufts.density, tufts.coverage, tufts.patchSize]),
             blades: JSON.stringify([trees, blades.enabled, blades.density, blades.joints]),
             shells: JSON.stringify([shells.enabled]),
         };
@@ -126,6 +159,8 @@ export default class Vegetation {
     /** Where the trees, the bushes and the hills are. */
     plan() {
         const gardenTrees = planTrees(this.spec);
+        // The garden's first, the hills' after them.
+        this.gardenTreeCount = gardenTrees.length;
         this.hills = planHills(this.spec);
         this.trees = [...gardenTrees, ...planHillTrees(this.spec, this.hills)];
         this.bushes = planBushes(this.spec, planFence(this.spec), gardenTrees);
@@ -146,14 +181,7 @@ export default class Vegetation {
         const trees = this.trees;
         const token = (this.treeToken = (this.treeToken ?? 0) + 1);
 
-        const trunks = new THREE.Group();
-        for (const tree of trees) {
-            const trunk = new THREE.Mesh(new THREE.CylinderGeometry(tree.trunk, tree.trunk, 2.4, 8));
-            trunk.position.set(tree.x, tree.y + 1.2, tree.z);
-            trunks.add(trunk);
-        }
-        this.world.collision.setOutdoor(buildOctree([trunks]));
-        for (const trunk of trunks.children) trunk.geometry.dispose();
+        this.buildTrunks();
         if (!trees.length) return;
 
         this.treeModel ??= this.experience.resources.loaders.gltfLoader.loadAsync(TREE_MODEL);
@@ -162,6 +190,36 @@ export default class Vegetation {
                 if (!this.disposed && token === this.treeToken) this.placeTrees(gltf, trees);
             })
             .catch((error) => console.warn("Could not load the trees:", error.message));
+    }
+
+    /** A trunk for each tree shown, to walk into. */
+    buildTrunks() {
+        const trunks = new THREE.Group();
+        this.trees.forEach((tree, index) => {
+            if (!this.treeShown(index)) return;
+            const trunk = new THREE.Mesh(new THREE.CylinderGeometry(tree.trunk, tree.trunk, 2.4, 8));
+            trunk.position.set(tree.x, tree.y + 1.2, tree.z);
+            trunks.add(trunk);
+        });
+        this.world.collision.setOutdoor(buildOctree([trunks]));
+        for (const trunk of trunks.children) trunk.geometry.dispose();
+    }
+
+    /** Each tree's instance where it stands, or none for a tree hidden (treeShown). */
+    showTrees() {
+        const none = new THREE.Matrix4().makeScale(0, 0, 0);
+        const matrix = new THREE.Matrix4();
+        for (const mesh of this.treeMeshes ?? []) {
+            const { placed, part } = mesh.userData;
+            let any = false;
+            placed.forEach((m, i) => {
+                const shown = this.treeShown(i);
+                any ||= shown;
+                mesh.setMatrixAt(i, shown ? matrix.multiplyMatrices(m, part) : none);
+            });
+            mesh.instanceMatrix.needsUpdate = true;
+            mesh.visible = any;
+        }
     }
 
     placeTrees(gltf, trees) {
@@ -187,12 +245,15 @@ export default class Vegetation {
             placed.forEach((m, i) => mesh.setMatrixAt(i, matrix.multiplyMatrices(m, part.matrixWorld)));
             mesh.instanceMatrix.needsUpdate = true;
             mesh.computeBoundingSphere();
+            mesh.userData = { placed, part: part.matrixWorld.clone() };
             mesh.castShadow = this.castsShadows;
             mesh.receiveShadow = true;
             mesh.name = crown ? "tree-leaves" : "tree-trunks";
             this.group.add(mesh);
             this.treeMeshes.push(mesh);
         });
+        // Those a visitor has hidden, hidden.
+        this.showTrees();
     }
 
     /** The bushes' leaves, one mesh for all of them. */
@@ -208,6 +269,7 @@ export default class Vegetation {
         this.bushLeaves.castShadow = this.castsShadows;
         this.bushLeaves.receiveShadow = true;
         this.bushLeaves.name = "bushes";
+        this.bushLeaves.visible = this.shown.trees;
         this.group.add(this.bushLeaves);
     }
 
@@ -301,7 +363,7 @@ export default class Vegetation {
             chunk.mesh.dispose();
         }
         this.tuftChunks = null;
-        if (!this.hills) return;
+        if (!this.hills || !this.settings.tufts.enabled) return;
         if (!this.tuftTexture) {
             this.tuftTexture = new THREE.TextureLoader().load("/textures/vegetation/grass-tuft.png");
             this.tuftTexture.colorSpace = THREE.SRGBColorSpace;
@@ -557,7 +619,9 @@ export default class Vegetation {
         uniforms.uTime.value += delta;
         // The camera the view is drawn from: edit mode's, or the visitor's.
         this.experience.camera.activeCamera.getWorldPosition(_camera);
-        for (const piece of this.pieces ?? []) {
+        // Hidden by a visitor (show), not drawn at all.
+        const grass = this.shown.grass;
+        for (const piece of grass ? this.pieces ?? [] : []) {
             if (piece.bare) continue;
             // The blades' height at the piece's nearest: the shells above it would show nothing.
             const reach = 1 - THREE.MathUtils.smoothstep(piece.box.distanceToPoint(_camera), LAWN.fadeStart, LAWN.fadeEnd);
@@ -573,12 +637,12 @@ export default class Vegetation {
             piece.mesh.visible = count > 0;
         }
         const tuftDistance = this.settings.tufts.distance * LOW.distance;
-        for (const chunk of this.tuftChunks ?? []) {
+        for (const chunk of grass && this.shown.hills ? this.tuftChunks ?? [] : []) {
             chunk.mesh.visible = chunk.box.distanceToPoint(_camera) < tuftDistance;
         }
         const bladeDistance = this.settings.blades.distance * LOW.distance;
         const near = bladeDistance * BLADES_NEAR;
-        for (const chunk of this.bladeChunks ?? []) {
+        for (const chunk of grass ? this.bladeChunks ?? [] : []) {
             const distance = chunk.box.distanceToPoint(_camera);
             let share = 1;
             if (distance >= bladeDistance) share = 0;

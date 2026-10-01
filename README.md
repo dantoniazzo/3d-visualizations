@@ -331,7 +331,10 @@ there were any, builds the house as before.
 **Comparing optimisations.** The Publish panel starts with a checklist of
 what the version is made with (`shared/publishOptions.js`): removing hidden
 faces, merging, compression, plain glass, baked lighting (off, draft or
-final) and the phone quality tier. Every version is kept and listed under
+final), the phone quality tier, how it is lit (below) and its scenery — the
+car, the trees and bushes, the hills, the grass, each of which can be left
+out: neither drawn nor baked, and the car never downloaded (`shared/scenery.js`;
+the hills, being ground, are published without the hole cut for them). Every version is kept and listed under
 it with what it was made with, its triangles, meshes and download, and an
 *Open* link — `/view/<id>?version=<version>&stats` — so two versions can be
 compared side by side; the `?stats` overlay names the version and options
@@ -449,6 +452,27 @@ it reaches: no longer through the walls at half strength. The shadow map
 is drawn again only when something moves. The lamps stay baked on a
 phone: they light what moves through the probes, but it casts no shadow
 from them.
+
+**Fully baked.** For the slowest phones there is a third way to draw it:
+all of the light from the bake and nothing live — no shadow map at all, no
+light probes, no door dimming its rooms — the house unlit, as the view was
+before any of the above. The Publish panel's *Lighting* says who gets it:
+live off a phone and moving shadows on one (the default), live off a phone
+and fully baked on one, or fully baked everywhere. `?lighting=live`,
+`?lighting=baked` or `?lighting=static` in a link overrides it.
+
+**The visitor's own choices.** The public view's menu (**M**) has the same
+choice for whoever is looking — *Auto* (as published), *Best*, *Balanced*
+or *Fastest*, which reloads the view — and a switch for each piece of
+scenery the version has, which hides it at once: the car (not downloaded
+while hidden), the trees and bushes, the hills (laid flat, being ground;
+their trees and grass go with them) and the grass. Both are kept on the
+visitor's device for every space (`Utils/viewerChoices.js`,
+`World/Scenery.js`). What they cost, drawn fully baked on the phone tier:
+from the front path, the trees are 0.93 of its 1.45 million triangles and
+the car 0.25 (53 draw calls); the grass and the hills' tufts about 45 draw
+calls each; the house itself about 550 draw calls. A hidden tree's shade
+stays baked on the lawn.
 
 **Doors shut.** The bake has no door leaves, so its light comes through
 every doorway, shut or not: the live sun and lamps are shaded by the leaves,

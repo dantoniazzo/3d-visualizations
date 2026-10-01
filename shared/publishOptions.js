@@ -4,8 +4,10 @@
  * the same space twice and opening the two versions side by side.
  *
  * Each published version records the options it was made with; the public
- * view reads them back (`glass`, `quality`), as does the bake (`compress`).
+ * view reads them back (`glass`, `quality`, `lighting`), as does the bake
+ * (`compress`). `scenery` is what of it the version has at all.
  */
+import { SCENERY, SCENERY_IDS } from "./scenery.js";
 
 export const PUBLISH_OPTIONS = [
     {
@@ -54,6 +56,24 @@ export const PUBLISH_OPTIONS = [
         ],
         default: "auto",
     },
+    {
+        id: "lighting",
+        label: "Lighting",
+        hint: "Once baked. Live: the sun and the lamps drawn live, with shadows; on a phone, the bake's light with what moves shading the sun. Fully baked: the bake's light alone, nothing drawn live — the lightest there is. Visitors can still pick another in the menu; ?lighting= in a link overrides both.",
+        choices: [
+            { value: "auto", label: "Live", detail: "phones with moving shadows" },
+            { value: "phones", label: "Live", detail: "phones fully baked" },
+            { value: "static", label: "Fully baked", detail: "everywhere" },
+        ],
+        default: "auto",
+    },
+    {
+        id: "scenery",
+        label: "Scenery",
+        hint: "What of the garden and round it the version has. Left out, it is neither drawn nor baked; visitors can hide the rest themselves.",
+        pieces: SCENERY.map(({ id, label }) => ({ value: id, label })),
+        default: SCENERY_IDS,
+    },
 ];
 
 /** What each bake setting bakes with: samples, and the lightmap's size. */
@@ -74,7 +94,11 @@ export function publishOptions(input = {}) {
     const options = {};
     for (const option of PUBLISH_OPTIONS) {
         const value = input?.[option.id];
-        if (option.choices) {
+        if (option.pieces) {
+            options[option.id] = Array.isArray(value)
+                ? option.pieces.map((piece) => piece.value).filter((piece) => value.includes(piece))
+                : [...option.default];
+        } else if (option.choices) {
             options[option.id] = option.choices.some((choice) => choice.value === value) ? value : option.default;
         } else {
             options[option.id] = typeof value === "boolean" ? value : option.default;
@@ -93,6 +117,10 @@ export function describeOptions(options) {
         o.glass ? "plain glass" : "refractive glass",
     ];
     if (o.quality !== "auto") parts.push(`quality ${o.quality}`);
+    if (o.lighting === "phones") parts.push("phones fully baked");
+    if (o.lighting === "static") parts.push("fully baked");
+    const left = SCENERY.filter((piece) => !o.scenery.includes(piece.id)).map((piece) => piece.label.toLowerCase());
+    if (left.length) parts.push(`no ${left.join(", ")}`);
     return parts.join(" · ");
 }
 
