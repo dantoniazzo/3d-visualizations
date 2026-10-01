@@ -222,6 +222,8 @@ export function isTransient(object) {
         object.userData?.kind === "door" ||
             object.userData?.doorLeaf ||
             object.userData?.helper ||
-            object.userData?.decor
+            object.userData?.decor ||
+            // A piece of furniture's doors and drawers (Openables.js).
+            object.userData?.opens !== undefined
     );
 }

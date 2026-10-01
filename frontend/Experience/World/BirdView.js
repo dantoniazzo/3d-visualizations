@@ -41,6 +41,19 @@ const REACH = 1.5;
 /** How far a press may move, in pixels, and still be a click rather than a drag. */
 const CLICK_SLOP = 6;
 
+/**
+ * A material that draws nothing — no colour, no depth — for a mesh kept
+ * only for its shadow (BirdView.showLit): single-sided as the mesh was, so
+ * its shadow is cast by the same faces.
+ */
+const shadowOnlyMaterials = new Map();
+function shadowOnly(side) {
+    if (!shadowOnlyMaterials.has(side)) {
+        shadowOnlyMaterials.set(side, new THREE.MeshBasicMaterial({ name: "shadow-only", colorWrite: false, depthWrite: false, side }));
+    }
+    return shadowOnlyMaterials.get(side);
+}
+
 const _offset = new THREE.Vector3();
 const _ndc = new THREE.Vector2();
 const _raycaster = new THREE.Raycaster();
@@ -115,6 +128,25 @@ export default class BirdView {
         if (level > shown) return false;
         if (kind === "roof") return false;
         return !(kind === "ceiling" && level === shown);
+    }
+
+    /**
+     * Show or take away one of the house's meshes in a view lit live. What
+     * a floor's view takes away still casts its shadow — the floor above
+     * shades this one, and a room's ceiling and the roof keep the sun off
+     * its floor, as they did when it was baked — drawn with a material that
+     * draws nothing. (The tops of the ceilings, which the bake lit with the
+     * roof off, take the sun unshadowed: SceneBuilder's bakedAmbient.)
+     */
+    static showLit(mesh, visible) {
+        if (visible) {
+            if (mesh.userData.drawnMaterial) mesh.material = mesh.userData.drawnMaterial;
+            mesh.visible = true;
+            return;
+        }
+        mesh.visible = true;
+        mesh.userData.drawnMaterial ??= mesh.material;
+        mesh.material = shadowOnly(mesh.userData.drawnMaterial.side);
     }
 
     // ------------------------------------------------------------------
@@ -216,8 +248,11 @@ export default class BirdView {
      */
     showFloor(shown) {
         const all = shown === null || shown === undefined;
+        const live = this.builder.liveLight;
         for (const mesh of this.builder.batches?.children || []) {
-            mesh.visible = all || BirdView.shows(mesh.userData.level ?? 0, mesh.userData.kind ?? null, shown);
+            const visible = all || BirdView.shows(mesh.userData.level ?? 0, mesh.userData.kind ?? null, shown);
+            if (live) BirdView.showLit(mesh, visible);
+            else mesh.visible = visible;
         }
         for (const entry of this.looseMeshes()) {
             entry.mesh.visible = all ? entry.visible : entry.visible && BirdView.shows(entry.level, entry.kind, shown);

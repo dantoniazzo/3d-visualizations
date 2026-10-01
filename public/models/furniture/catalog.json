@@ -93,7 +93,7 @@
             "size": [
                 1.24,
                 2.38,
-                0.72
+                0.64
             ],
             "anchor": "floor",
             "credit": "Built procedurally by blender/export_furniture.py",
@@ -173,7 +173,7 @@
             "size": [
                 0.6,
                 0.95,
-                0.68
+                0.64
             ],
             "anchor": "floor",
             "credit": "Built procedurally by blender/export_furniture.py",
@@ -188,8 +188,8 @@
             "yaw": 0,
             "size": [
                 1.71,
-                0.71,
-                0.78
+                0.75,
+                0.76
             ],
             "anchor": "floor",
             "credit": "Built procedurally by blender/export_furniture.py",
@@ -237,7 +237,7 @@
             "size": [
                 0.91,
                 1.79,
-                0.72
+                0.71
             ],
             "anchor": "floor",
             "credit": "Built procedurally by blender/export_furniture.py",
@@ -379,9 +379,9 @@
             "scale": 1,
             "yaw": 0,
             "size": [
-                0.82,
-                0.96,
-                0.77
+                0.79,
+                0.87,
+                0.83
             ],
             "anchor": "floor",
             "credit": "Built procedurally by blender/export_furniture.py",
@@ -587,8 +587,8 @@
             "scale": 1,
             "yaw": 0,
             "size": [
-                0.33,
-                0.23,
+                0.32,
+                0.22,
                 0.29
             ],
             "anchor": "floor",
@@ -603,9 +603,9 @@
             "scale": 1,
             "yaw": 0,
             "size": [
-                0.16,
-                0.45,
-                0.34
+                0.15,
+                0.41,
+                0.39
             ],
             "anchor": "floor",
             "credit": "Built procedurally by blender/export_furniture.py",

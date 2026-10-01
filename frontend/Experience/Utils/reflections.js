@@ -33,13 +33,19 @@ export function environmentMap() {
     return texture;
 }
 
-/** "metal", "glass", or null for a surface that should not reflect. */
-function kindOf(material) {
+/**
+ * "metal", "glass", or null for a surface that should not reflect.
+ *
+ * `imageLit`: the asset was authored for image-based lighting — a model from
+ * a viewer like Sketchfab's, as the car is — so every metal in it, rough or
+ * mapped, expects something to reflect.
+ */
+function kindOf(material, imageLit = false) {
     if (!material?.isMeshStandardMaterial) return null;
     // A fully rough "metal" is glTF's stand-in for a mesh with no material,
     // and a metalness map means an asset authored for its own lighting
     // (the avatars): neither is a polished surface.
-    if (material.metalness >= 0.5 && material.roughness < 0.6 && !material.metalnessMap) {
+    if (material.metalness >= 0.5 && (imageLit || (material.roughness < 0.6 && !material.metalnessMap))) {
         return "metal";
     }
     if ((material.transmission ?? 0) > 0) return "glass";
@@ -48,8 +54,8 @@ function kindOf(material) {
 }
 
 /** Give a material the environment map if it is a metal or clear glass. */
-export function applyReflection(material) {
-    const kind = kindOf(material);
+export function applyReflection(material, { imageLit = false } = {}) {
+    const kind = kindOf(material, imageLit);
     if (!kind) return material;
     const map = environmentMap();
     if (material.envMap !== map) {
@@ -61,10 +67,10 @@ export function applyReflection(material) {
 }
 
 /** Give every reflective material under `root` the environment map. */
-export function applyReflections(root) {
+export function applyReflections(root, options = {}) {
     root.traverse((node) => {
         if (!node.isMesh) return;
         const materials = Array.isArray(node.material) ? node.material : [node.material];
-        for (const material of materials) applyReflection(material);
+        for (const material of materials) applyReflection(material, options);
     });
 }

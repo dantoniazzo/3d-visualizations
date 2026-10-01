@@ -1,6 +1,6 @@
-"""The X6 M Competition's wheel, as the blueprints draw it: a 21-inch rim
-of ten Y-spokes on a 295/35 tyre, the brake disc behind, and the M
-Compound brakes' blue caliper.
+"""The X6 M's wheel, as the reference has it: a 21-inch rim of five double
+spokes, their faces machined bright and their sides dark, on a 285/35
+tyre; the brake disc behind, and the M Compound brakes' blue caliper.
 
 Its frame is the one Car.js turns wheels in: centred on the hub, the axle
 along X with the face on +X, Z up, -Y forward. Everything turns with the
@@ -13,7 +13,7 @@ from mathutils import Vector
 
 from lib.x6_parts import Parts
 
-RADIUS = 372.0          # mm: the tyre's
+RADIUS = 379.0          # mm: the tyre's
 SEGMENTS = 48
 
 
@@ -33,31 +33,35 @@ def lathe(parts, profile, mat, out, segments=SEGMENTS):
     parts.grid(rings, mat, out)
 
 
-def box(parts, corners, mat):
+def box(parts, corners, mat, face=None):
     """Six quads over eight corners: the first four one end, the rest the
-    other, in the same order round."""
+    other, in the same order round. `face`, if given, is the material of
+    the side facing out of the wheel (+X)."""
     a, b = corners[:4], corners[4:]
     centre = sum(corners, Vector()) / 8
     out = lambda c: c - centre
-    parts.quad(a, mat, out)
-    parts.quad(b, mat, out)
-    for k in range(4):
-        m = (k + 1) % 4
-        parts.quad([a[k], a[m], b[m], b[k]], mat, out)
+    sides = [a, b] + [[a[k], a[(k + 1) % 4], b[(k + 1) % 4], b[k]] for k in range(4)]
+    for quad in sides:
+        mid = sum(quad, Vector()) / 4
+        facing_out = face is not None and (mid - centre).normalized().x > 0.7
+        parts.quad(quad, face if facing_out else mat, out)
 
 
-def spoke(parts, t0, t1, r0, r1, w0, w1, x0, x1, thick, mat):
+def spoke(parts, t0, t1, r0, r1, w0, w1, x0, x1, thick, mat, face=None, segments=4):
     """A spoke from radius r0 at angle t0 to r1 at t1, w0 wide tapering to
-    w1, its face at x0 at the hub dishing to x1 at the rim."""
-    def at(r, t, w, x):
+    w1, its face at x0 at the hub dishing to x1 at the rim; in `segments`
+    lengths, so it can curve."""
+    def at(f):
+        r, t, w, x = r0 + (r1 - r0) * f, t0 + (t1 - t0) * f, w0 + (w1 - w0) * f, x0 + (x1 - x0) * f
         mid = polar(x, r, t)
         side = Vector((0.0, math.sin(t), math.cos(t))) * (w / 2000.0)
         return mid, side
 
-    p0, s0 = at(r0, t0, w0, x0)
-    p1, s1 = at(r1, t1, w1, x1)
     back = Vector((-thick / 1000.0, 0.0, 0.0))
-    box(parts, [p0 - s0, p0 + s0, p1 + s1, p1 - s1, p0 - s0 + back, p0 + s0 + back, p1 + s1 + back, p1 - s1 + back], mat)
+    for k in range(segments):
+        (p0, s0), (p1, s1) = at(k / segments), at((k + 1) / segments)
+        box(parts, [p0 - s0, p0 + s0, p1 + s1, p1 - s1, p0 - s0 + back, p0 + s0 + back, p1 + s1 + back, p1 - s1 + back],
+            mat, face)
 
 
 def build():
@@ -66,36 +70,46 @@ def build():
     axis = Vector((1.0, 0.0, 0.0))
 
     # The tyre: tread, rounded shoulders, sidewalls down to the beads.
-    tyre = [(-138, 282), (-150, 302), (-153, 330), (-149, 352), (-139, 366), (-120, 372), (-60, 374),
-            (0, 374.5), (60, 374), (120, 372), (139, 366), (149, 352), (153, 330), (150, 302), (138, 282)]
-    lathe(wheel, tyre, "tyre", lambda c: c - (Vector((0.0, c.y, c.z)).normalized() * 0.330))
+    tyre = [(-136, 290), (-148, 310), (-151, 335), (-147, 358), (-137, 372), (-118, 378), (-60, 379),
+            (0, 379.5), (60, 379), (118, 378), (137, 372), (147, 358), (151, 335), (148, 310), (136, 290)]
+    lathe(wheel, tyre, "tyre", lambda c: c - (Vector((0.0, c.y, c.z)).normalized() * 0.335))
 
-    # The rim: its barrel inside, and the lip the spokes meet.
-    barrel = [(-134, 266), (-128, 270), (-116, 262), (-90, 252), (70, 252), (96, 258), (118, 266)]
+    # The rim: its barrel inside, and the machined lip the spokes meet.
+    barrel = [(-134, 272), (-128, 276), (-116, 268), (-90, 258), (70, 258), (96, 264), (118, 272)]
     lathe(wheel, barrel, "rim_barrel", lambda c: -Vector((0.0, c.y, c.z)))
-    lip = [(118, 266), (132, 272), (142, 280), (146, 276), (140, 262), (128, 250)]
+    lip = [(118, 272), (130, 280), (140, 290), (144, 286), (138, 272), (128, 262)]
     lathe(wheel, lip, "rim", lambda c: Vector((1.0, c.y * 2, c.z * 2)))
 
-    # Ten Y-spokes: a stem from the hub, splitting in two towards the rim.
-    for k in range(10):
-        t = 2 * math.pi * k / 10
-        spoke(wheel, t, t, 76, 168, 42, 34, 112, 118, 26, "rim")
+    # Five double spokes: each pair joined at the hub, spreading to the rim,
+    # machined faces on dark sides.
+    for k in range(5):
+        t = 2 * math.pi * k / 5
         for side in (-1, 1):
-            spoke(wheel, t, t + side * math.radians(8.5), 150, 256, 24, 20, 118, 127, 22, "rim")
+            spoke(wheel, t + side * math.radians(4.2), t + side * math.radians(8.5), 82, 270, 42, 46, 114, 130, 36,
+                  "rim_dark", face="rim")
+        # the web between the pair, set back, dark
+        spoke(wheel, t, t, 78, 200, 26, 18, 106, 114, 22, "rim_dark", segments=3)
 
-    # The hub, and its cap: a BMW roundel.
-    hub = [(60, 80), (100, 80), (112, 74), (114, 40), (114, 0.5)]
+    # The hub, dark, its five bolts; the cap a BMW roundel.
+    hub = [(60, 86), (104, 86), (114, 80), (116, 44), (116, 0.5)]
     lathe(wheel, hub, "rim_dark", lambda c: axis + Vector((0.0, c.y, c.z)))
-    roundel(wheel, 116.0, 34.0)
+    for k in range(5):
+        t = 2 * math.pi * (k + 0.5) / 5
+        bolt = [(110, 13), (124, 13), (126, 10), (127, 0.5)]
+        centre = polar(0, 60, t)
+        ring = [[Vector((x / 1000.0, centre.y + (r / 1000.0) * math.cos(a), centre.z + (r / 1000.0) * math.sin(a)))
+                 for a in (2 * math.pi * j / 6 for j in range(7))] for x, r in bolt]
+        wheel.grid(ring, "rim", lambda c, cy=centre.y, cz=centre.z: Vector((1.0, (c.y - cy) * 3, (c.z - cz) * 3)))
+    roundel(wheel, 118.0, 30.0)
 
     # The brake disc, behind the spokes.
-    disc = [(-4, 112), (-4, 196), (-34, 196), (-34, 112)]
+    disc = [(-4, 112), (-4, 205), (-36, 205), (-36, 112)]
     lathe(wheel, disc, "brake_disc", lambda c: Vector((1.0, c.y, c.z)))
 
     # The caliper: an arc of blue over the disc's back and top.
     arc = [math.radians(a) for a in range(110, 171, 10)]     # from above the axle, round the back
-    inner = [(-66, 146), (22, 146)]
-    outer = [(-66, 226), (22, 226)]
+    inner = [(-68, 150), (24, 150)]
+    outer = [(-68, 238), (24, 238)]
     rows = []
     for x, r in (inner[0], outer[0], outer[1], inner[1], inner[0]):
         rows.append([polar(x, r, a) for a in arc])

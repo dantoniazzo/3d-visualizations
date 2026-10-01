@@ -32,6 +32,13 @@ export default class Resources extends EventEmitter {
                     undefined,
                     (error) => this.assetFailed(asset, error)
                 );
+            } else if (asset.type === "json") {
+                fetch(asset.path)
+                    .then((response) => {
+                        if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+                        return response.json();
+                    })
+                    .then((data) => this.singleAssetLoaded(asset, data), (error) => this.assetFailed(asset, error));
             } else if (asset.type === "imageTexture") {
                 this.loaders.textureLoader.load(
                     asset.path,

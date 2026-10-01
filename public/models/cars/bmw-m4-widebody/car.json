@@ -1,0 +1,35 @@
+{
+  "id": "bmw-m4-widebody",
+  "name": "BMW M4 Widebody",
+  "credit": {
+    "title": "BMW M4 Modified Widebody",
+    "author": "VTX (https://sketchfab.com/VTX_car)",
+    "license": "CC-BY-NC-SA-4.0 (http://creativecommons.org/licenses/by-nc-sa/4.0/)",
+    "source": "https://sketchfab.com/3d-models/bmw-m4-modified-widebody-61b1259b14ae4840ba1b0e9d819e60c1"
+  },
+  "rideHeight": 0.45,
+  "wheels": {
+    "front": {
+      "x": 0.8113,
+      "z": 1.4098,
+      "radius": 0.3366
+    },
+    "rear": {
+      "x": 0.8113,
+      "z": -1.4098,
+      "radius": 0.3366
+    }
+  },
+  "body": {
+    "min": [
+      -1.0296,
+      -0.369,
+      -2.4892
+    ],
+    "max": [
+      1.0296,
+      0.9213,
+      2.3608
+    ]
+  }
+}

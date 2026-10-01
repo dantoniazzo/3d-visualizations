@@ -24,3 +24,9 @@ public/models/furniture/*.glb
 # Python's bytecode cache, which Blender writes beside the scripts it runs.
 __pycache__/
 *.pyc
+
+# The cars as they came from Sketchfab: tens of megabytes each, and
+# re-downloadable from the links in assets/cars/cars.json. What the app
+# drives is built from them (`blender/import_cars.py`) into
+# public/models/cars/, which is kept, with each model's credits.
+assets/cars/*.glb

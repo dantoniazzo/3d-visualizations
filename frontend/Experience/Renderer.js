@@ -26,11 +26,14 @@ export default class Renderer {
             powerPreference: "high-performance",
         });
 
-        // Blender's Filmic view transform, in every view: the scene is drawn
-        // as Blender shows the same light (Utils/filmic.js).
+        // Three's ACES Filmic, as Fluffy Tree draws its garden, or Blender's
+        // Filmic view transform, as Blender shows the same light
+        // (Utils/filmic.js): the garden's colour setting (setToneMapping).
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
         installFilmic();
-        this.renderer.toneMapping = THREE.CustomToneMapping;
+        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        this.exposure = 1;
+        this.exposureScale = 1;
         this.renderer.toneMappingExposure = 1;
 
         this.renderer.shadowMap.enabled = true;
@@ -41,8 +44,21 @@ export default class Renderer {
         this.renderer.setPixelRatio(this.sizes.pixelRatio);
     }
 
+    /** The light's exposure — the preset's, or the bake's. */
     setExposure(value) {
-        this.renderer.toneMappingExposure = value;
+        this.exposure = value;
+        this.renderer.toneMappingExposure = this.exposure * this.exposureScale;
+    }
+
+    /**
+     * The garden's colour settings: which tone mapping — "aces" or
+     * "filmic" — and how much more or less exposed than the light's own.
+     * Every material follows at its next draw.
+     */
+    setToneMapping(name, scale = 1) {
+        this.renderer.toneMapping = name === "filmic" ? THREE.CustomToneMapping : THREE.ACESFilmicToneMapping;
+        this.exposureScale = scale;
+        this.setExposure(this.exposure);
     }
 
     onResize() {

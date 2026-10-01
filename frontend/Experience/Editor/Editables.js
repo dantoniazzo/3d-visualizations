@@ -4,6 +4,7 @@ import FitChecker from "./FitChecker.js";
 import { AXES, DEG, round, toBlender, yawQuaternion } from "./axes.js";
 import SceneBuilder, { localBox } from "../World/SceneBuilder.js";
 import StructureBuilder from "../World/Builders/StructureBuilder.js";
+import { creditLine } from "../World/Vehicle/CarModels.js";
 import { DOOR_TYPES, DOOR_SWINGS } from "../../../shared/catalog.js";
 
 /**
@@ -1080,6 +1081,10 @@ export class VehicleEditable extends Editable {
     }
 
     get label() {
+        return this.car.model?.meta.name || "Car";
+    }
+
+    get subtitle() {
         return "Car";
     }
 
@@ -1103,7 +1108,16 @@ export class VehicleEditable extends Editable {
     }
 
     properties() {
+        const meta = this.car.model?.meta;
+        const models = this.editor.experience.carModels;
         return [
+            {
+                title: "Model",
+                card: meta
+                    ? { image: models.url(meta.files.thumb), title: meta.name, text: creditLine(meta) }
+                    : { title: "Loading…" },
+                actions: [{ id: "change-car", label: "Change car…", primary: true }],
+            },
             { title: "Transform", fields: this.transformFields({ vertical: false }) },
             { title: "Driving", text: "Press F beside it in the walkthrough to drive." },
         ];

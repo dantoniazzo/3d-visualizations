@@ -1,7 +1,8 @@
-"""Building a car's bodywork from blueprint measurements.
+"""Building a car's bodywork from measurements — off blueprints, or off a
+reference model.
 
 The tools a modeller uses on a car, as functions: smooth curves through
-points measured off the blueprints, quad patches spanned between curves
+points measured off the drawings, quad patches spanned between curves
 (a Coons patch fills four boundary curves the way a modeller fills a
 traced outline with an even grid), and a mesh builder that welds the
 patches along the edges they share, so the panels become one surface.
@@ -237,6 +238,11 @@ class Builder:
             self.index[key] = k
             self.verts.append(tuple(p))
         return k
+
+    def at(self, p):
+        """Where the vertex laid out at p is now (after a fit), or p."""
+        k = self.index.get(tuple(round(c / self.weld) for c in p))
+        return self.verts[k] if k is not None else p
 
     def quad(self, a, b, c, d, part="body", **tags):
         ids = [self.vert(p) for p in (a, b, c, d)]

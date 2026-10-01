@@ -1,13 +1,12 @@
 import * as THREE from "three";
 import { EventEmitter } from "events";
-import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
-import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { OutlinePass } from "three/examples/jsm/postprocessing/OutlinePass.js";
 
 import Experience from "../Experience.js";
 import EditorCamera from "./EditorCamera.js";
-import ToneMappedOutputPass from "./ToneMappedOutputPass.js";
 import EditorUI from "./EditorUI.js";
+import CarPicker from "./CarPicker.js";
+import GardenPanel from "./GardenPanel.js";
 import FieldEdit from "./FieldEdit.js";
 import FitChecker from "./FitChecker.js";
 import Gizmo from "./Gizmo.js";
@@ -18,6 +17,7 @@ import TransformSession from "./TransformSession.js";
 import { FurnitureEditable, StairEditable, FloorOpeningEditable, WallOpeningEditable, VehicleEditable } from "./Editables.js";
 import { DEG, round } from "./axes.js";
 import { FINISHES } from "../../../shared/catalog.js";
+import { DEFAULT_CAR } from "../../../shared/cars.js";
 
 /**
  * Edit mode: a Blender-style editor over the live scene.
@@ -115,6 +115,7 @@ export default class Editor extends EventEmitter {
         this.helperLine = new THREE.LineBasicMaterial({ color: 0xffa040 });
 
         this.ui = new EditorUI(this);
+        this.carPicker = new CarPicker(this);
         this.field = new FieldEdit(this);
         this.refreshRegistry();
         this.bind();
@@ -194,6 +195,7 @@ export default class Editor extends EventEmitter {
 
     leave() {
         if (!this.active) return;
+        this.carPicker.close();
         if (this.session) this.endSession(this.session.cancel());
         this.nav = null;
         this.pending = null;
@@ -625,10 +627,23 @@ export default class Editor extends EventEmitter {
             }
         }
 
-        // The car.
+        // The car: which model, and where.
         for (const car of b.cars || []) {
             const saved = state.vehicles.find((v) => v.id === car.spec.id);
             const editable = this.editables.get(`car:${car.spec.id}`);
+            const model = saved?.model || DEFAULT_CAR;
+            if (saved && editable && (car.spec.model || DEFAULT_CAR) !== model) {
+                car.spec.model = model;
+                this.experience.carModels
+                    .load(model)
+                    .then((loaded) => {
+                        if (car.spec.model !== model) return;
+                        this.dressCar(editable, loaded);
+                        this.refreshRegistry();
+                        this.emit("selection", this.selection);
+                    })
+                    .catch((error) => this.ui.toast(`That car didn't load: ${error.message || error}`, "error"));
+            }
             if (saved && editable) {
                 editable.applyPose({
                     position: new THREE.Vector3(saved.position[0], saved.elevation + editable.rideHeight, saved.position[1]),
@@ -932,6 +947,7 @@ export default class Editor extends EventEmitter {
         if (id === "delete") return this.deleteSelection();
         if (id === "drop") return this.dropSelection();
         if (id === "frame") return this.frameSelected();
+        if (id === "change-car") return this.carPicker.open();
         if (id === "cut-opening" && editable?.type === "stair") {
             const before = this.capture();
             const hole = { id: this.newId("hole"), position: [0, 0], elevation: 0, width: 1, depth: 1, yaw: 0, stair_id: editable.id };
@@ -947,6 +963,32 @@ export default class Editor extends EventEmitter {
             this.commit(before, "Cut opening");
             this.emit("selection", this.selection);
         }
+    }
+
+    /**
+     * Make a car another model: downloaded if it has to be (`onProgress`
+     * hears how far), then put on it where it stands — one step to undo.
+     * Resolves false if `abandoned()` says the picker gave up meanwhile.
+     */
+    async changeCar(editable, id, { onProgress, abandoned } = {}) {
+        const car = editable.car;
+        if ((car.spec.model || DEFAULT_CAR) === id) return true;
+        const model = await this.experience.carModels.load(id, onProgress);
+        if (abandoned?.()) return false;
+        const before = this.capture();
+        car.spec.model = id;
+        this.dressCar(editable, model);
+        this.commit(before, "Change car");
+        this.refreshRegistry();
+        this.emit("selection", this.selection);
+        return true;
+    }
+
+    /** A car in another model: its outline, bounds and fit worked out afresh. */
+    dressCar(editable, model) {
+        editable.car.setModel(model);
+        editable.invalidate();
+        this.fit.invalidate();
     }
 
     // ------------------------------------------------------------------
@@ -1091,6 +1133,17 @@ export default class Editor extends EventEmitter {
     setXray(on) {
         this.xray = on;
         this.applyXray();
+        this.emit("settings");
+    }
+
+    /** The Garden panel (GardenPanel.js), open or shut. */
+    toggleGarden() {
+        if (this.gardenPanel) {
+            this.gardenPanel.dispose();
+            this.gardenPanel = null;
+        } else {
+            this.gardenPanel = new GardenPanel(this.world);
+        }
         this.emit("settings");
     }
 
@@ -1372,6 +1425,8 @@ export default class Editor extends EventEmitter {
 
     onKeyDown(event) {
         if (this.isTyping()) return;
+        // The car picker, open, has every key.
+        if (this.carPicker.isOpen) return this.carPicker.onKeyDown(event);
 
         if (event.code === "Tab" && !event.ctrlKey && !event.metaKey && !event.altKey) {
             if (!this.available) return;
@@ -1605,15 +1660,18 @@ export default class Editor extends EventEmitter {
         // drawn after it is never cut.
         renderer.clippingPlanes = (this.active && this.clipPlanes) || [];
 
+        // The scene as it is always drawn, and the selection's outline on
+        // top of it: added straight onto the frame, so a selection never
+        // changes how anything else looks — the garden's grass least of all,
+        // whose colour is worked out as it is drawn to the screen
+        // (Vegetation/shaders.js).
+        renderer.render(scene, camera);
         const outline = this.selection ? this.selection.outlineObjects().filter(isShown) : [];
         if (outline.length) {
-            this.ensureComposer(renderer);
-            this.renderPass.camera = camera;
+            this.ensureOutline();
             this.outlinePass.renderCamera = camera;
             this.outlinePass.selectedObjects = outline;
-            this.composer.render();
-        } else {
-            renderer.render(scene, camera);
+            this.outlinePass.render(renderer, null, null, 0, false);
         }
 
         renderer.clippingPlanes = [];
@@ -1624,30 +1682,22 @@ export default class Editor extends EventEmitter {
         return true;
     }
 
-    ensureComposer(renderer) {
-        if (this.composer) return;
+    ensureOutline() {
+        if (this.outlinePass) return;
         const sizes = this.experience.sizes;
-        this.composer = new EffectComposer(renderer);
-        this.composer.setPixelRatio(sizes.pixelRatio);
-        this.composer.setSize(sizes.width, sizes.height);
-
-        this.renderPass = new RenderPass(this.scene, this.view.camera);
         this.outlinePass = new OutlinePass(new THREE.Vector2(sizes.width, sizes.height), this.scene, this.view.camera);
         this.outlinePass.edgeStrength = 4;
         this.outlinePass.edgeThickness = 1;
         this.outlinePass.edgeGlow = 0;
-        this.outlinePass.visibleEdgeColor.set("#ffaa33");
-        this.outlinePass.hiddenEdgeColor.set("#8a5a1c");
-
-        this.composer.addPass(this.renderPass);
-        this.composer.addPass(this.outlinePass);
-        this.composer.addPass(new ToneMappedOutputPass());
+        // Added to the screen as they are, as display colours, at four times
+        // their strength: amber where the selection is seen, dim where hidden.
+        this.outlinePass.visibleEdgeColor.setRGB(1, 0.62, 0.16).multiplyScalar(1 / 4);
+        this.outlinePass.hiddenEdgeColor.setRGB(0.54, 0.35, 0.11).multiplyScalar(1 / 4);
+        this.onResize(sizes);
     }
 
     onResize(sizes) {
-        if (!this.composer) return;
-        this.composer.setPixelRatio(sizes.pixelRatio);
-        this.composer.setSize(sizes.width, sizes.height);
+        this.outlinePass?.setSize(sizes.width * sizes.pixelRatio, sizes.height * sizes.pixelRatio);
     }
 
     dispose() {
@@ -1662,7 +1712,8 @@ export default class Editor extends EventEmitter {
         this.gizmo.dispose();
         this.ghost.dispose();
         this.fit.dispose();
-        this.composer?.dispose();
+        this.outlinePass?.dispose();
+        this.gardenPanel?.dispose();
         for (const material of this.xrayMaterials.values()) material.dispose();
         this.ui.dispose();
     }

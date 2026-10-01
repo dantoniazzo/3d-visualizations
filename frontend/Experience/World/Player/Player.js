@@ -9,6 +9,10 @@ import Avatar from "./Avatar.js";
 const _joystick = new THREE.Vector3();
 /** How far behind the first solid thing a light's box may be met and still be the one aimed at. */
 const LIGHT_SLACK = 0.05;
+/** How near a cupboard's door or a drawer has to be, in metres from the head, to open. */
+const OPENABLE_REACH = 2.5;
+/** How far behind its piece's box a door or drawer may be met and still be the one aimed at. */
+const OPENABLE_SLACK = 0.25;
 
 /**
  * The visitor: capsule physics against the octree, WASD/joystick movement,
@@ -655,9 +659,10 @@ export default class Player {
 
     /**
      * Action key. Turns a light on or off when the crosshair is on it or
-     * its switch; otherwise operates whichever door is being looked at,
-     * falling back to the nearest one within reach — so you can open a door
-     * you are standing beside without having to aim at it.
+     * its switch; opens or shuts a piece of furniture's door or drawer the
+     * crosshair is on; otherwise operates whichever door is being looked
+     * at, falling back to the nearest one within reach — so you can open a
+     * door you are standing beside without having to aim at it.
      */
     interact() {
         const builder = this.experience.world.sceneBuilder;
@@ -665,6 +670,12 @@ export default class Player {
 
         if (this.lookedAtLight) {
             this.experience.world.switches?.toggle(this.lookedAtLight.id);
+            return;
+        }
+
+        if (this.lookedAtOpenable) {
+            const opened = this.lookedAtOpenable.toggle();
+            this.experience.world.emit("openable", { part: this.lookedAtOpenable, opened });
             return;
         }
 
@@ -788,6 +799,17 @@ export default class Player {
             return;
         }
 
+        // A cupboard's door or a drawer aimed at: which, and which way it will go.
+        const part = this.lookedAtOpenable;
+        if (part) {
+            const id = `openable:${part.node.uuid}:${part.isOpening}`;
+            if (id !== this.promptedDoorId) {
+                this.promptedDoorId = id;
+                this.experience.world.emit("prompt", { label: `${part.isOpening ? "Close" : "Open"} ${part.kind}`, key: "E" });
+            }
+            return;
+        }
+
         const door = this.lookedAtDoor || builder.nearestDoor(this.player.collider.end);
         // Keyed on which way the door is going too, so the prompt turns from
         // Open to Close the moment it is opened, not once it has swung.
@@ -844,6 +866,7 @@ export default class Player {
         let target = null;
         this.lookedAtDoor = null;
         this.lookedAtLight = null;
+        this.lookedAtOpenable = null;
         // How far the crosshair sees: to whatever solid it meets first.
         let sight = intersects.length ? intersects[0].distance : Infinity;
 
@@ -852,7 +875,15 @@ export default class Player {
         if (builder?.runtime) {
             const hit = this.experience.world.collision.rayIntersect(this.player.raycaster.ray);
             if (hit && hit.distance <= this.player.raycaster.far) sight = Math.min(sight, hit.distance);
-            const nearer = hit && hit.distance <= this.player.raycaster.far && (!intersects.length || hit.distance < intersects[0].distance);
+            // A piece with doors or drawers collides as its box, shut, which
+            // stands a handle's depth proud of them: its own doors and
+            // drawers are aimed at through it — nothing else's.
+            const first = intersects[0];
+            const part = first && builder.openables.of(first.object);
+            const through =
+                part && hit && hit.triangle.label === part.node.userData.label && first.distance - hit.distance < OPENABLE_SLACK;
+            const nearer =
+                hit && !through && hit.distance <= this.player.raycaster.far && (!intersects.length || hit.distance < intersects[0].distance);
             if (nearer) {
                 intersects.length = 0;
                 if (hit.triangle.label) target = { kind: "object", id: hit.triangle.label, label: hit.triangle.label };
@@ -866,12 +897,23 @@ export default class Player {
             let node = hit.object;
             while (node && node.userData?.kind !== "door") node = node.parent;
 
+            // A piece of furniture's door or drawer: the piece, and it to open.
+            const part = builder?.openables.of(hit.object);
             if (node?.userData?.door) {
                 this.lookedAtDoor = node.userData.door;
                 target = {
                     kind: "door",
                     label: node.userData.door.isOpen ? "Open door" : "Closed door",
                     id: node.userData.id,
+                };
+            } else if (part && hit.distance <= OPENABLE_REACH) {
+                this.lookedAtOpenable = part;
+                let owner = hit.object;
+                while (owner && !owner.userData?.label) owner = owner.parent;
+                target = {
+                    kind: "openable",
+                    id: part.node.uuid,
+                    label: owner?.userData?.label ?? part.kind,
                 };
             } else {
                 const resolved = builder?.resolveSurfaceHit(hit);
@@ -906,6 +948,7 @@ export default class Player {
             if (light && light.distance <= sight + LIGHT_SLACK) {
                 this.lookedAtLight = light;
                 this.lookedAtDoor = null;
+                this.lookedAtOpenable = null;
                 target = { kind: "light", id: light.id, label: light.label };
             }
         }

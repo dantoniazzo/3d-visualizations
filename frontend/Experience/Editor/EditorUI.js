@@ -40,6 +40,7 @@ const ICONS = {
     eye: '<path d="M8 3.5c3.2 0 5.7 2.1 7 4.5-1.3 2.4-3.8 4.5-7 4.5S2.3 10.4 1 8c1.3-2.4 3.8-4.5 7-4.5zm0 1.6A2.9 2.9 0 1 0 8 11a2.9 2.9 0 0 0 0-5.9zm0 1.5a1.4 1.4 0 1 1 0 2.8 1.4 1.4 0 0 1 0-2.8z"/>',
     eyeOff: '<path d="M2.3 1.2l12.5 12.5-1.1 1.1-2.2-2.2A7.6 7.6 0 0 1 8 12.5C4.8 12.5 2.3 10.4 1 8a9 9 0 0 1 2.6-3L1.2 2.3zM5 6.3A2.9 2.9 0 0 0 9.7 10.4zM8 3.5c3.2 0 5.7 2.1 7 4.5a8.9 8.9 0 0 1-1.8 2.3L10.9 8A2.9 2.9 0 0 0 8 5.1l-.4.1L5.9 3.8A7.7 7.7 0 0 1 8 3.5z"/>',
     xray: '<path d="M1 1h9v9H1zm1.5 1.5v6h6v-6z"/><path d="M6 6h9v9H6z" opacity=".5"/>',
+    garden: '<path d="M14.5 1.5C8 1.5 3.2 4.6 3.2 9.9c0 1 .2 1.9.6 2.7L1.6 14.8l.9.9 2.2-2.2c.8.4 1.8.6 2.8.6 5.4 0 7-5.8 7-12.6zM5.5 12.3c1.2-2.7 3.2-5 5.7-6.6-2 2.1-3.5 4.4-4.4 7-.5-.1-.9-.2-1.3-.4z"/>',
     floor: '<path d="M8 2l7 4v1.7L8 3.7 1 7.7V6zm-7 7l7-4 7 4-7 4z"/>',
     room: '<path d="M1.5 1.5h13v13h-13zM3 3v10h10V3zm2 2h6v6H5z" opacity=".9"/>',
     roof: '<path d="M8 1.5l7 6.2-1 1.2-1-.9V14H3V8l-1 .9-1-1.2zm0 2.1L4.6 6.6V12.5h6.8V6.6z"/>',
@@ -130,6 +131,7 @@ export default class EditorUI {
                         <select data-setting="focus"></select>
                     </label>
                     <button class="ed-toggle" data-action="xray" title="X-ray: see through walls, ceilings and roof (Alt Z)">${icon("xray")}</button>
+                    <button class="ed-toggle" data-action="garden" title="Garden: the grass, the trees, the hills, and how the view is coloured">${icon("garden")}</button>
                     <button class="ed-btn ed-walk" data-action="walk-here" title="Stand where the view is pointing and start walking">${icon("walk")}<span>Walk from here</span></button>
                     <button class="ed-btn ed-walk" data-action="publish" title="Publish the public view: a link to send clients, drawn as cheaply as it can be">${icon("publish")}<span>Publish</span></button>
                     <span class="ed-save" data-save>Saved</span>
@@ -197,8 +199,10 @@ export default class EditorUI {
             increment: $('[data-setting="increment"]'),
             focus: $('[data-setting="focus"]'),
             xray: $('[data-action="xray"]'),
+            garden: $('[data-action="garden"]'),
             focusChip: $("[data-focus-chip]"),
             snap: $('[data-action="snap"]'),
+            viewport: $(".ed-viewport"),
         };
 
         this.buildNavGizmo();
@@ -256,6 +260,8 @@ export default class EditorUI {
                     return editor.setSnap(!editor.snapEnabled);
                 case "xray":
                     return editor.setXray(!editor.xray);
+                case "garden":
+                    return editor.toggleGarden();
                 case "walk-here":
                     return editor.walkFromHere();
                 case "publish":
@@ -461,6 +467,7 @@ export default class EditorUI {
         this.dom.focus.value = Collections.key(editor.focus);
         this.dom.snap.classList.toggle("is-on", editor.snapEnabled);
         this.dom.xray.classList.toggle("is-on", editor.xray);
+        this.dom.garden.classList.toggle("is-on", Boolean(editor.gardenPanel));
 
         // The chip says what is being worked on, and gets back out of it.
         const chip = this.dom.focusChip;
@@ -803,13 +810,19 @@ export default class EditorUI {
     renderSection(section) {
         const fields = (section.fields || []).map((f) => this.renderField(f)).join("");
         const text = section.text ? `<p class="ed-note">${escape(section.text)}</p>` : "";
+        const card = section.card
+            ? `<div class="ed-card">
+                   ${section.card.image ? `<img src="${escape(section.card.image)}" alt="" draggable="false" />` : ""}
+                   <div><b>${escape(section.card.title)}</b>${section.card.text ? `<span>${escape(section.card.text)}</span>` : ""}</div>
+               </div>`
+            : "";
         const actions = (section.actions || [])
-            .map((a) => `<button class="ed-action" data-prop-action="${a.id}">${escape(a.label)}</button>`)
+            .map((a) => `<button class="ed-action${a.primary ? " is-primary" : ""}" data-prop-action="${a.id}">${escape(a.label)}</button>`)
             .join("");
         return `
             <div class="ed-section">
                 <h6>${escape(section.title)}</h6>
-                ${fields}${text}${actions ? `<div class="ed-actions">${actions}</div>` : ""}
+                ${card}${fields}${text}${actions ? `<div class="ed-actions">${actions}</div>` : ""}
             </div>`;
     }
 

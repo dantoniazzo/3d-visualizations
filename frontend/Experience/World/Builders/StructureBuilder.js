@@ -3,6 +3,7 @@ import * as THREE from "three";
 import Door from "../Door.js";
 import KitLibrary, { boxUVs, mergeParts, mirror } from "./KitLibrary.js";
 import { FINISHES } from "../../../../shared/catalog.js";
+import { GROUND_DROP } from "../../../../shared/vegetation.js";
 import { ensureCCW, isConvex, subtractConvex } from "../../Utils/geometry.js";
 
 /**
@@ -1450,20 +1451,42 @@ export default class StructureBuilder {
     // Ground
     // ------------------------------------------------------------------
 
-    buildGround(spec) {
-        const geometry = this.track(new THREE.PlaneGeometry(spec.size, spec.size));
+    /**
+     * The ground round the plot, running off to the horizon — `holes`
+     * (lists of (x, z) points) cut out of it where other ground takes its
+     * place: the hills behind the plot (HillBuilder), which rise out of it.
+     */
+    buildGround(spec, holes = []) {
+        // Laid out as a slab is, in (x, -z), then turned flat.
+        const half = spec.size / 2;
+        const shape = new THREE.Shape([
+            new THREE.Vector2(-half, -half),
+            new THREE.Vector2(half, -half),
+            new THREE.Vector2(half, half),
+            new THREE.Vector2(-half, half),
+        ]);
+        for (const hole of holes) shape.holes.push(new THREE.Path(hole.map(([x, z]) => new THREE.Vector2(x, -z))));
+        const geometry = this.track(new THREE.ShapeGeometry(shape));
         const material = new THREE.MeshStandardMaterial({
             color: new THREE.Color(spec.color),
             roughness: spec.roughness ?? 1,
             metalness: 0,
         });
+        // A ground with a finish of its own wears its texture, tiled in
+        // metres — and is named for it, as a published view's runtime file
+        // knows a finish's texture by (Publish/Runtime.js).
+        if (spec.finish) {
+            material.map = this.materials.getSurface(spec.finish, "ground").map;
+            material.name = spec.finish;
+            this.materials.applyWorldTiling(geometry, spec.finish);
+        }
         this.disposables.add({ dispose: () => material.dispose() });
 
         const ground = new THREE.Mesh(geometry, material);
         ground.rotation.x = -Math.PI / 2;
         // Well clear of any site slabs laid on top of it at y = 0, which at
         // a couple of centimetres would z-fight across a 200 m plane.
-        ground.position.y = -0.15;
+        ground.position.y = -GROUND_DROP;
         ground.receiveShadow = true;
         ground.name = "ground";
         return ground;

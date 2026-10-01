@@ -16,7 +16,6 @@ const ROUGHNESS = {
     carpet: 0.98,
     concrete: 0.45,
     rooftiles: 0.8,
-    grass: 0.98,
     gravel: 0.95,
 };
 
@@ -46,7 +45,7 @@ export default class MaterialLibrary {
         const finish = FINISHES[resolved];
         const material = new THREE.MeshStandardMaterial({
             map: this.textures.get(resolved),
-            roughness: ROUGHNESS[finish.generator] ?? 0.8,
+            roughness: finish.roughness ?? ROUGHNESS[finish.generator] ?? 0.8,
             metalness: 0,
         });
         material.name = resolved;

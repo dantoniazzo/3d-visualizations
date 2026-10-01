@@ -185,6 +185,12 @@ async function rebuildManifest(sceneId, version) {
     const newest = bakes.sort((a, b) => b.bakedAt - a.bakedAt)[0];
     if (newest) {
         const { entry, bake, bakedAt } = newest;
+        const served = (value) => {
+            if (typeof value === "string") return /\.(webp|bin)$/.test(value) ? `${version}/${entry}/${value}` : value;
+            if (Array.isArray(value)) return value.map(served);
+            if (value === null || typeof value !== "object") return value;
+            return Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, served(inner)]));
+        };
         manifest.view = `${version}/${entry}/view.glb`;
         manifest.options.bake = bake.samples >= 256 ? "final" : "draft";
         manifest.lighting = {
@@ -196,38 +202,11 @@ async function rebuildManifest(sceneId, version) {
             triangles: bake.triangles,
             ...(bake.view && { view: bake.view }),
             ...(bake.zones && { zones: bake.zones }),
-            ...(bake.switches?.length && {
-                switches: bake.switches.map((item) => ({
-                    ...item,
-                    layers: Object.fromEntries(
-                        Object.entries(item.layers).map(([zone, layer]) => [
-                            zone,
-                            Object.fromEntries(
-                                Object.entries(layer).map(([key, value]) => [
-                                    key,
-                                    typeof value === "string" ? `${version}/${entry}/${value}` : value,
-                                ])
-                            ),
-                        ])
-                    ),
-                })),
-            }),
-            variants: Object.fromEntries(
-                Object.entries(bake.variants).map(([name, variant]) => [
-                    name,
-                    {
-                        lightmap: `${version}/${entry}/${variant.lightmap}`,
-                        ...(variant.lightmapPhone && { lightmapPhone: `${version}/${entry}/${variant.lightmapPhone}` }),
-                        ...(variant.chroma && { chroma: `${version}/${entry}/${variant.chroma}` }),
-                        ...(variant.chromaPhone && { chromaPhone: `${version}/${entry}/${variant.chromaPhone}` }),
-                        ...(variant.storage && { storage: variant.storage }),
-                        scale: variant.scale,
-                        ...(variant.encoding && { encoding: variant.encoding }),
-                        attribute: variant.attribute,
-                        doors: variant.doors,
-                    },
-                ])
-            ),
+            ...(bake.probes && { probes: served(bake.probes) }),
+            // Every file the bake names, as it is served.
+            ...(bake.switches?.length && { switches: served(bake.switches) }),
+            ...(bake.doorStates && { doorStates: served(bake.doorStates) }),
+            variants: served(bake.variants),
         };
         manifest.sizes.view = await size(`${entry}/view.glb`);
         manifest.sizes.lightmaps = Object.fromEntries(

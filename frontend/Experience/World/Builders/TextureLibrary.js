@@ -3,7 +3,8 @@ import * as THREE from "three";
 import { FINISHES, DEFAULT_FINISH } from "../../../../shared/catalog.js";
 
 /**
- * Generates the finish textures at runtime on a canvas.
+ * Generates the finish textures at runtime on a canvas — or, for a finish
+ * that is an image, loads it.
  *
  * Shipping tileable parquet / tile / carpet images would be tens of
  * megabytes and a licensing question; drawing them costs a few milliseconds
@@ -291,40 +292,6 @@ const GENERATORS = {
         speckle(ctx, random, 2600, [shade(p.base, -0.18), shade(p.base, 0.12)], 0.16, 1.6);
     },
 
-    /** Mown grass: short blades in a few tones over a flat base. */
-    grass(ctx, p, random) {
-        ctx.fillStyle = p.base;
-        ctx.fillRect(0, 0, SIZE, SIZE);
-
-        // Broad patches first, so the lawn is not a uniform green sheet.
-        for (let i = 0; i < 40; i++) {
-            const x = random() * SIZE;
-            const y = random() * SIZE;
-            const r = 30 + random() * 110;
-            const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-            g.addColorStop(0, random() > 0.5 ? p.blade : p.dark);
-            g.addColorStop(1, "rgba(0,0,0,0)");
-            ctx.globalAlpha = 0.18;
-            ctx.fillStyle = g;
-            ctx.beginPath();
-            ctx.arc(x, y, r, 0, Math.PI * 2);
-            ctx.fill();
-        }
-
-        ctx.lineWidth = 1;
-        for (let i = 0; i < 7000; i++) {
-            const x = random() * SIZE;
-            const y = random() * SIZE;
-            ctx.strokeStyle = random() > 0.45 ? p.blade : p.dark;
-            ctx.globalAlpha = 0.3 + random() * 0.4;
-            ctx.beginPath();
-            ctx.moveTo(x, y);
-            ctx.lineTo(x + (random() - 0.5) * 3, y - 2 - random() * 4);
-            ctx.stroke();
-        }
-        ctx.globalAlpha = 1;
-    },
-
     /** Loose aggregate — gravel, chippings, tarmac. */
     gravel(ctx, p, random) {
         ctx.fillStyle = p.base;
@@ -382,6 +349,8 @@ const GENERATORS = {
 export default class TextureLibrary {
     constructor() {
         this.cache = new Map();
+        /** Where the ground's gradient lies: its centre and its width, in metres (setGradient). */
+        this.gradient = { x: 0, z: 0, size: 90 };
     }
 
     /**
@@ -392,6 +361,7 @@ export default class TextureLibrary {
         const finish = FINISHES[id];
         if (!finish) return null;
         if (this.cache.has(id)) return this.cache.get(id);
+        if (finish.image) return this.load(id, finish);
 
         const generate = GENERATORS[finish.generator] || GENERATORS.paint;
 
@@ -413,6 +383,51 @@ export default class TextureLibrary {
 
         this.cache.set(id, texture);
         return texture;
+    }
+
+    /**
+     * An image finish's texture, drawn as soon as it has loaded. A gradient
+     * is laid over the garden once, where setGradient says, and runs on
+     * past its edge in its edge's colour.
+     */
+    load(id, finish) {
+        const texture = new THREE.TextureLoader().load(finish.image);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.anisotropy = 8;
+        texture.name = id;
+        if (finish.gradient) {
+            texture.wrapS = THREE.ClampToEdgeWrapping;
+            texture.wrapT = THREE.ClampToEdgeWrapping;
+            this.placeGradient(texture);
+        } else {
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+        }
+        this.cache.set(id, texture);
+        return texture;
+    }
+
+    /**
+     * Where the ground's gradient lies — its centre (x, z) and its width,
+     * in metres — on every gradient finish, drawn or yet to be.
+     */
+    setGradient({ x, z, size }) {
+        this.gradient = { x, z, size };
+        for (const [id, texture] of this.cache) {
+            if (FINISHES[id]?.gradient) this.placeGradient(texture);
+        }
+    }
+
+    /**
+     * A surface's UVs are (x, -z) in metres over the finish's tile — 1 m for
+     * a gradient (StructureBuilder's slabs) — so the gradient's centre is at
+     * (x, -z), and it spans `size` of them.
+     */
+    placeGradient(texture) {
+        const { x, z, size } = this.gradient;
+        texture.repeat.set(1 / size, 1 / size);
+        texture.offset.set(0.5 - x / size, 0.5 + z / size);
+        texture.updateMatrix();
     }
 
     /** Metres covered by one repeat of a finish. */
