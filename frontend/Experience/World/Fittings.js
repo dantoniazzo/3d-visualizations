@@ -35,6 +35,9 @@ const CEILING_COLOR = "#ffd6a3";
 export const CEILING_STYLES = {
     pendant: { drop: 0.42, radius: 0.13, size: 0.08, canopy: 0.06, cord: 0.004 },
     flush: { drop: 0.045, radius: 0.17, size: 0.03, depth: 0.09 },
+    // A room lit by track spots and pendants of its own (`room.fitting:
+    // "recessed"`): only a small downlight, set into the ceiling.
+    recessed: { drop: 0.012, radius: 0.045, size: 0.03, depth: 0.008 },
 };
 /** The glass of every ceiling light. */
 export const GLASS = "opal_glass";
@@ -70,6 +73,7 @@ export function gatherLights(builder) {
     const lights = [];
 
     const roomAt = (x, y, z) => builder.roomAt(x, y, z);
+    const sides = doorSides(spec, roomAt);
     for (const room of spec.rooms) {
         const fitting = ceilingFitting(room);
         if (!fitting) continue;
@@ -77,7 +81,7 @@ export function gatherLights(builder) {
         const [x, y, z] = fitting.position;
         // Where a visitor can point at it: the glass, and the cord up to the ceiling.
         const targets = [{ part: "light", box: [x - style.radius, y - style.radius, z - style.radius, x + style.radius, fitting.ceiling, z + style.radius] }];
-        const plate = wallSwitch(room, spec, roomAt);
+        const plate = wallSwitch(room, spec, roomAt, sides);
         if (plate) targets.push({ part: "switch", box: plateBox(plate) });
         lights.push({
             id: `ceiling:${room.id}`,
@@ -99,20 +103,36 @@ export function gatherLights(builder) {
 
     const lamps = [];
     const bulb = new THREE.Vector3();
+    const middle = new THREE.Vector3();
     for (const { placement, group } of builder.furniture.values()) {
         group.updateMatrixWorld(true);
+        // Where a visitor can point at it: the whole lamp, a little over.
+        const box = new THREE.Box3().setFromObject(group).expandByScalar(0.03);
+        // Its room, one for all its lights (a track's heads, near a wall): the
+        // one whose space holds it — under the ceiling it hangs from, not in
+        // the flat upstairs — or, hanging over a terrace (a room only a slab
+        // deep), the one under it.
+        box.getCenter(middle);
+        let room;
         group.traverse((node) => {
             const light = node.userData?.light;
             if (!light?.at) return;
             // Blender's (x, y, z), in the node's own coordinates, is glTF's (x, z, -y).
             const [x, y, z] = light.at;
             bulb.set(x, z, -y).applyMatrix4(node.matrixWorld);
-            const room = builder.roomAt(bulb.x, bulb.y, bulb.z);
-            // Where a visitor can point at it: the whole lamp, a little over.
-            const box = new THREE.Box3().setFromObject(group).expandByScalar(0.03);
+            room ??=
+                roomHolding(spec.rooms, middle.x, middle.y, middle.z) ??
+                roomHolding(spec.rooms, bulb.x, bulb.y, bulb.z) ??
+                roomUnder(spec.rooms, bulb.x, bulb.y, bulb.z);
+            // A lamp that is part of its room's lighting (`room`: a pendant,
+            // a wall light, a track) is on the room's ceiling switch; any
+            // other, or one in a room without a ceiling light, a switch of
+            // its own.
+            const ceiling = light.room && room && ceilingFitting(room) ? `ceiling:${room.id}` : null;
+            const index = lamps.filter((lamp) => lamp.fixture === placement.id).length;
             lamps.push({
-                id: `lamp:${placement.id}`,
-                switch: `lamp:${placement.id}`,
+                id: index ? `lamp:${placement.id}:${index}` : `lamp:${placement.id}`,
+                switch: ceiling ?? `lamp:${placement.id}`,
                 kind: "lamp",
                 room: room?.id ?? null,
                 fixture: placement.id,
@@ -127,19 +147,129 @@ export function gatherLights(builder) {
             });
         });
     }
-    // "Bedroom lamp", or "Bedroom lamp 1" and "2" where a room has more.
+    // "Bedroom lamp", or "Bedroom lamp 1" and "2" where a room has more
+    // switches of their own; one on the room's light is called that.
+    const own = lamps.filter((lamp) => lamp.switch.startsWith("lamp:"));
     const counts = new Map();
-    for (const lamp of lamps) counts.set(lamp.room, (counts.get(lamp.room) ?? 0) + 1);
+    for (const lamp of own) if (lamp.id === lamp.switch) counts.set(lamp.room, (counts.get(lamp.room) ?? 0) + 1);
     const seen = new Map();
     for (const lamp of lamps) {
-        const n = (seen.get(lamp.room) ?? 0) + 1;
-        seen.set(lamp.room, n);
         const name = rooms.get(lamp.room)?.name ?? "Room";
-        lamp.label = counts.get(lamp.room) > 1 ? `${name} lamp ${n}` : `${name} lamp`;
+        if (!lamp.switch.startsWith("lamp:")) {
+            lamp.label = `${name} light`;
+        } else if (lamp.id === lamp.switch) {
+            const n = (seen.get(lamp.room) ?? 0) + 1;
+            seen.set(lamp.room, n);
+            lamp.label = counts.get(lamp.room) > 1 ? `${name} lamp ${n}` : `${name} lamp`;
+        }
         lights.push(lamp);
     }
+    // A lamp's further lights (a track's heads) are called as its first is.
+    for (const lamp of lamps) {
+        if (lamp.label) continue;
+        lamp.label = lamps.find((other) => other.fixture === lamp.fixture && other.label)?.label ?? "Lamp";
+    }
+    distinguish(lights);
     return lights;
 }
+
+/**
+ * Switches called alike — two buildings of one design, their rooms named
+ * alike — told apart by the parts of their rooms' ids that differ ("A ·
+ * Upper north flat light", "B · …"; "A-A1 · …", "B-A1 · …" if it takes two), or
+ * else numbered; every light on a switch called as its switch is. Labels
+ * that are already apart stay as they are — a version published before
+ * this is told apart as it loads (World, Switches).
+ *
+ * @param {object[]} lights  `{ switch, kind, room, label }`, changed in place
+ * @returns {object[]} `lights`
+ */
+export function distinguish(lights) {
+    const first = new Map();
+    for (const light of lights) if (!first.has(light.switch) || light.kind === "ceiling") first.set(light.switch, light);
+    const alike = new Map();
+    for (const [id, light] of first) alike.set(light.label, [...(alike.get(light.label) ?? []), id]);
+    const labels = new Map();
+    for (const [label, ids] of alike) {
+        if (ids.length < 2) continue;
+        const parts = ids.map((id) => (first.get(id).room ?? "").split("-"));
+        const width = Math.max(...parts.map((p) => p.length));
+        const differing = [...Array(width).keys()].filter((i) => new Set(parts.map((p) => p[i])).size > 1);
+        let tags = null;
+        for (let n = 1; n <= differing.length && !tags; n++) {
+            const tried = parts.map((p) => differing.slice(0, n).map((i) => p[i] ?? "").join("-").toUpperCase());
+            if (tried.every((tag) => tag && tag.length <= 6) && new Set(tried).size === tried.length) tags = tried;
+        }
+        ids.forEach((id, n) => labels.set(id, tags ? `${tags[n]} · ${label}` : `${label} ${n + 1}`));
+    }
+    for (const light of lights) if (labels.has(light.switch)) light.label = labels.get(light.switch);
+    return lights;
+}
+
+/**
+ * The room whose space holds a point: in its plan, not in a void, between
+ * its floor and its ceiling — of two, the upper (a point on a ceiling is
+ * the room's under it, as SceneBuilder.roomAt has it for feet otherwise).
+ */
+function roomHolding(rooms, x, y, z) {
+    let best = null;
+    for (const room of rooms) {
+        if (y < room.elevation - 0.05 || y > room.elevation + room.height + 0.05) continue;
+        if (!pointInPolygon(x, z, room.polygon)) continue;
+        if (room.voids?.some((hole) => pointInPolygon(x, z, hole))) continue;
+        if (!best || room.elevation > best.elevation) best = room;
+    }
+    return best;
+}
+
+/**
+ * Each light fitting's glass and each lamp's bulb or shade marked with its
+ * switch (`userData.glow`), for a view lit live to light them as their
+ * switches are (World/LiveBulbs.js), and for a publish to keep them apart
+ * (Publish/Snapshot.js). A ceiling light's is its opal glass; a lamp's,
+ * whatever of it has the material its light names (`glow`).
+ *
+ * @param {SceneBuilder} builder  a built scene, its fittings and furniture in
+ * @param {object[]} lights  its lights, as gatherLights gives them
+ */
+export function markBulbs(builder, lights) {
+    for (const owner of builder.lightFittings?.children ?? []) {
+        if (owner.userData?.kind !== "fitting") continue;
+        const id = `ceiling:${owner.userData.id}`;
+        owner.traverse((node) => {
+            if (node.isMesh && [].concat(node.material).some((material) => material?.name === GLASS)) node.userData.glow = id;
+        });
+    }
+    for (const light of lights) {
+        if (light.kind !== "lamp" || !light.fixture) continue;
+        const group = builder.furniture.get(light.fixture)?.group;
+        if (!group) continue;
+        let seeThrough = false;
+        group.traverse((node) => {
+            if (!node.isMesh) return;
+            const materials = [].concat(node.material);
+            if (materials.some((material) => material?.name === light.glow)) node.userData.glow = light.switch;
+            // A woven shade, seen through itself: kept whole by a publish,
+            // from both sides, and lit from within as its switch is (a
+            // shade's glow: World/LiveBulbs.js).
+            if (materials.some((material) => SEE_THROUGH.test(material?.name ?? ""))) {
+                node.userData.keepWhole = "both";
+                node.userData.glow = `${SHADE}${light.switch}`;
+                seeThrough = true;
+            }
+        });
+        // And what is seen through it — the bulb, the frame — kept whole too.
+        if (seeThrough) group.traverse((node) => {
+            if (node.isMesh && !node.userData.keepWhole) node.userData.keepWhole = true;
+        });
+    }
+}
+
+/** What a shade's `userData.glow` starts with, before its switch: lit softly from within, not a bulb. */
+export const SHADE = "shade:";
+
+/** A lamp's shade woven open, its strands too fine for a publish's samples to find. */
+const SEE_THROUGH = /weave|rattan|wicker/;
 
 /**
  * A room's ceiling light — which kind, where its light is, and the height
@@ -151,7 +281,7 @@ export function ceilingFitting(room) {
     const finish = FINISHES[room.floor_finish];
     // Tiled bathrooms, and a garage's concrete, have a light that keeps out the damp.
     const wet = /^ceramic/.test(room.floor_finish) || finish?.generator === "concrete";
-    const style = area < PENDANT_MIN_AREA || room.height < PENDANT_MIN_HEIGHT || wet ? "flush" : "pendant";
+    const style = CEILING_STYLES[room.fitting] ? room.fitting : area < PENDANT_MIN_AREA || room.height < PENDANT_MIN_HEIGHT || wet ? "flush" : "pendant";
     const [x, z] = insidePoint(room.polygon);
     const ceiling = room.elevation + room.height;
     return { room: room.id, style, ceiling, position: [x, ceiling - CEILING_STYLES[style].drop, z] };
@@ -170,22 +300,55 @@ export function ceilingFitting(room) {
  * @param {object} room
  * @param {object} spec
  * @param {(x, y, z) => object|null} roomAt  which room a point is in
+ * @param {object} [sides]  the spec's doors and stairs, and the rooms either
+ *        side — doorSides(spec, roomAt), once for all the rooms
  * @returns {{ position: number[], yaw: number, wall: string }|null}
  */
-export function wallSwitch(room, spec, roomAt) {
-    for (const stair of spec.stairs || []) {
-        const yaw = THREE.MathUtils.degToRad(stair.yaw ?? 0);
-        const fx = Math.sin(yaw);
-        const fz = Math.cos(yaw);
-        // A step onto the floor past the top of the flight.
-        const x = stair.start[0] + fx * (stair.run + STAIR_BEYOND);
-        const z = stair.start[1] + fz * (stair.run + STAIR_BEYOND);
-        if (roomAt(x, stair.top_height + 1.0, z)?.id !== room.id) continue;
+export function wallSwitch(room, spec, roomAt, sides = doorSides(spec, roomAt)) {
+    for (const { x, z, room: top } of sides.stairTops) {
+        if (top?.id !== room.id) continue;
         const plate = nearestWall(room, spec, roomAt, x, z);
         if (plate) return plate;
     }
 
+    const counts = sides.counts;
     const doorways = [];
+    for (const { wall, opening, length, dx, dz, plus, minus } of sides.doors) {
+        if (plus?.id === room.id) doorways.push({ wall, opening, face: 1, other: minus, length, dx, dz });
+        else if (minus?.id === room.id) doorways.push({ wall, opening, face: -1, other: plus, length, dx, dz });
+    }
+    if (!doorways.length) return null;
+    const outdoors = (other) => !other || FINISHES[other.floor_finish]?.kind === "ground";
+    const hub = (counts.get(room.id) ?? 0) >= 3;
+    const score = ({ other }) => (outdoors(other) ? (hub ? 100 : -1) : counts.get(other.id) ?? 0);
+    doorways.sort((a, b) => score(b) - score(a));
+
+    for (const { wall, opening, face, length } of doorways) {
+        // A hinged door's hinges are at its `swing`'s end; the switch goes at the other.
+        const hinge = opening.type === "door" && opening.door?.type !== "double" ? (opening.door?.swing?.endsWith("left") ? -1 : 1) : 0;
+        const sides = hinge ? [-hinge, hinge] : [1, -1];
+        for (const side of sides) {
+            const along = opening.offset + side * (opening.width / 2 + SWITCH_BESIDE);
+            if (clearOnWall(wall, along, length, room.elevation + SWITCH_HEIGHT)) return onWall(wall, along, face, room);
+        }
+    }
+    return null;
+}
+
+/**
+ * Every door and doorway in a spec with the rooms either side of it, how
+ * many doors each room has, and the rooms the stairs come up into — what
+ * wallSwitch looks for, found once for all of a space's rooms.
+ */
+export function doorSides(spec, roomAt) {
+    const stairTops = (spec.stairs || []).map((stair) => {
+        const yaw = THREE.MathUtils.degToRad(stair.yaw ?? 0);
+        // A step onto the floor past the top of the flight.
+        const x = stair.start[0] + Math.sin(yaw) * (stair.run + STAIR_BEYOND);
+        const z = stair.start[1] + Math.cos(yaw) * (stair.run + STAIR_BEYOND);
+        return { x, z, room: roomAt(x, stair.top_height + 1.0, z) };
+    });
+    const doors = [];
     const counts = new Map();
     for (const wall of spec.walls || []) {
         const [x1, z1] = wall.start;
@@ -204,26 +367,10 @@ export function wallSwitch(room, spec, roomAt) {
             const plus = roomAt(x - dz * reach, y, z + dx * reach);
             const minus = roomAt(x + dz * reach, y, z - dx * reach);
             for (const side of [plus, minus]) if (side) counts.set(side.id, (counts.get(side.id) ?? 0) + 1);
-            if (plus?.id === room.id) doorways.push({ wall, opening, face: 1, other: minus, length, dx, dz });
-            else if (minus?.id === room.id) doorways.push({ wall, opening, face: -1, other: plus, length, dx, dz });
+            doors.push({ wall, opening, length, dx, dz, plus, minus });
         }
     }
-    if (!doorways.length) return null;
-    const outdoors = (other) => !other || FINISHES[other.floor_finish]?.kind === "ground";
-    const hub = (counts.get(room.id) ?? 0) >= 3;
-    const score = ({ other }) => (outdoors(other) ? (hub ? 100 : -1) : counts.get(other.id) ?? 0);
-    doorways.sort((a, b) => score(b) - score(a));
-
-    for (const { wall, opening, face, length } of doorways) {
-        // A hinged door's hinges are at its `swing`'s end; the switch goes at the other.
-        const hinge = opening.type === "door" && opening.door?.type !== "double" ? (opening.door?.swing?.endsWith("left") ? -1 : 1) : 0;
-        const sides = hinge ? [-hinge, hinge] : [1, -1];
-        for (const side of sides) {
-            const along = opening.offset + side * (opening.width / 2 + SWITCH_BESIDE);
-            if (clearOnWall(wall, along, length, room.elevation + SWITCH_HEIGHT)) return onWall(wall, along, face, room);
-        }
-    }
-    return null;
+    return { stairTops, doors, counts };
 }
 
 /**
@@ -341,3 +488,15 @@ function polygonArea(polygon) {
 function round(value) {
     return Math.round(value * 1000) / 1000;
 }
+
+/** The room whose floor is under (x, z), highest at or below y — within a storey — or null. */
+function roomUnder(rooms, x, y, z) {
+    let best = null;
+    for (const room of rooms) {
+        if (room.elevation > y + 0.05 || room.elevation < y - 4) continue;
+        if (!pointInPolygon(x, z, room.polygon)) continue;
+        if (!best || room.elevation > best.elevation) best = room;
+    }
+    return best;
+}
+

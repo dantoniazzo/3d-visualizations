@@ -30,3 +30,6 @@ __pycache__/
 # drives is built from them (`blender/import_cars.py`) into
 # public/models/cars/, which is kept, with each model's credits.
 assets/cars/*.glb
+
+# Mixamo downloads: used inside the app, never redistributed as raw files (Mixamo licence)
+assets/people/**/*.fbx

@@ -111,7 +111,7 @@
                     <kbd>N</kbd>
                 </button>
                 <button class="view-toggle lights-toggle" id="lights-toggle" hidden
-                        title="Turn the lights on and off (L)">
+                        title="Turn the lights on and off (L)" aria-controls="lights-panel" aria-expanded="false">
                     <span class="lights-toggle-icon" aria-hidden="true"></span>
                     <span class="view-toggle-label">Lights</span>
                     <kbd>L</kbd>
@@ -163,6 +163,7 @@
                     <span data-edit-only>· <b>T</b> changes a finish · <b>Tab</b> edit mode</span>
                 </span>
                 <span class="lock-hint-sub">
+                    <b>F</b> drives the car, <b>H</b> its headlights ·
                     <b>Esc</b> frees the cursor · <b>M</b> opens the menu ·
                     <b>Enter</b> to chat
                 </span>
@@ -172,10 +173,11 @@
                 </span>
             </div>
 
-            <!-- The light switches, in a public view whose fittings were baked apart. -->
+            <!-- The light switches: baked apart in a public view, or drawn live (the editor, a version lit live). -->
             <div class="hud-panel lights-panel" id="lights-panel" hidden>
                 <div class="hud-panel-section lights-head">
                     <h4>Lights</h4>
+                    <button class="ghost small" id="lights-all-on" hidden>All on</button>
                     <button class="ghost small" id="lights-all-off">All off</button>
                 </div>
                 <div id="lights-list"></div>
@@ -185,6 +187,23 @@
                 <div class="hud-panel-section">
                     <h4 id="menu-scene-name"></h4>
                     <p id="menu-scene-summary"></p>
+                </div>
+
+                <!-- Performance ↔ Quality: how much of the realism this device draws. -->
+                <div class="hud-panel-section" id="quality-section">
+                    <h5>Performance ↔ Quality</h5>
+                    <div class="quality-slider">
+                        <span class="quality-end" aria-hidden="true">Speed</span>
+                        <input type="range" id="quality-range" min="0" max="4" step="1"
+                               aria-label="Performance or quality" aria-describedby="quality-note" />
+                        <span class="quality-end" aria-hidden="true">Realism</span>
+                    </div>
+                    <div class="quality-ticks" aria-hidden="true">
+                        <span></span><span></span><span></span><span></span><span></span>
+                    </div>
+                    <p class="quality-name" id="quality-name"></p>
+                    <p class="hud-note" id="quality-note"></p>
+                    <button class="ghost small" id="quality-reload" hidden>Reload to apply fully</button>
                 </div>
 
                 <!-- How a baked public view is lit, as its visitor would have it. -->

@@ -4,7 +4,7 @@ import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
 import { FINISHES } from "../../../shared/catalog.js";
 import { isTransient } from "../World/Collision.js";
 import { skipDynamic } from "../World/SceneBuilder.js";
-import { canMerge, listStatic, materialKeys } from "../World/StaticBatcher.js";
+import { canMerge, glowOf, listStatic, materialKeys } from "../World/StaticBatcher.js";
 
 /**
  * A published version's runtime file: what the public view would otherwise
@@ -19,16 +19,21 @@ import { canMerge, listStatic, materialKeys } from "../World/StaticBatcher.js";
  *     goes as the finish's name; any other texture — a fabric, a worktop —
  *     goes in the file;
  *   - the glass, which is drawn live rather than merged, each pane saying
- *     which floor it is on for the bird's-eye view.
+ *     which floor it is on for the bird's-eye view;
+ *   - the faces the snapshot culled that still cast a shadow (`shadow`,
+ *     Snapshot.js), drawn into the shadow maps only — here rather than in
+ *     the snapshot, which the bake lights face by face.
  *
  * The server simplifies the collision (a centimetre and a half is nothing
  * to a capsule a third of a metre wide) and compresses the lot
  * (server/publish/compress.js).
  *
  * @param {Experience} experience  the scene as the editor has it, furniture loaded
+ * @param {object} [options]
+ * @param {THREE.Group} [options.shadow]  the snapshot's shadow casters
  * @returns {Promise<{ glb: ArrayBuffer, stats: object }>}
  */
-export async function buildRuntime(experience) {
+export async function buildRuntime(experience, { shadow = null } = {}) {
     const builder = experience.world.sceneBuilder;
     await builder.furnitureReady;
     // Every door and drawer shut, as the pieces collide and are published.
@@ -74,12 +79,21 @@ export async function buildRuntime(experience) {
     const visit = (object) => {
         if (!object.visible || options.skip(object) || object.userData?.helper) return;
         if (object.isMesh && object.geometry?.attributes.position && !canMerge(object) && !object.isSkinnedMesh) {
-            const geometry = object.geometry.clone().applyMatrix4(object.matrixWorld);
+            // In the world, but about its own origin, where it is: three
+            // sorts see-through things back to front by where each is, and
+            // a curtain at the world's origin is drawn after the window
+            // behind it as often as before.
+            const origin = new THREE.Vector3().setFromMatrixPosition(object.matrixWorld);
+            const geometry = object.geometry.clone().applyMatrix4(object.matrixWorld).translate(-origin.x, -origin.y, -origin.z);
             disposables.push(geometry);
             const mesh = new THREE.Mesh(geometry, Array.isArray(object.material) ? object.material.map((m) => exportable(m, disposables)) : exportable(object.material, disposables));
+            mesh.position.copy(origin);
             box.setFromObject(object);
             mesh.name = object.name;
-            mesh.userData = { level: options.levelOf(object, box), kind: options.kindOf(object) };
+            // A see-through light's glass keeps its switch, as the snapshot's
+            // do; and each its shadows, which glTF has no field for.
+            const glow = glowOf(object);
+            mesh.userData = { level: options.levelOf(object, box), kind: options.kindOf(object), cast: object.castShadow, receive: object.receiveShadow, ...(glow && { glow }) };
             glass.add(mesh);
         }
         for (const child of object.children) visit(child);
@@ -123,7 +137,7 @@ export async function buildRuntime(experience) {
                         Array.isArray(mesh.material) ? mesh.material.map((m) => exportable(m, disposables)) : exportable(mesh.material, disposables)
                     );
                     copy.name = mesh.name;
-                    copy.userData = { level };
+                    copy.userData = { level, cast: mesh.castShadow, receive: mesh.receiveShadow };
                     holder.add(copy);
                 });
             }
@@ -131,8 +145,11 @@ export async function buildRuntime(experience) {
         });
     }
 
+    if (shadow?.children.length) scene.add(shadow);
+
     scene.userData = { runtime: 1, levels: options.levels };
     const glb = await new GLTFExporter().parseAsync(scene, { binary: true });
+    if (shadow) scene.remove(shadow);
     for (const item of disposables) item.dispose();
     return {
         glb,
@@ -142,6 +159,7 @@ export async function buildRuntime(experience) {
             materials: keys.size,
             glass: glass.children.length,
             openable: openable.children.filter((node) => node.userData.opens).length,
+            shadowCasters: shadow ? shadow.children.reduce((sum, mesh) => sum + mesh.geometry.index.count / 3, 0) : 0,
         },
     };
 }
@@ -254,25 +272,42 @@ function describe(surface) {
 }
 
 /**
- * A copy of a material to put in the file. A finish's texture is left out
- * and named instead: the public view draws it again, the same, as the
+ * A copy of a material to put in the file. A finish's textures are left out
+ * and named instead: the public view draws them again, the same, as the
  * editor does. Anything else textured keeps its texture — as a JPEG, unless
  * it is see-through.
+ *
+ * What glTF has no field for, or reads back otherwise, goes in its extras
+ * for the public view to put back (SceneBuilder's restoreRuntimeMaterial):
+ * its depth layering; whether it writes depth (glTF's see-through, BLEND,
+ * comes back not writing it, and the glass, the pool's water and the
+ * curtains would sort against what is behind them otherwise); which side
+ * it is drawn from; and its relief's scale — a normal map loaded as an
+ * image, as a finish's is, comes back read upside down.
  */
 function exportable(material, disposables) {
     const copy = material.clone();
     disposables.push(copy);
     copy.userData = { ...material.userData };
-    // A finish's own texture, generated or an image, by the finish it is named for.
+    // A finish's own textures, generated or images, by the finish they are named for.
     const finish = FINISHES[material.name] && material.map?.name === material.name ? material.name : null;
     if (finish) {
         copy.map = null;
         copy.userData.finish = finish;
+        // Its relief, and its occlusion, roughness and metalness (TextureLibrary.getData).
+        for (const slot of ["normalMap", "aoMap", "roughnessMap", "metalnessMap"]) {
+            if (/:(normal|arm)$/.test(copy[slot]?.name ?? "") && copy[slot].name.startsWith(`${finish}:`)) copy[slot] = null;
+        }
     } else if (copy.map) {
         copy.map = copy.map.clone();
         const alpha = material.transparent || material.alphaTest > 0;
         copy.map.userData = { ...copy.map.userData, mimeType: alpha ? "image/png" : "image/jpeg" };
     }
     if (material.vertexColors) copy.userData.vertexColors = true;
+    // Its depth layering (MaterialLibrary's layer()): glTF has no field for it.
+    if (material.polygonOffset) copy.userData.polygonOffset = [material.polygonOffsetFactor, material.polygonOffsetUnits];
+    copy.userData.depthWrite = material.depthWrite;
+    copy.userData.side = material.side;
+    if (material.normalMap) copy.userData.normalScale = material.normalScale.toArray();
     return copy;
 }

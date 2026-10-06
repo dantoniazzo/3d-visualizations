@@ -1,6 +1,7 @@
 import * as THREE from "three";
 
-import { hillHeight, mulberry32, pointInPolygon } from "../../../../shared/vegetation.js";
+import { GROUND_DROP, closestOnSegment, hillHeight, isRoad, mulberry32, pointInPolygon } from "../../../../shared/vegetation.js";
+import { STREET, roadAt } from "../../../../shared/neighbourhood.js";
 
 /**
  * The garden's geometry, from the plan (shared/vegetation.js): the lawns
@@ -102,6 +103,8 @@ export function hillGrass(hills, trees, { density, coverage, patchSize }) {
                 const turn = random() * Math.PI * 2;
                 const scale = 0.89 + random() * 0.22;
                 if (random() > inPatch(x, z)) continue;
+                // Not on the road over the hills, nor its gravel.
+                if (hills.road && (roadAt(hills.road, x, z)?.distance ?? Infinity) < hills.road.reach - 0.2) continue;
                 const y = hillHeight(hills, x, z);
                 // Thinning out towards the rim, where the hills sink into the fields.
                 if (random() > smoothstep(-0.1, 0.6, y - hills.y)) continue;
@@ -119,6 +122,69 @@ export function hillGrass(hills, trees, { density, coverage, patchSize }) {
  * Smooth noise, 0..1, in blobs about `size` across, with smaller ones on
  * their edges — where the hills' grass grows thick and where it is bare.
  */
+/**
+ * The grass on the neighbourhood's verges (shared/neighbourhood.js): tufts
+ * in a strip each side of every street, from just past its gravel five
+ * metres out, in patches as the hills' are, `share` as thick — on level
+ * ground (the hills have their own), not on the plot, the junction or a
+ * neighbour's garden path, nor past the world's edge. Chunks as hillGrass's,
+ * a dozen metres of street a side each.
+ */
+export function vergeGrass(plan, trees, rooms, { density, coverage, patchSize }, share) {
+    if (!share || !density || coverage <= 0) return [];
+    const random = mulberry32(0x5a17c3e1);
+    const patch = patchNoise(patchSize, 0x27d4eb2f);
+    const near = plan.width / 2 + STREET.gravel + 0.3;
+    const far = near + 5;
+    const plot = rooms.filter((room) => !isRoad(room)).map((room) => room.polygon);
+    const [jx, jz] = plan.junction.centre;
+    const clear = plan.junction.size / 2 + STREET.gravel + 0.5;
+    // Patches over as much of the verges as `coverage` says.
+    const edge = 1 - coverage * 0.75;
+    const chunks = [];
+    for (const piece of plan.pieces) {
+        const points = piece.points;
+        for (let i = 0; i < points.length - 1; i += 6) {
+            const a = points[i];
+            const b = points[Math.min(points.length - 1, i + 6)];
+            const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+            if (!length) continue;
+            const tx = (b[0] - a[0]) / length;
+            const tz = (b[1] - a[1]) / length;
+            for (const side of [-1, 1]) {
+                const tufts = [];
+                const box = new THREE.Box3();
+                const wanted = Math.round(length * (far - near) * density * share);
+                for (let k = 0; k < wanted; k++) {
+                    const along = random() * length;
+                    const off = (near + random() * (far - near)) * side;
+                    const x = a[0] + tx * along - tz * off;
+                    const z = a[1] + tz * along + tx * off;
+                    const turn = random() * Math.PI * 2;
+                    // Shorter than the hills', as a verge is cut.
+                    const scale = 0.45 + random() * 0.3;
+                    if (random() > smoothstep(edge - 0.08, edge + 0.08, patch(x, z))) continue;
+                    if (Math.hypot(x - plan.centre[0], z - plan.centre[1]) > plan.radius) continue;
+                    if (Math.max(Math.abs(x - jx), Math.abs(z - jz)) < clear) continue;
+                    if (plan.hills && hillHeight(plan.hills, x, z) > -GROUND_DROP + 0.03) continue;
+                    if (plot.some((polygon) => pointInPolygon(x, z, polygon))) continue;
+                    if (plan.houses.some((house) => Math.hypot(x - house.x, z - house.z) < Math.max(house.width, house.depth) * 0.6)) continue;
+                    if (plan.houses.some(({ path: [from, to] }) => {
+                        const [px, pz] = closestOnSegment(x, z, from, to);
+                        return Math.hypot(px - x, pz - z) < 0.9;
+                    })) continue;
+                    if (trees.some((tree) => Math.hypot(tree.x - x, tree.z - z) < tree.trunk + 0.12)) continue;
+                    const y = -GROUND_DROP;
+                    tufts.push({ x, y, z, turn, scale });
+                    box.expandByPoint(new THREE.Vector3(x, y, z));
+                }
+                if (tufts.length) chunks.push({ box, tufts });
+            }
+        }
+    }
+    return chunks;
+}
+
 function patchNoise(size, seed) {
     const hash = (i, j) => {
         let h = Math.imul(i, 374761393) + Math.imul(j, 668265263) + seed;

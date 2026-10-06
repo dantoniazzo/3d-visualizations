@@ -40,6 +40,12 @@ const SUN_REDRAW = 0.1;
 const _position = new THREE.Vector3();
 const _here = new THREE.Vector3();
 
+/** Whether an object is drawn: it and everything it is under — the people's root, hidden as scenery, hides them all. */
+function shown(object) {
+    for (let node = object; node; node = node.parent) if (!node.visible) return false;
+    return true;
+}
+
 export default class LiveLamps {
     /**
      * @param {World} world  drawing a public view lit live, with its switches
@@ -178,15 +184,21 @@ export default class LiveLamps {
             const { object } = entry;
             object.updateWorldMatrix(true, false);
             const now = object.matrixWorld.elements;
-            if (entry.last && entry.visible === object.visible && entry.last.every((value, i) => value === now[i])) continue;
+            const visible = shown(object);
+            if (entry.last && entry.visible === visible && entry.last.every((value, i) => value === now[i])) continue;
             entry.last = now.slice();
-            entry.visible = object.visible;
+            entry.visible = visible;
             moved.push(object.getWorldPosition(new THREE.Vector3()));
         }
         return moved;
     }
 
-    /** What moves and casts a shadow: door leaves, furniture's doors and drawers, people, cars. */
+    /**
+     * What moves and casts a shadow: door leaves, furniture's doors and
+     * drawers, the visitors, the people round the property (World/People.js:
+     * each as it comes, goes or is hidden — not as it breathes, which would
+     * draw every shadow near it again every frame), cars.
+     */
     movers() {
         const objects = [];
         for (const door of this.builder.doors || []) for (const { leaf } of door.leaves) objects.push(leaf);
@@ -195,10 +207,17 @@ export default class LiveLamps {
         const player = this.world.player;
         if (player?.avatar) objects.push(player.avatar.avatar);
         for (const other of Object.values(player?.otherPlayers || {})) if (other.model?.avatar) objects.push(other.model.avatar);
-        // Kept from frame to frame, so each knows where it was.
+        const people = this.world.people?.list ?? [];
+        for (const person of people) objects.push(person.group);
+        // Kept from frame to frame, so each knows where it was — and only
+        // while it is there: a person built again is a new group.
         this.tracked ??= new Map();
+        if (this.tracked.size > objects.length + 64) {
+            const now = new Set(objects);
+            for (const object of this.tracked.keys()) if (!now.has(object)) this.tracked.delete(object);
+        }
         return objects.map((object) => {
-            if (!this.tracked.has(object)) this.tracked.set(object, { object, last: null, visible: object.visible });
+            if (!this.tracked.has(object)) this.tracked.set(object, { object, last: null, visible: shown(object) });
             return this.tracked.get(object);
         });
     }

@@ -1,6 +1,7 @@
 import * as THREE from "three";
 
 import { FINISHES } from "../../../shared/catalog.js";
+import { terrainHeight } from "../../../shared/landscape.js";
 
 /**
  * Where a visitor's camera can be, sampled densely enough that every
@@ -14,7 +15,11 @@ import { FINISHES } from "../../../shared/catalog.js";
  *     the third-person camera rides — under its ceiling; along each flight
  *     of stairs; and outside, on a coarser grid — gardens and drives are
  *     big, and what can be seen from them is the outside of the house —
- *     up to where the car's chase camera sits.
+ *     up to where the car's chase camera sits, above the ground there: a
+ *     garden or drive at its own level — at each one's where two overlap,
+ *     a parking slot under a terrace — a site's terrain at its height
+ *     (shared/landscape.js), the street a metre below the garden included;
+ *     and on a roof terrace, over the rooms under it.
  *   - the bird's-eye view of each floor: an orbit around targets across
  *     the floor, at the distances and angles that view allows (BIRD_VIEW),
  *     with everything above the floor taken away.
@@ -145,18 +150,51 @@ export function walkViewpoints(spec, collision, { jitter = null, density = 1 } =
 
     // Round the outside, wherever there is ground to stand or drive on.
     const indoor = spec.rooms.filter((room) => !outdoor(room));
+    const ground = groundHeights(spec);
     const box = bounds(spec.rooms.map((room) => room.polygon));
     const outsideSpacing = OUTSIDE_SPACING / Math.sqrt(density);
     for (let x = box.minX - OUTSIDE_MARGIN; x <= box.maxX + OUTSIDE_MARGIN; x += outsideSpacing) {
         for (let z = box.minZ - OUTSIDE_MARGIN; z <= box.maxZ + OUTSIDE_MARGIN; z += outsideSpacing) {
             const px = x + (jitter ? (jitter() - 0.5) * outsideSpacing : 0);
             const pz = z + (jitter ? (jitter() - 0.5) * outsideSpacing : 0);
-            if (indoor.some((room) => insidePolygon(px, pz, room.polygon))) continue;
-            for (const h of OUTSIDE_HEIGHTS) points.push(new THREE.Vector3(px, h, pz));
+            // Not in a room of a house — but over one, on its roof terrace, yes.
+            const under = indoor.filter((room) => insidePolygon(px, pz, room.polygon));
+            for (const y of ground(px, pz)) {
+                for (const h of OUTSIDE_HEIGHTS) {
+                    const at = y + h;
+                    if (under.some((room) => at > room.elevation - 0.05 && at < room.elevation + (room.height ?? 3) + 0.05)) continue;
+                    points.push(new THREE.Vector3(px, at, pz));
+                }
+            }
         }
     }
 
     return points.filter((point) => clear(point, collision));
+}
+
+/** Headroom over the ground for a visitor to stand under an outdoor floor above it. */
+const STAND_UNDER = 2.4;
+
+/**
+ * The heights a visitor outside stands at, lowest first: on a garden,
+ * drive or road — an outdoor room — its level, and every one's where they
+ * overlap (Ladonia's parking slot under the roof terrace above it); the
+ * ground under them too — a site's own terrain's height, or the plot's, 0
+ * — where there is room to stand under the lowest; elsewhere the ground.
+ */
+function groundHeights(spec) {
+    const yards = spec.rooms.filter(outdoor);
+    const terrain = spec.landscape?.terrain ?? null;
+    return (x, z) => {
+        const base = terrain ? terrainHeight(terrain, x, z) : 0;
+        const levels = [];
+        for (const room of yards) {
+            const y = room.elevation ?? 0;
+            if (insidePolygon(x, z, room.polygon) && !levels.some((level) => Math.abs(level - y) < 0.05)) levels.push(y);
+        }
+        if (!levels.length || Math.min(...levels) - base >= STAND_UNDER) levels.push(base);
+        return levels.sort((a, b) => a - b);
+    };
 }
 
 /** Whether a sample sits in open air rather than inside something solid. */

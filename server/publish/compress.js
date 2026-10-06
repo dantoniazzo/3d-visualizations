@@ -61,15 +61,26 @@ export async function compressView(glb, { draco: useDraco = true } = {}) {
 const COLLISION_TOLERANCE = 0.015;
 
 /**
+ * How far a simplified shadow caster may stray, in metres: as the
+ * collision — under the texel of any shadow map the public view draws but
+ * a lamp's at arm's length — and what of it is smaller than that, a
+ * screw's head, a cushion's piping, goes.
+ */
+const CASTER_TOLERANCE = 0.015;
+
+/**
  * A version's runtime file (frontend/Experience/Publish/Runtime.js): what
  * the public view would otherwise build the whole house for — what to
- * collide with, the real materials, the glass. Its collision meshes are
- * simplified to within a centimetre and a half — a sofa's curves are
- * thousands of triangles the visitor's capsule, a third of a metre wide,
- * cannot feel — and everything Draco-compressed with the view.
+ * collide with, the real materials, the glass, and the faces culled that
+ * still cast shadows. Its collision meshes are simplified to within a
+ * centimetre and a half — a sofa's curves are thousands of triangles the
+ * visitor's capsule, a third of a metre wide, cannot feel — and so are its
+ * shadow casters, whose triangles every shadow map drawn again would draw
+ * — a sofa's underside is as many as its top; and everything
+ * Draco-compressed with the view.
  */
 export async function compressRuntime(glb, { draco: useDraco = true } = {}) {
-    const [{ NodeIO }, { KHRONOS_EXTENSIONS }, { dedup, draco, prune, simplifyPrimitive, weldPrimitive }, { MeshoptSimplifier }, draco3d] =
+    const [{ NodeIO }, { KHRONOS_EXTENSIONS }, { compactPrimitive, dedup, draco, prune, simplifyPrimitive, weldPrimitive }, { MeshoptSimplifier }, draco3d] =
         await Promise.all([
             import("@gltf-transform/core"),
             import("@gltf-transform/extensions"),
@@ -104,6 +115,43 @@ export async function compressRuntime(glb, { draco: useDraco = true } = {}) {
         }
     }
 
+    // The shadow casters (Publish/Snapshot.js), to within CASTER_TOLERANCE
+    // in metres wherever they are; a piece left with nothing goes.
+    const casters = { before: 0, after: 0, pieces: 0 };
+    for (const node of document.getRoot().listNodes()) {
+        const mesh = node.getMesh();
+        if (!mesh || !node.getExtras()?.shadowCaster) continue;
+        for (const prim of mesh.listPrimitives()) {
+            if (!prim.getAttribute("POSITION") || !prim.getIndices()) continue;
+            casters.before += triangles(prim);
+            weldPrimitive(prim);
+            const position = prim.getAttribute("POSITION");
+            const indices = prim.getIndices();
+            const [kept] = MeshoptSimplifier.simplify(
+                new Uint32Array(indices.getArray()),
+                new Float32Array(position.getArray()),
+                3,
+                0,
+                CASTER_TOLERANCE,
+                ["ErrorAbsolute", "Prune"]
+            );
+            if (!kept.length) {
+                prim.dispose();
+                continue;
+            }
+            indices.setArray(kept);
+            compactPrimitive(prim);
+            if (prim.getAttribute("POSITION").getCount() <= 65534) prim.getIndices().setArray(new Uint16Array(prim.getIndices().getArray()));
+            casters.after += triangles(prim);
+        }
+        if (!mesh.listPrimitives().length) {
+            mesh.dispose();
+            node.dispose();
+        } else {
+            casters.pieces++;
+        }
+    }
+
     await document.transform(
         dedup(),
         // Keeping what says what it is: a light inside a piece of furniture
@@ -111,7 +159,7 @@ export async function compressRuntime(glb, { draco: useDraco = true } = {}) {
         prune({ keepExtras: true }),
         ...(useDraco ? [draco({ quantizePosition: 16, quantizeNormal: 10, quantizeTexcoord: 14, quantizeColor: 8 })] : [])
     );
-    return { glb: Buffer.from(await io.writeBinary(document)), collision: { before, after } };
+    return { glb: Buffer.from(await io.writeBinary(document)), collision: { before, after }, casters };
 }
 
 function triangles(prim) {

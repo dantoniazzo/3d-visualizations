@@ -278,6 +278,11 @@ export default class Player {
                 this.exitVehicle();
                 return;
             }
+            // The headlamps on or off for the drive (CarLights.js).
+            if (event.code === "KeyH") {
+                this.currentCar.lights?.toggle();
+                return;
+            }
             const c = this.currentCar.controls;
             switch (event.code) {
                 case "KeyW": case "ArrowUp": c.forward = true; return;
@@ -734,8 +739,10 @@ export default class Player {
         if (!this.inVehicle || !this.currentCar) return;
         const car = this.currentCar;
 
-        // Release anything still held, or the car drives off without you.
+        // Release anything still held, or the car drives off without you;
+        // and its lamps off, parked.
         car.controls = { forward: false, backward: false, left: false, right: false, brake: false };
+        car.lights?.off();
 
         const spot = car.exitPoint();
         this.player.collider.start.copy(spot);
@@ -873,8 +880,12 @@ export default class Player {
         // Built from a published runtime file, the house is only in the
         // collision tree, each triangle saying what it is part of.
         if (builder?.runtime) {
-            const hit = this.experience.world.collision.rayIntersect(this.player.raycaster.ray);
-            if (hit && hit.distance <= this.player.raycaster.far) sight = Math.min(sight, hit.distance);
+            const collision = this.experience.world.collision;
+            const hit = collision.rayIntersect(this.player.raycaster.ray);
+            // Its floors have tops and no undersides: seen from below, sight
+            // stops at the floor above all the same.
+            const seen = collision.rayIntersect(this.player.raycaster.ray, { twoSided: true });
+            if (seen && seen.distance <= this.player.raycaster.far) sight = Math.min(sight, seen.distance);
             // A piece with doors or drawers collides as its box, shut, which
             // stands a handle's depth proud of them: its own doors and
             // drawers are aimed at through it — nothing else's.

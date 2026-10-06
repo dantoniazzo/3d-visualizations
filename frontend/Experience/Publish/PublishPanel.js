@@ -1,13 +1,14 @@
 import { buildSnapshot } from "./Snapshot.js";
 import { buildRuntime } from "./Runtime.js";
-import { PUBLISH_OPTIONS, describeOptions, publishOptions, versionLabel } from "../../../shared/publishOptions.js";
+import { PUBLISH_OPTIONS, PUBLISH_PRESETS, describeOptions, publishOptions, versionLabel } from "../../../shared/publishOptions.js";
 
 /**
  * Publishing a space's public view, from the editor.
  *
  * First the options (shared/publishOptions.js): which optimisations this
  * version is made with, so each can be switched off and its difference
- * seen. Then the snapshot (Snapshot.js) is built with a progress bar up,
+ * seen — or one of the presets, published in one click (`PUBLISH_PRESETS`:
+ * lit live, as the editor's walkthrough draws it). Then the snapshot (Snapshot.js) is built with a progress bar up,
  * sent to the server, and — when asked for — its lighting baked there,
  * with the bake's progress followed here.
  *
@@ -41,6 +42,7 @@ export default class PublishPanel {
                 </header>
 
                 <section data-step="options">
+                    <div class="publish-presets">${PUBLISH_PRESETS.map(presetField).join("")}</div>
                     <form class="publish-options" data-form>${PUBLISH_OPTIONS.map(optionField).join("")}</form>
                     <p class="publish-note" data-bake-note hidden></p>
                     <div class="publish-actions">
@@ -93,6 +95,16 @@ export default class PublishPanel {
             event.preventDefault();
             this.publish();
         });
+        // A preset: its options in the form, as published, and published.
+        this.root.querySelectorAll("[data-preset]").forEach((button) =>
+            button.addEventListener("click", (event) => {
+                event.preventDefault();
+                const preset = PUBLISH_PRESETS.find((entry) => entry.id === button.dataset.preset);
+                if (!preset) return;
+                this.setOptions(publishOptions(preset.options));
+                this.publish();
+            })
+        );
         $("[data-again]").addEventListener("click", () => this.show("options"));
         $("[data-open]").addEventListener("click", () => this.openVersion(this.published?.version));
         $("[data-copy]").addEventListener("click", (event) => {
@@ -162,7 +174,7 @@ export default class PublishPanel {
         // published whole without them, and nothing walks on them.
         const restoreHills = this.leaveHills(!options.scenery.includes("hills"));
         try {
-            const { glb, stats } = await buildSnapshot(this.experience, {
+            const { glb, stats, shadow } = await buildSnapshot(this.experience, {
                 onProgress: (fraction, label) => this.progress(fraction, label),
                 cull: options.cull,
                 merge: options.merge,
@@ -176,7 +188,7 @@ export default class PublishPanel {
             });
             const body = await response.json().catch(() => ({}));
             if (!response.ok) throw new Error(body.error || `Publishing failed (${response.status})`);
-            const runtime = await this.sendRuntime(body);
+            const runtime = await this.sendRuntime(body, shadow);
             this.published = body;
             this.done(body, stats, options, runtime);
             this.refresh();
@@ -211,14 +223,15 @@ export default class PublishPanel {
     }
 
     /**
-     * The version's runtime file (Runtime.js) — collision, materials, glass
-     * — so its public view builds nothing of the house. A version without
-     * one still opens; it builds the house as before.
+     * The version's runtime file (Runtime.js) — collision, materials, glass,
+     * and the faces culled that still cast shadows (`shadow`, from the
+     * snapshot) — so its public view builds nothing of the house. A version
+     * without one still opens; it builds the house as before.
      */
-    async sendRuntime(manifest) {
+    async sendRuntime(manifest, shadow = null) {
         this.progress(1, "Packing collision and materials…");
         try {
-            const { glb, stats } = await buildRuntime(this.experience);
+            const { glb, stats } = await buildRuntime(this.experience, { shadow });
             const response = await fetch(`${this.api}/versions/${encodeURIComponent(manifest.version)}/runtime`, {
                 method: "PUT",
                 headers: { "Content-Type": "model/gltf-binary" },
@@ -231,6 +244,8 @@ export default class PublishPanel {
         } catch (error) {
             console.warn("[publish] runtime file", error);
             return { error: error.message };
+        } finally {
+            shadow?.traverse((node) => node.geometry?.dispose());
         }
     }
 
@@ -432,6 +447,15 @@ export default class PublishPanel {
         clearTimeout(this.poll);
         this.root.remove();
     }
+}
+
+/** A preset's one-click button, and what it publishes with. */
+function presetField(preset) {
+    return `
+        <div class="publish-option">
+            <button class="primary small" data-preset="${preset.id}">Publish ${escapeHtml(preset.label.charAt(0).toLowerCase() + preset.label.slice(1))}</button>
+            <span><small>${escapeHtml(preset.hint)}</small></span>
+        </div>`;
 }
 
 /** The form field for one option: a checkbox, or a row of choices. */

@@ -27,6 +27,21 @@ const ROUGHNESS = {
  * than set on the texture, because `texture.repeat` is per-texture: varying
  * it would force a separate texture upload for every wall in the building.
  */
+/**
+ * Which of two surfaces in one plane is drawn: a depth offset in front
+ * (FRONT) or behind (BEHIND), so they do not flicker against each other
+ * (z-fighting) — the walls' tops under a floor, a window's frame in its
+ * reveal, a wall's end in its neighbour's face. Floors keep no offset of
+ * their own, so a rug 1 cm over one stays in front of it.
+ */
+export const FRONT = [-1, -2];
+export const BEHIND = [1, 2];
+export function layer(material, [factor, units]) {
+    material.polygonOffset = true;
+    material.polygonOffsetFactor = factor;
+    material.polygonOffsetUnits = units;
+}
+
 export default class MaterialLibrary {
     constructor() {
         this.textures = new TextureLibrary();
@@ -49,6 +64,27 @@ export default class MaterialLibrary {
             metalness: 0,
         });
         material.name = resolved;
+        // A photographed finish: its relief, and its own roughness and
+        // occlusion from the packed map, its colour tinted as listed.
+        if (finish.color) material.color.set(finish.color);
+        // Or a multiplier, in linear light, that may brighten as well as tint:
+        // a photographed surface darker than the real one.
+        if (finish.tint) material.color.setRGB(...finish.tint);
+        const normal = this.textures.getData(resolved, "normal");
+        if (normal) {
+            material.normalMap = normal;
+            material.normalScale.setScalar(finish.relief ?? 1);
+        }
+        const arm = this.textures.getData(resolved, "arm");
+        if (arm) {
+            material.aoMap = arm;
+            material.roughnessMap = arm;
+            material.roughness = finish.roughness ?? 1;
+            if (finish.metal) {
+                material.metalnessMap = arm;
+                material.metalness = 1;
+            }
+        }
 
         this.surfaces.set(resolved, material);
         return material;
@@ -71,7 +107,9 @@ export default class MaterialLibrary {
                   ...common,
                   transparent: true,
                   opacity: spec.opacity,
-                  transmission: 0.85,
+                  // Plain see-through, not refracting: a refractive pane in
+                  // view redraws every opaque thing and darkens the frame.
+                  transmission: spec.transmission ?? 0,
                   thickness: 0.02,
                   ior: 1.5,
                   side: THREE.DoubleSide,
@@ -80,8 +118,44 @@ export default class MaterialLibrary {
 
         material.name = key;
         applyReflection(material);
+        // Frames and glass in front of the reveals they sit flush in. A trim
+        // laid on a surface (skirting, road paint, a switch plate) is drawn
+        // as it stands; a wall's own ends, top and reveals take
+        // getTrimBehind.
+        if (/^(frame_|glass)/.test(key)) layer(material, FRONT);
         this.trims.set(key, material);
         return material;
+    }
+
+    /** The trim, layered `side` (FRONT or BEHIND): its own copy, unless it already is. */
+    layeredTrim(name, fallback, side, tag) {
+        const base = this.getTrim(name, fallback);
+        if (base.polygonOffset && base.polygonOffsetFactor === side[0]) return base;
+        const key = `${base.name}|${tag}`;
+        if (!this.trims.has(key)) {
+            const material = base.clone();
+            layer(material, side);
+            this.trims.set(key, material);
+        }
+        return this.trims.get(key);
+    }
+
+    /**
+     * A trim drawn in front of the faces it stands proud of: a door's lining,
+     * a few millimetres off the wall's faces either side and just inside its
+     * reveals, which would otherwise show through it.
+     */
+    getTrimFront(name, fallback = "trim_white") {
+        return this.layeredTrim(name, fallback, FRONT, "front");
+    }
+
+    /**
+     * A trim drawn behind the faces it meets in their plane: a wall's ends,
+     * top and reveals against a corner's neighbouring wall or the floor over
+     * it, a stair's risers and a roof's soffit against the walls by them.
+     */
+    getTrimBehind(name, fallback = "trim_white") {
+        return this.layeredTrim(name, fallback, BEHIND, "behind");
     }
 
     /** Metres covered by one repeat of a finish. */

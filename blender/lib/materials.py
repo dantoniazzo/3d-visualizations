@@ -40,6 +40,17 @@ def _remember(mat, colour):
     return mat
 
 
+def srgb(hexstr):
+    """A '#rrggbb' as it should look: what veneer, speckled and noisy take."""
+    h = hexstr.lstrip("#")
+    return tuple(int(h[i:i + 2], 16) / 255 for i in (0, 2, 4))
+
+
+def linear(hexstr):
+    """A '#rrggbb' as plain() takes it: linear, so it reaches the app looking so."""
+    return tuple(c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in srgb(hexstr))
+
+
 def _avg(a, b, w=0.5):
     return tuple(a[i] * (1 - w) + b[i] * w for i in range(3))
 
@@ -85,6 +96,28 @@ def plain(name, color, rough=0.6, metal=0.0, **kw):
     mat, _, bsdf = _new(name)
     _set(bsdf, base=(*color, 1.0), rough=rough, metal=metal, **kw)
     _cache[name] = _remember(mat, color)
+    return mat
+
+
+def speckled(name, base, chips, rough=0.3, tile=0.9, density=0.035, coat=0.0):
+    """Terrazzo: a flat colour in Blender, baked on export as chips of stone."""
+    if name in _cache:
+        return _cache[name]
+    mat, _, bsdf = _new(name)
+    _set(bsdf, base=(*base, 1.0), rough=rough, coat=coat, coat_rough=0.1)
+    _bake_recipe(mat, "terrazzo", dict(base=list(base), chips=[list(c) for c in chips], density=density), tile)
+    _cache[name] = _remember(mat, base)
+    return mat
+
+
+def veneer(name, color_a, color_b, rough=0.5, tile=1.2):
+    """Wood veneer: flat in Blender, baked on export as straight grain."""
+    if name in _cache:
+        return _cache[name]
+    mat, _, bsdf = _new(name)
+    _set(bsdf, base=(*_avg(color_a, color_b), 1.0), rough=rough)
+    _bake_recipe(mat, "grain", dict(base=list(color_a), dark=list(color_b)), tile)
+    _cache[name] = _remember(mat, _avg(color_a, color_b))
     return mat
 
 
@@ -264,12 +297,78 @@ def glass(name="glass", tint=(0.94, 0.96, 0.97)):
     return mat
 
 
+def sheer(name, color, alpha=0.8, rough=0.9, weave=None, tile=0.5):
+    """A thin fabric that lets light through: blended, seen from both sides.
+    `weave`, a darker thread colour: baked on export as plain-woven linen
+    with slubs across it, `color` and `weave` then given as they should
+    look (as veneer's are), not linear."""
+    if name in _cache:
+        return _cache[name]
+    mat, _, bsdf = _new(name)
+    _set(bsdf, base=(*color, 1.0), rough=rough, alpha=alpha)
+    if hasattr(mat, "surface_render_method"):
+        mat.surface_render_method = "BLENDED"
+    mat.use_backface_culling = False
+    if weave is not None:
+        _bake_recipe(mat, "linen", dict(base=list(color), dark=list(weave)), tile)
+    _cache[name] = _remember(mat, color)
+    return mat
+
+
 def emissive(name, color, strength):
     if name in _cache:
         return _cache[name]
     mat, _, bsdf = _new(name)
     _set(bsdf, base=(*color, 1.0), emit=(*color, 1.0), emit_str=strength, rough=0.5)
     _cache[name] = _remember(mat, color)
+    return mat
+
+
+def twill(name, color_a, color_b, rough=0.95, tile=0.3):
+    """A twill-woven cloth (a wrapped door, a wall panel): flat in Blender,
+    baked on export as fine diagonal ribs with slubs, a 5 mm repeat at the
+    default tile."""
+    if name in _cache:
+        return _cache[name]
+    mat, _, bsdf = _new(name)
+    _set(bsdf, base=(*_avg(color_a, color_b), 1.0), rough=rough)
+    _bake_recipe(mat, "twill", dict(base=list(color_a), dark=list(color_b)), tile)
+    _cache[name] = _remember(mat, _avg(color_a, color_b))
+    return mat
+
+
+def heather(name, base, flecks, rough=1.0, tile=0.3, density=0.5, width=1, mottle=0.06):
+    """Heathered wool or felt: flat in Blender, baked on export as a mottled
+    ground strewn with short fibres of lighter and darker wool, 1-3 mm at
+    the default tile."""
+    if name in _cache:
+        return _cache[name]
+    mat, _, bsdf = _new(name)
+    _set(bsdf, base=(*base, 1.0), rough=rough)
+    _bake_recipe(mat, "heather", dict(base=list(base), flecks=[list(c) for c in flecks], density=density, width=width,
+                                      mottle=mottle), tile)
+    _cache[name] = _remember(mat, base)
+    return mat
+
+
+def nubbly(name, base, dark, rough=0.95, tile=0.4, cells=96, contrast=1.0):
+    """Bouclé or a fine basket weave: flat in Blender, baked on export as
+    soft nubs of yarn a few millimetres across with darker gaps and a faint
+    warped basket under them — cloth, not a grid of tiles. Its mean is
+    mostly `base`, `dark` showing in the gaps."""
+    if name in _cache:
+        return _cache[name]
+    mat, _, bsdf = _new(name)
+    flat = _avg(base, dark, 0.18)
+    _set(bsdf, base=(*flat, 1.0), rough=rough)
+    _bake_recipe(mat, "nubbly", dict(base=list(base), dark=list(dark), cells=cells, contrast=contrast), tile)
+    _cache[name] = _remember(mat, flat)
+    return mat
+
+
+def _two_sided(mat):
+    """Seen from both sides: a single sheet of cloth."""
+    mat.use_backface_culling = False
     return mat
 
 
@@ -355,6 +454,202 @@ def library():
         "book_green": plain("book_green", (0.06, 0.18, 0.10), rough=0.7),
         "book_blue": plain("book_blue", (0.05, 0.08, 0.22), rough=0.7),
         "shade": plain("shade", (0.85, 0.80, 0.70), rough=0.9),
+        # Ladonia Residence (lib/ladonia.py): its renders' oak, lacquers,
+        # terrazzo, linens and garden colours. A baked pattern's colours
+        # (veneer, speckled, noisy) reach the app as sRGB, a plain one's as
+        # linear: so the former are given as they should look.
+        # Light oak with a vertical grain, #d9b589 in the renders.
+        "oak_veneer": veneer("oak_veneer", (0.88, 0.75, 0.57), (0.79, 0.64, 0.46)),
+        "wood_stump": veneer("wood_stump", srgb("#ad6834"), srgb("#93522a"), tile=0.6),
+        "teak": veneer("teak", (0.58, 0.41, 0.27), (0.46, 0.31, 0.19), rough=0.6, tile=0.8),
+        "lacquer_ochre": plain("lacquer_ochre", linear("#c9a238"), rough=0.45),
+        "lacquer_sage": plain("lacquer_sage", linear("#a8ac96"), rough=0.6),
+        "lacquer_cream": plain("lacquer_cream", linear("#f1ebe1"), rough=0.5),
+        # Pale cream terrazzo, fine sparse grey and ochre chips.
+        "terrazzo_top": speckled("terrazzo_top", srgb("#ede2cf"),
+                                 [srgb("#a8a49c"), srgb("#c49a6a"), srgb("#f7f1e6"), srgb("#8a847c"), srgb("#d0b48c")],
+                                 rough=0.3, tile=0.35, density=0.03),
+        # Pale beige quartzite, #d8cdb8.
+        "stone_top": speckled("stone_top", srgb("#d8cdb8"),
+                              [srgb("#c9bca4"), srgb("#e6ddcc"), srgb("#b7aa92"), srgb("#cfc3ad")], rough=0.3, tile=0.8,
+                              density=0.12),
+        # The kitchens' small parts: a recessed champagne plinth, the
+        # handleless channels and joints (dark, so a 3 mm gap reads), the
+        # taps' gunmetal and brushed brass, black glass hobs and ovens.
+        "plinth_champagne": plain("plinth_champagne", linear("#b9a380"), rough=0.35, metal=0.85),
+        "kitchen_gap": plain("kitchen_gap", (0.035, 0.031, 0.027), rough=0.7),
+        # A hob's printed zones and controls: grey on its black glass, named
+        # so the app layers them in front of the glass (FurnitureLibrary /hob/).
+        "hob_ring": plain("hob_ring", linear("#5a5a5a"), rough=0.5),
+        "gunmetal": plain("gunmetal", (0.045, 0.038, 0.032), rough=0.32, metal=1.0),
+        "brass_brushed": plain("brass_brushed", linear("#b8a07a"), rough=0.3, metal=1.0),
+        "bronze_dark": plain("bronze_dark", (0.075, 0.052, 0.034), rough=0.38, metal=1.0),
+        "glass_black": plain("glass_black", (0.008, 0.008, 0.009), rough=0.06, coat=1.0, coat_rough=0.03),
+        "sink_dark": plain("sink_dark", (0.03, 0.03, 0.032), rough=0.4, metal=0.4),
+        "oven_white": plain("oven_white", (0.86, 0.86, 0.84), rough=0.3),
+        # An induction hob's black glass, its reflections soft (render 20);
+        # the sage kitchens' brushed champagne mixer; the shadow behind the
+        # sage panel's recessed grooves (named so the app layers it behind).
+        "hob_glass": plain("hob_glass", (0.01, 0.01, 0.011), rough=0.25, coat=0.5, coat_rough=0.2),
+        "champagne": plain("champagne", linear("#c9bfa8"), rough=0.35, metal=1.0),
+        "lacquer_sage_shadow": plain("lacquer_sage_shadow", linear("#737862"), rough=0.7),
+        # Sofas: ivory and cream boucle (a nubbly fleck at real size),
+        # oatmeal slip-cover linen, terracotta linen, bottle-green velvet.
+        "boucle_ivory": speckled("boucle_ivory", srgb("#e3d5c0"),
+                                 [srgb("#f1e8da"), srgb("#cbbba3"), srgb("#d8c8b0"), srgb("#ece2d2")], rough=0.95,
+                                 tile=0.35, density=0.55),
+        "boucle_cream": speckled("boucle_cream", srgb("#e8dcc8"), [srgb("#f6efe3"), srgb("#cdbfa8")], rough=0.95, tile=0.3,
+                                 density=0.5),
+        "boucle_oat": speckled("boucle_oat", srgb("#dacfc0"), [srgb("#ece4d8"), srgb("#bfb2a0"), srgb("#cfc3b2")], rough=0.95,
+                               tile=0.3, density=0.5),
+        "linen_ecru": noisy("linen_ecru", srgb("#ddd2c0"), srgb("#c8baa3"), scale=140, detail=8, rough=0.95, bump=0.3),
+        "linen_terracotta": noisy("linen_terracotta", srgb("#b8602e"), srgb("#a6552a"), scale=140, detail=8, rough=0.95),
+        "velvet_bottle": plain("velvet_bottle", linear("#2c3427"), rough=0.8),
+        # Dining: A's pale oak table, B's Cover-style chairs and microcement table.
+        "oak_pale": veneer("oak_pale", srgb("#e8c78c"), srgb("#d6b175")),
+        "oak_chair": veneer("oak_chair", (0.80, 0.62, 0.44), (0.72, 0.54, 0.37), tile=0.6),
+        "microcement": noisy("microcement", srgb("#ece4d6"), srgb("#e2d8c7"), scale=8, rough=0.6, bump=0.05),
+        # Lighting: matte black track and shades, opal glass, lit LED diffusers.
+        "black_metal_matte": plain("black_metal_matte", (0.025, 0.025, 0.027), rough=0.55, metal=0.5),
+        "opal": emissive("opal", (0.95, 0.92, 0.86), 0.6),
+        "led_white": emissive("led_white", (1.0, 0.95, 0.86), 2.5),
+        # The wall shelf over B's cabinet (render 19): pale yellow oak, near maple.
+        "oak_maple": veneer("oak_maple", srgb("#e6cd9a"), srgb("#d5b882"), tile=0.8),
+        # The teak drum's top (render 19): end grain, its rings laid in as two tones.
+        "wood_endgrain": plain("wood_endgrain", linear("#b07040"), rough=0.5),
+        "wood_endgrain_ring": plain("wood_endgrain_ring", linear("#94562c"), rough=0.55),
+        # TV walls: A's sand lacquer panel, B's rift-cut oak block, glass screens.
+        "lacquer_sand": plain("lacquer_sand", linear("#d8c3a2"), rough=0.5),
+        "oak_rift": veneer("oak_rift", srgb("#b88a5e"), srgb("#9c7048"), tile=0.9),
+        "wood_dark": veneer("wood_dark", srgb("#4a3020"), srgb("#3a2518"), tile=0.6),
+        # Matte black screens, their reflections soft (renders 17, 20).
+        "tv_glass": plain("tv_glass", (0.01, 0.01, 0.01), rough=0.3, coat=0.3, coat_rough=0.15),
+        # Bedroom (render 21).
+        "lacquer_ivory": plain("lacquer_ivory", linear("#efe9df"), rough=0.5),
+        "linen_duvet": noisy("linen_duvet", srgb("#e2cfb0"), srgb("#d8c4a3"), scale=160, detail=8, rough=0.95, bump=0.25),
+        # The runner: a deep olive green (render 21), not khaki; its sage reverse.
+        "linen_olive": noisy("linen_olive", srgb("#545b3d"), srgb("#4a5136"), scale=160, detail=8, rough=0.9),
+        "linen_sage_lining": noisy("linen_sage_lining", srgb("#787d5d"), srgb("#6e7354"), scale=160, detail=8, rough=0.85),
+        "velvet_olive": plain("velvet_olive", linear("#2f3527"), rough=0.8),
+        "linen_olive_dark": noisy("linen_olive_dark", srgb("#3e4532"), srgb("#464d39"), scale=160, detail=8, rough=0.85),
+        "linen_sand": noisy("linen_sand", srgb("#d2b896"), srgb("#c7ab88"), scale=160, detail=8, rough=0.95),
+        "charcoal": plain("charcoal", linear("#4a4a4a"), rough=0.8),
+        # Heathered grey-green boiled-wool felt (render 21): a mid ground
+        # strewn with 1-3 mm fibres of lighter and darker wool; B's and C's a
+        # touch greener.
+        "felt_fleck": heather("felt_fleck", srgb("#a8aa94"), [srgb("#cdcebb"), srgb("#7c7f6e"), srgb("#959b84"), srgb("#b8baa5")],
+                              tile=0.3, density=0.6, width=2, mottle=0.08),
+        "felt_sage": heather("felt_sage", srgb("#a1a98e"), [srgb("#c6ccb5"), srgb("#76806b"), srgb("#8e9a80"), srgb("#b1b89f")],
+                             tile=0.3, density=0.6, width=2, mottle=0.08),
+        "walnut_veneer": veneer("walnut_veneer", srgb("#6a3c20"), srgb("#542c15"), tile=0.5),
+        "walnut_top": veneer("walnut_top", srgb("#86552e"), srgb("#734623"), tile=0.5),
+        # Fine loop pile, warm taupe-camel, a shade darker than the oak floor.
+        "rug_taupe": noisy("rug_taupe", srgb("#917255"), srgb("#76593f"), scale=90, detail=10, rough=1.0, bump=0.5),
+        # The white pillows' three fine stitch lines; the bedside light's opal
+        # tube, ivory by day; the bedrooms' heavy caramel linen, opaque, its
+        # slub running down it.
+        "thread_olive": plain("thread_olive", linear("#4d4f3c"), rough=0.8),
+        "led_opal": emissive("led_opal", linear("#f2e9d8"), 0.5),
+        "curtain_caramel": _two_sided(veneer("curtain_caramel", srgb("#d3a77b"), srgb("#c29469"), rough=0.95, tile=0.5)),
+        # The bed's platform: a creamy ivory lacquer, a shade warmer than
+        # the duvet, under the white mattress (render 21's head corner).
+        "bed_base": plain("bed_base", linear("#d8c6a8"), rough=0.55),
+        # Living-room accessories.
+        "art_yellow": plain("art_yellow", linear("#e2a83e"), rough=0.8),
+        "art_ground": noisy("art_ground", srgb("#e9b44c"), srgb("#d99a3c"), scale=6, rough=0.8),
+        "art_orange": plain("art_orange", linear("#e88a3a"), rough=0.8),
+        "leaf_dark": plain("leaf_dark", linear("#2e4a25"), rough=0.6),
+        "leaf_mid": plain("leaf_mid", linear("#4a6b30"), rough=0.6),
+        "leaf_alocasia": plain("leaf_alocasia", linear("#2f5a26"), rough=0.4),
+        "leaf_stem": plain("leaf_stem", linear("#6f8a4a"), rough=0.6),
+        "book_ink": plain("book_ink", linear("#23262b"), rough=0.7),
+        "stone_greygreen": noisy("stone_greygreen", srgb("#7f877b"), srgb("#6c7468"), scale=20, rough=0.6),
+        # The table lamp's base (render 19): grey granite, dark and pale crystals in a mid-grey ground.
+        "granite_grey": speckled("granite_grey", srgb("#716d67"),
+                                 [srgb("#46433f"), srgb("#57544f"), srgb("#8c877f"), srgb("#a39e94"), srgb("#7d7973")], rough=0.45,
+                                 tile=0.2, density=0.35),
+        "linen_shade": noisy("linen_shade", srgb("#ece3d2"), srgb("#e2d7c3"), scale=160, detail=8, rough=0.95),
+        "plaster": plain("plaster", linear("#e9e3d8"), rough=0.85),
+        "glass_grey": plain("glass_grey", (0.18, 0.18, 0.19), rough=0.1, coat=0.8, coat_rough=0.05),
+        # A's sofa: oatmeal bouclé, soft nubs over a faint basket (render 17), its cream cushions.
+        "weave_oat": nubbly("weave_oat", srgb("#dccab0"), srgb("#bfa98a"), tile=0.42),
+        "weave_cream": nubbly("weave_cream", srgb("#ece2d0"), srgb("#d3c6b0"), tile=0.36),
+        "weave_beige": tiles("weave_beige", srgb("#dbc8ac"), srgb("#c6b092"), size=0.005, span=0.3, grout_px=1, rough=0.9,
+                             bump=0.0),
+        # Warm mid oak for the long sideboards (render 18).
+        "oak_mid": veneer("oak_mid", srgb("#b17d4e"), srgb("#9a6a40"), tile=1.0),
+        "pillow_white": noisy("pillow_white", srgb("#efe8dc"), srgb("#e8dfd0"), scale=160, detail=8, rough=0.9),
+        "led_warm": emissive("led_warm", (1.0, 0.86, 0.66), 2.0),
+        "cushion_offwhite": plain("cushion_offwhite", linear("#e3d9c8"), rough=0.8),
+        "cushion_mustard": plain("cushion_mustard", linear("#b8954f"), rough=0.8),
+        "white_matte": plain("white_matte", linear("#e6e1d6"), rough=0.5),
+        "glass_bottle": plain("glass_bottle", (0.012, 0.03, 0.015), rough=0.08, coat=1.0, coat_rough=0.02),
+        "planter_bronze": plain("planter_bronze", linear("#2b261d"), rough=0.5, metal=0.3),
+        "soil_rim": plain("soil_rim", linear("#6f5646"), rough=1.0),
+        "bark_pale": plain("bark_pale", linear("#a6a797"), rough=0.8),
+        "leaf_lilac": plain("leaf_lilac", linear("#4d6447"), rough=0.7),
+        "lilac_flower": noisy("lilac_flower", srgb("#9a73a3"), srgb("#b493bb"), scale=40, rough=0.85),
+        "lilac_deep": noisy("lilac_deep", srgb("#86608f"), srgb("#a07ba8"), scale=40, rough=0.85),
+        # Crockery and pots on the shelves.
+        "ceramic_grey": plain("ceramic_grey", linear("#8a8278"), rough=0.55),
+        "clay_brown": plain("clay_brown", linear("#4a3326"), rough=0.7),
+        "porcelain_matte": plain("porcelain_matte", linear("#ece6dc"), rough=0.45),
+        "ceramic_pattern": speckled("ceramic_pattern", srgb("#d9d2c6"), [srgb("#7a6a5a"), srgb("#a3876a")], rough=0.5,
+                                    tile=0.12, density=0.25),
+        "linen_beige": noisy("linen_beige", (0.82, 0.75, 0.64), (0.76, 0.69, 0.58), scale=140, detail=8, rough=0.95, bump=0.3),
+        "linen_cream": noisy("linen_cream", (0.91, 0.87, 0.80), (0.86, 0.82, 0.75), scale=160, detail=8, rough=0.9, bump=0.25),
+        "linen_panel": twill("linen_panel", srgb("#d0bd9f"), srgb("#b8a385")),
+        "upholstery_beige": noisy("upholstery_beige", (0.84, 0.78, 0.68), (0.78, 0.72, 0.62), scale=140, detail=8, rough=0.95),
+        "fabric_olive": plain("fabric_olive", (0.055, 0.07, 0.035), rough=0.95),
+        "fabric_terracotta": plain("fabric_terracotta", (0.55, 0.13, 0.035), rough=0.95),
+        # Ribbed olive felt: the veneer's straight grain at 2-3 cm reads as its ribs.
+        "felt_olive": noisy("felt_olive", srgb("#6f7042"), srgb("#5d5e36"), scale=120, detail=10, rough=1.0, bump=0.2),
+        "felt_grey": noisy("felt_grey", (0.57, 0.58, 0.52), (0.49, 0.50, 0.44), scale=160, detail=8, rough=1.0),
+        "pleat_white": plain("pleat_white", linear("#efebe3"), rough=0.9),
+        "rattan_black": veneer("rattan_black", srgb("#2a2826"), srgb("#0e0d0c"), rough=0.7, tile=0.35),
+        # The same black cane, plain: for strands too fine to carry its grain (the woven pendant's band).
+        "rattan_weave": plain("rattan_weave", linear("#1c1b19"), rough=0.7),
+        # Sheer linen: greyer khaki (#9a8a70), mostly opaque, its slubs woven in
+        # so the folds read as cloth (render 19); caramel linen (#c08a55).
+        "curtain_linen": sheer("curtain_linen", srgb("#9a8a70"), alpha=0.88, weave=srgb("#7f705a"), tile=0.5),
+        "curtain_ochre": sheer("curtain_ochre", linear("#cfa476"), alpha=0.9),
+        "rug_rust": noisy("rug_rust", srgb("#7a3b2a"), srgb("#8a4a36"), scale=90, detail=10, rough=1.0, bump=0.5),
+        "rug_sage": noisy("rug_sage", srgb("#8c8f6e"), srgb("#9a9c7c"), scale=90, detail=10, rough=1.0, bump=0.5),
+        "ceramic_white": plain("ceramic_white", (0.80, 0.78, 0.72), rough=0.4),
+        "ceramic_dark": plain("ceramic_dark", (0.10, 0.08, 0.07), rough=0.5),
+        "outdoor_sage": plain("outdoor_sage", linear("#8a9478"), rough=0.5),
+        "outdoor_green": plain("outdoor_green", linear("#3e4236"), rough=0.8),
+        "outdoor_pedestal": plain("outdoor_pedestal", linear("#8a9478"), rough=0.55),
+        "outdoor_orange": plain("outdoor_orange", linear("#c58c5f"), rough=0.45),
+        "cushion_tan": noisy("cushion_tan", srgb("#c29e7b"), srgb("#b8936f"), scale=140, detail=8, rough=0.95),
+        "canvas_linen": noisy("canvas_linen", srgb("#d4d0bc"), srgb("#c9c4ae"), scale=140, detail=8, rough=0.95),
+        "canvas_mustard": noisy("canvas_mustard", srgb("#b8983e"), srgb("#ab8b36"), scale=140, detail=8, rough=0.95),
+        "canvas_tan": noisy("canvas_tan", srgb("#c4a47c"), srgb("#b8966d"), scale=140, detail=8, rough=0.95),
+        "marble_light": speckled("marble_light", srgb("#ece8e2"), [srgb("#d6d1ca"), srgb("#c8c3bc")], rough=0.25, tile=0.5,
+                                 density=0.05),
+        "stone_cream": noisy("stone_cream", srgb("#e6dccb"), srgb("#dcd0bc"), scale=8, rough=0.6, bump=0.05),
+        "render_white": plain("render_white", linear("#efece6"), rough=0.85),
+        "planter_brown": plain("planter_brown", linear("#3b2e26"), rough=0.6),
+        "bark_grey": plain("bark_grey", linear("#7d7468"), rough=0.9),
+        "wisteria_lilac": plain("wisteria_lilac", linear("#a77fc4"), rough=0.7),
+        "wisteria_deep": plain("wisteria_deep", linear("#8a5aa8"), rough=0.7),
+        "canvas_cream": noisy("canvas_cream", (0.91, 0.87, 0.79), (0.86, 0.82, 0.74), scale=140, detail=8, rough=0.95),
+        "canvas_ochre": plain("canvas_ochre", (0.62, 0.36, 0.10), rough=0.9),
+        "frame_anthracite": plain("frame_anthracite", (0.035, 0.037, 0.04), rough=0.45, metal=0.6),
+        "concrete_light": noisy("concrete_light", (0.87, 0.84, 0.78), (0.81, 0.78, 0.72), scale=8, rough=0.7, bump=0.1),
+        "wpc_grey": plain("wpc_grey", (0.18, 0.17, 0.16), rough=0.7),
+        "acrylic_white": plain("acrylic_white", (0.86, 0.87, 0.88), rough=0.15),
+        "water": plain("water", (0.03, 0.22, 0.26), rough=0.03, ior=1.33, coat=1.0, coat_rough=0.0),
+        # Walk-in showers: grey large-format tiles, 60 x 120 cm with a hairline grout.
+        "tile_large_grey": tiles("tile_large_grey", (0.50, 0.495, 0.48), (0.58, 0.575, 0.56), size=0.6, height=1.2, span=2.4,
+                                 grout_px=1, rough=0.3, bump=0.15),
+        # Render 12: C's bottle-green garden sofas on dark frames, a black ceramic kamado.
+        "canvas_bottle": noisy("canvas_bottle", srgb("#33514a"), srgb("#2c483f"), scale=140, detail=8, rough=0.95),
+        "frame_bottle": plain("frame_bottle", linear("#18231f"), rough=0.5, metal=0.4),
+        "kamado_black": plain("kamado_black", (0.012, 0.012, 0.013), rough=0.35, coat=0.4, coat_rough=0.2),
+        "olive_bark": plain("olive_bark", (0.18, 0.15, 0.11), rough=0.9),
+        "olive_leaf": noisy("olive_leaf", (0.36, 0.42, 0.28), (0.47, 0.51, 0.37), scale=40, detail=6, rough=0.85),
+        "paper": plain("paper", (0.85, 0.84, 0.80), rough=0.8),
         # The car
         "car_paint": plain("car_paint", (0.55, 0.20, 0.02), rough=0.25, coat=0.8, coat_rough=0.05),
         "rubber": plain("rubber", (0.02, 0.02, 0.02), rough=0.9),

@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 
-import { applyReflections } from "../../Utils/reflections.js";
+import { applyReflections, plainGlass } from "../../Utils/reflections.js";
 
 /**
  * Furniture as imported models rather than generated geometry.
@@ -69,6 +69,8 @@ export default class FurnitureLibrary {
             size: size.toArray(),
         };
         applyReflections(source);
+        plainGlass(source);
+        layerFlushFaces(source);
         this.sources.set(id, source);
         this.localItems.push(item);
         if (!this.catalog.items.includes(item)) this.catalog.items.push(item);
@@ -115,6 +117,8 @@ export default class FurnitureLibrary {
                     // Instances are clones sharing these materials, so
                     // this reaches every copy placed from now on.
                     applyReflections(gltf.scene);
+                    plainGlass(gltf.scene);
+                    layerFlushFaces(gltf.scene);
                     this.sources.set(catalogId, gltf.scene);
                     this.pending.delete(catalogId);
                     resolve(gltf.scene);
@@ -216,4 +220,27 @@ export default class FurnitureLibrary {
         this.sources.clear();
         this.pending.clear();
     }
+}
+
+/**
+ * A model's parts laid flush on others — a hob in its worktop, a screen in
+ * its bezel, a door's glass, a groove's dark strip — drawn in front of
+ * (or, for grooves, gaps and the plinths under a run, behind) the face they
+ * lie in, so the two do not flicker against each other.
+ */
+function layerFlushFaces(scene) {
+    scene.traverse((node) => {
+        if (!node.isMesh) return;
+        for (const material of Array.isArray(node.material) ? node.material : [node.material]) {
+            if (!material || material.userData.layered) continue;
+            material.userData.layered = true;
+            const name = material.name || "";
+            const front = /screen|glass|hob|display|led|label|button|knob|handle|pull|tap/i.test(name);
+            const back = /gap|groove|shadow|recess|seam|plinth/i.test(name);
+            if (!front && !back) continue;
+            material.polygonOffset = true;
+            material.polygonOffsetFactor = front ? -1 : 1;
+            material.polygonOffsetUnits = front ? -2 : 2;
+        }
+    });
 }

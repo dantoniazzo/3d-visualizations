@@ -37,8 +37,8 @@ as its doors close, and a windowless WC to go dark.
 The lightmap UVs (unwrap): each mesh is made whole first — T-junctions
 split, coincident vertices joined — then cut only where the surface turns
 sharply, and wherever a curved surface must be cut to lie flat; each piece
-is relaxed flat with Blender's minimum-stretch unwrap, so every texel
-covers the same few square centimetres, and packed tight. Texels are
+is laid flat with Blender's angle-based unwrap, so every texel covers
+the same few square centimetres, and packed room by room. Texels are
 spent where they are looked at: the house and everything in it at full
 density, the roof, the upper side of ceilings and the garden at less, the
 ground plane round the site at next to nothing.
@@ -136,6 +136,14 @@ SMOOTH = math.radians(35)
 # reach into the next island.
 MARGIN_4K = 8
 MARGIN = MARGIN_4K
+# How much of a rectangle Blender's packer fills with island boxes, and how
+# much of the atlas the zones' boxes are sized to take between them (the
+# rest is the gaps between zones).
+PACKING = 0.8
+FILL = 0.96
+# The share of the atlas the islands themselves should cover at least,
+# before the margins round them are narrowed (pack_zones).
+MIN_SURFACE = 0.25
 VERTEX_ATTRIBUTES = {"day": "_DAY", "night": "_NIGHT"}
 
 
@@ -181,6 +189,10 @@ def density(obj, settings):
         return 6.0
     if obj.get("kind") == "roof":
         return 2.0
+    # The neighbours' houses (World/Builders/NeighbourhoodBuilder.js): seen
+    # from the street, never up close.
+    if obj.get("kind") == "scenery":
+        return 4.0
     # The upper side of a ceiling, seen only through a stairwell from the
     # floor above.
     if obj.get("kind") == "ceiling" and obj.name.endswith("~back"):
@@ -357,16 +369,39 @@ def part_bulbs(objects, switches):
 
     Its light is baked from inside it (light_switch), so it is left out of
     every ray but the camera's: as an opaque ball round the light it would
-    keep all but a sliver of it in. Returns the objects, with the bulbs."""
+    keep all but a sliver of it in. Returns the objects, with the bulbs.
+
+    A snapshot parts each light's glass already, as an object of its own
+    tagged with its switch (Publish/Snapshot.js): only that switch's lights
+    take faces from it — a lamp's back to back with another room's would
+    otherwise take the other's end cap — and it stays its switch's glass
+    whole, as the live view lights it. A switch that is not baked (a lamp
+    out of doors, in no room) has no bulbs: its glass is baked as any other
+    surface, as it was before the snapshot tagged it."""
     lamps = []
     for switch in switches:
         for fitting in switch["lights"]:
             x, y, z = fitting["position"]
             reach = fitting.get("radius", BULB_RADIUS) + BULB_SLACK
             lamps.append((switch["id"], np.array([x, -z, y]), reach, fitting.get("glow")))
+    baked = {switch["id"] for switch in switches}
+    tagged = untagged = 0
+    for obj in objects:
+        if not obj.get("glow"):
+            continue
+        if obj["glow"] in baked:
+            tagged += 1
+        else:
+            del obj["glow"]
+            untagged += 1
+    if tagged or untagged:
+        log("glass parted by the snapshot:", tagged, "objects of baked switches,", untagged, "of switches not baked (untagged)")
     out = list(objects)
     for obj in objects:
         for switch, at, reach, glow in lamps:
+            # Another switch's glass, as the snapshot tagged it.
+            if obj.get("glow") and obj["glow"] != switch:
+                continue
             if glow and obj.get("material") != glow:
                 continue
             # The object as it is now, less any bulb already taken from it.
@@ -677,40 +712,156 @@ def pack_zones(objects, size):
     It all costs the house a few per cent of its texels per metre, against
     packing its islands with no regard to the rooms. Returns each zone's
     rectangle as [u, v, width, height], in UV units."""
+    give_area(objects)
     zones = {}
     for obj in objects:
         zones.setdefault(obj.get("zone", OUTSIDE), []).append(obj)
     total = sum(uv_area(obj) for obj in objects) or 1.0
-    # How much of the atlas each zone needs: its islands packed alone,
-    # with margins in proportion to the atlas share it will get, near
-    # enough.
-    need = {}
-    area = {}
-    for zone, members in zones.items():
-        before = area[zone] = sum(uv_area(obj) for obj in members)
-        extent = max(16.0, size * math.sqrt(before / total))
-        edit(members)
-        bpy.ops.uv.pack_islands(rotate=True, rotate_method="AXIS_ALIGNED", scale=True, margin_method="FRACTION",
-                                margin=MARGIN / extent, shape_method="AABB")
-        bpy.ops.object.mode_set(mode="OBJECT")
-        after = sum(uv_area(obj) for obj in members)
-        lo, hi = uv_bounds(members)
-        need[zone] = float(np.prod(hi - lo)) * before / max(after, 1e-12)
+    # How much of the atlas each zone needs: its islands' boxes, MARGIN
+    # texels round each, at the one scale at which every zone's fit the
+    # atlas together. Sized from the islands themselves rather than from a
+    # trial pack at the scale a smaller house would get: on a big site the
+    # islands claim more atlas than there is, every zone's share shrinks
+    # once laid out, and the margins — fixed in texels — eat a small room's
+    # islands whole (Ladonia's first bakes: a dozen rooms packed to nothing).
+    global MARGIN
+    area = {zone: sum(uv_area(obj) for obj in members) for zone, members in zones.items()}
+    boxes = {zone: np.array([box for obj in members for box in island_boxes(obj)] or [[0.0, 0.0]], dtype=np.float64)
+             for zone, members in zones.items()}
+
+    def needs(scale, margin):
+        m = margin / size
+        return {zone: float(np.sum((b[:, 0] * scale + 2 * m) * (b[:, 1] * scale + 2 * m))) / PACKING
+                for zone, b in boxes.items()}
+
+    def fit(margin):
+        lo_s, hi_s = 0.0, 1.0
+        while sum(needs(hi_s, margin).values()) < FILL:
+            hi_s *= 2
+        for _ in range(50):
+            mid = (lo_s + hi_s) / 2
+            lo_s, hi_s = (mid, hi_s) if sum(needs(mid, margin).values()) < FILL else (lo_s, mid)
+        return lo_s
+
+    # A site of many thousands of islands (Ladonia's three buildings: 22
+    # thousand) spends most of the atlas on their margins: then narrower
+    # margins, down to half, for at least MIN_SURFACE of it to be surface.
+    full = MARGIN
+    for margin in sorted({full, max(1, round(full * 0.75)), max(1, round(full / 2))}, reverse=True):
+        scale = fit(margin)
+        if scale * scale * total >= MIN_SURFACE:
+            break
+    if margin != full:
+        log("  margins narrowed:", full, "to", margin, "texels, for", len([1 for b in boxes.values() for _ in b]), "islands")
+    MARGIN = margin
+    need = needs(scale, MARGIN)
+    log("  islands:", sum(len(b) for b in boxes.values()), f"(margins {MARGIN} texels);",
+        f"surface {scale * scale * total * 100:.0f}% of the atlas as laid out")
     # Laid out, and packed; then again, each zone's rectangle sized by how
     # well its islands filled the first — so every zone comes out at the
-    # same texels per square metre, the most the atlas has room for.
+    # same texels per square metre — but never more than halved or doubled
+    # at a time, so one zone the packer did badly can't take the atlas.
     for _ in range(2):
         rects = zone_rects(need, MARGIN / size)
         for zone, members in zones.items():
             pack_into(members, rects[zone], MARGIN / size)
         fill = {zone: sum(uv_area(obj) for obj in members) / (rects[zone][2] * rects[zone][3])
                 for zone, members in zones.items()}
-        need = {zone: area[zone] / max(fill[zone], 1e-6) for zone in zones}
-    density = [math.sqrt(sum(uv_area(obj) for obj in members) / max(area[zone], 1e-12))
-               for zone, members in zones.items()]
+        need = {zone: min(2 * need[zone], max(0.5 * need[zone], area[zone] / max(fill[zone], 1e-6))) for zone in zones}
+    by_zone = {zone: math.sqrt(sum(uv_area(obj) for obj in members) / area[zone])
+               for zone, members in zones.items() if area[zone] > 1e-12}
+    density = list(by_zone.values())
+    usual = sorted(density)[len(density) // 2] if density else 1.0
+    for zone, d in by_zone.items():
+        if d < 0.5 * usual:
+            members = zones[zone]
+            log("  zone short of texels:", zone, f"{d / usual:.3g} of the usual;", len(members), "pieces,",
+                f"uv {area[zone]:.3g} -> {sum(uv_area(obj) for obj in members):.3g};", "rect", [round(v, 5) for v in rects[zone]],
+                "e.g.", ", ".join(obj.name for obj in members[:4]))
     log("  atlas", f"{sum(uv_area(obj) for obj in objects) * 100:.0f}% filled;",
-        f"zones' texels per metre within {(max(density) / min(density) - 1) * 100:.0f}% of each other")
+        f"zones' texels per metre within {(max(density) / max(min(density), 1e-12) - 1) * 100:.0f}% of each other")
     return rects
+
+
+def island_boxes(obj):
+    """The size of each of an object's lightmap islands, (width, height) in
+    UV units: faces joined where they share a vertex at the same UV."""
+    me = obj.data
+    n = len(me.polygons)
+    if not n:
+        return []
+    uv = np.empty(len(me.loops) * 2, dtype=np.float64)
+    me.uv_layers[LIGHTMAP_UV].data.foreach_get("uv", uv)
+    uv = uv.reshape(-1, 2)
+    verts = np.empty(len(me.loops), dtype=np.int64)
+    me.loops.foreach_get("vertex_index", verts)
+    totals = np.empty(n, dtype=np.int64)
+    me.polygons.foreach_get("loop_total", totals)
+    face_of = np.repeat(np.arange(n), totals)
+    parent = list(range(n))
+
+    def find(a):
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    seen = {}
+    q = np.round(uv * 1e6).astype(np.int64)
+    for li, (v, a, b) in enumerate(zip(verts.tolist(), q[:, 0].tolist(), q[:, 1].tolist())):
+        f = int(face_of[li])
+        other = seen.setdefault((v, a, b), f)
+        if other != f:
+            ra, rb = find(f), find(other)
+            if ra != rb:
+                parent[ra] = rb
+    roots = np.array([find(f) for f in range(n)])[face_of]
+    order = np.argsort(roots, kind="stable")
+    r, u = roots[order], uv[order]
+    cuts = np.flatnonzero(np.diff(r)) + 1
+    lo = np.minimum.reduceat(u, np.r_[0, cuts], axis=0)
+    hi = np.maximum.reduceat(u, np.r_[0, cuts], axis=0)
+    return (hi - lo).tolist()
+
+
+def give_area(objects):
+    """A piece the unwrap left with no area in the lightmap — Blender's
+    unwrap fails to solve an island now and then, and a piece of slivers
+    alone unwraps to nothing — would get a room of the atlas with none, and
+    no light: box-projected instead, at the texels per metre its neighbours
+    got. One with no surface at all gets a speck, so it still has a place
+    in the atlas."""
+    flat = [obj for obj in objects if uv_area(obj) <= 1e-12]
+    if not flat:
+        return
+    def surface(obj):
+        return sum(p.area for p in obj.data.polygons)
+    # The house's UV units per metre before each piece's own density.
+    rates = sorted(math.sqrt(uv_area(obj) / surface(obj)) * obj.get("_density", 1.0)
+                   for obj in objects if uv_area(obj) > 1e-12 and surface(obj) > 1e-9)
+    rate = rates[len(rates) // 2] if rates else 1.0
+    for obj in flat:
+        geo = surface(obj)
+        log("  no lightmap area:", obj.name, len(obj.data.polygons), "faces,", f"{geo:.5f} m2")
+        if geo > 1e-9:
+            edit([obj])
+            bpy.ops.uv.cube_project(cube_size=1.0, correct_aspect=True, scale_to_bounds=False)
+            bpy.ops.object.mode_set(mode="OBJECT")
+        # Fetched after the projection: edit mode rebuilds the mesh's data.
+        data = obj.data.uv_layers[LIGHTMAP_UV].data
+        if geo > 1e-9 and uv_area(obj) > 1e-12:
+            k = rate / obj.get("_density", 1.0) / math.sqrt(uv_area(obj) / geo)
+            coords = np.empty(len(data) * 2, dtype=np.float64)
+            data.foreach_get("uv", coords)
+            data.foreach_set("uv", (coords * k).astype(np.float32))
+        else:
+            # Each face a speck of its own, a texel or so across.
+            e = 1e-4
+            for poly in obj.data.polygons:
+                ox, oy = (poly.index % 64) * 2 * e, (poly.index // 64) * 2 * e
+                for i, li in enumerate(poly.loop_indices):
+                    a = 2 * math.pi * i / max(poly.loop_total, 3)
+                    data[li].uv = (ox + e * (1 + math.cos(a)) / 2, oy + e * (1 + math.sin(a)) / 2)
 
 
 def zone_rects(need, gap):
@@ -803,8 +954,8 @@ def unwrap(objects, settings, size):
     of a box: the light changes there anyway, and a texel straddling the
     corner would carry one face's light onto the other. Anywhere a curved
     surface still has to be cut to lie flat, the cuts smart projection
-    would make. Then each piece is relaxed flat with as little stretch as
-    it will take (Blender's minimum-stretch unwrap), so a texel covers the
+    would make. Then each piece is laid flat with as little stretch as it
+    will take (Blender's angle-based unwrap), so a texel covers the
     same few square centimetres everywhere on it, and scaled so every
     piece has the same texels per square metre — bar the ground outside,
     and the roof, which get fewer."""
@@ -830,7 +981,12 @@ def unwrap(objects, settings, size):
     bpy.ops.uv.smart_project(angle_limit=math.radians(89), island_margin=0.0, area_weight=0.0,
                              correct_aspect=True, scale_to_bounds=False)
     bpy.ops.uv.seams_from_islands(mark_seams=True, mark_sharp=False)
-    bpy.ops.uv.unwrap(method="MINIMUM_STRETCH", fill_holes=True, correct_aspect=True, margin=0.0)
+    # Angle-based, not minimum-stretch: on Ladonia's 22 thousand islands the
+    # minimum-stretch solver failed islands now and then, and from one run
+    # to the next left from 6% to 85% of the surface off an even texel
+    # density (a bedroom floor with no lightmap at all); angle-based gives
+    # every run 100% within a fifth, in half the time.
+    bpy.ops.uv.unwrap(method="ANGLE_BASED", fill_holes=True, correct_aspect=True, margin=0.0)
     # Every island at the same texels per square metre...
     bpy.ops.uv.average_islands_scale()
     bpy.ops.object.mode_set(mode="OBJECT")
@@ -849,6 +1005,11 @@ def unwrap(objects, settings, size):
     # Packed square to the atlas room by room, each island turned to lie
     # along it: a wall's edge, or a shadow along a skirting, then runs along
     # a row of texels rather than across them in steps.
+    # BAKE_CHECKPOINT=<file.blend>: saved here, unpacked, for working on the
+    # packing without the twenty minutes before it.
+    if os.environ.get("BAKE_CHECKPOINT"):
+        bpy.ops.wm.save_as_mainfile(filepath=os.environ["BAKE_CHECKPOINT"], copy=True)
+        log("checkpoint saved:", os.environ["BAKE_CHECKPOINT"])
     t = time.time()
     rects = pack_zones(objects, size)
     log("packed", len(rects), "zones", round(time.time() - t, 1), "s")
@@ -938,6 +1099,55 @@ def world(zenith, horizon, ground, strength):
     nt.links.new(remap.outputs["Result"], ramp.inputs["Fac"])
     nt.links.new(ramp.outputs["Color"], bg.inputs["Color"])
     nt.links.new(bg.outputs["Background"], out.inputs["Surface"])
+
+
+def sky_world(file, ceiling, turn, strength, keep=None, tint=None):
+    """A site's own sky (scripts/bake-public.mjs's landscapeSky): its HDR,
+    with the sun clipped out of it as the live view clips it (shared/sky.js's
+    findSun: every pixel brighter than `ceiling` brought down to it) — the
+    sun is a light of its own (sun()) — and at dusk greyed and tinted
+    (`keep`, `tint`) as the live view's night has it on the walls. Turned
+    `turn` degrees about the upright, as three turns it: three's turn about
+    +Y is Blender's about +Z, and a Texture mapping turns the picture, not
+    the way looked in. The Background node keeps its name, for lit_by."""
+    image = bpy.data.images.load(file, check_existing=False)
+    width, height = image.size
+    pixels = np.empty(width * height * 4, dtype=np.float32)
+    image.pixels.foreach_get(pixels)
+    rgb = pixels.reshape(-1, 4)[:, :3]
+    weights = np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
+    lum = rgb @ weights
+    over = lum > ceiling
+    rgb[over] *= (ceiling / lum[over])[:, None]
+    if keep is not None:
+        lum = rgb @ weights
+        rgb[:] = (lum[:, None] + (rgb - lum[:, None]) * keep) * np.array(tint or (1, 1, 1), dtype=np.float32)
+    clipped = bpy.data.images.new(f"{image.name}-sky", width, height, alpha=True, float_buffer=True)
+    clipped.colorspace_settings.name = "Linear Rec.709"
+    clipped.pixels.foreach_set(pixels)
+    bpy.data.images.remove(image)
+
+    w = bpy.data.worlds.new("sky")
+    bpy.context.scene.world = w
+    w.use_nodes = True
+    nt = w.node_tree
+    nt.nodes.clear()
+    out = nt.nodes.new("ShaderNodeOutputWorld")
+    bg = nt.nodes.new("ShaderNodeBackground")
+    bg.name = "Background"
+    bg.inputs["Strength"].default_value = strength
+    coords = nt.nodes.new("ShaderNodeTexCoord")
+    mapping = nt.nodes.new("ShaderNodeMapping")
+    mapping.vector_type = "TEXTURE"
+    mapping.inputs["Rotation"].default_value = (0.0, 0.0, math.radians(turn))
+    texture = nt.nodes.new("ShaderNodeTexEnvironment")
+    texture.image = clipped
+    texture.interpolation = "Linear"
+    nt.links.new(coords.outputs["Generated"], mapping.inputs["Vector"])
+    nt.links.new(mapping.outputs["Vector"], texture.inputs["Vector"])
+    nt.links.new(texture.outputs["Color"], bg.inputs["Color"])
+    nt.links.new(bg.outputs["Background"], out.inputs["Surface"])
+    log("sky", os.path.basename(file), f"turned {turn}°, strength {strength},", int(over.sum()), "sun pixels clipped")
 
 
 def sun(name, position, color, strength, angle=1.0):
@@ -1052,18 +1262,28 @@ def light(variant, settings):
         bpy.data.objects.remove(obj, do_unlink=True)
     portals(settings.get("portals", []))
     preset = settings["preset"]
+    own = settings.get("sky")
     if variant == "day":
-        sky = srgb(preset["hemi"]["sky"])
-        world(zenith=sky, horizon=srgb(preset["background"]), ground=srgb(preset["hemi"]["ground"]),
-              strength=settings["day"]["sky"])
-        shining = sun("sun", preset["sun"]["position"], srgb(preset["sun"]["color"]), settings["day"]["sun"])
+        if own:
+            sky_world(own["day"]["file"], own["day"]["ceiling"], own["turn"], settings["day"]["sky"])
+        else:
+            sky = srgb(preset["hemi"]["sky"])
+            world(zenith=sky, horizon=srgb(preset["background"]), ground=srgb(preset["hemi"]["ground"]),
+                  strength=settings["day"]["sky"])
+        shining = sun("sun", preset["sun"]["position"], srgb(preset["sun"]["color"]), settings["day"]["sun"],
+                      angle=preset["sun"].get("angle", 1.0))
         # A space published before it had light fittings of its own: a
         # light in every room, baked in, as then.
         if settings["day"].get("lights"):
             room_lights(settings["rooms"], settings["day"]["lights"], srgb("#ffe2bf"))
     else:
-        world(zenith=srgb("#1a2440"), horizon=srgb("#2a3350"), ground=srgb("#0c0d10"),
-              strength=settings["night"]["sky"])
+        if own:
+            dusk = own["night"]
+            sky_world(dusk["file"], dusk["ceiling"], own["turn"], settings["night"]["sky"],
+                      keep=dusk.get("keep"), tint=dusk.get("tint"))
+        else:
+            world(zenith=srgb("#1a2440"), horizon=srgb("#2a3350"), ground=srgb("#0c0d10"),
+                  strength=settings["night"]["sky"])
         shining = sun("moon", [-9, 16, -6], srgb("#b8c8ff"), settings["night"]["moon"], angle=0.6)
         if settings["night"].get("lights"):
             room_lights(settings["rooms"], settings["night"]["lights"], srgb("#ffd6a3"))
@@ -2896,11 +3116,23 @@ def main():
         if obj.get("glow"):
             for ray in RAYS[1:]:
                 setattr(obj, ray, False)
+        # Nor the neighbourhood's flat things that cast no shadow live: its
+        # roads, their gravel and their paint — a dash a centimetre over the
+        # asphalt would draw a line of shade beside itself.
+        if obj.get("kind") == "scenery" and obj.get("cast") in (False, 0):
+            obj.visible_shadow = False
     log("zones:", len({obj["zone"] for obj in lightmapped}), "over", len(lightmapped), "lightmapped objects,",
         round(time.time() - t, 1), "s")
     for obj in lightmapped:
         obj["_density"] = density(obj, settings)
 
+    # BAKE_CHECKPOINT_UNWRAP=<file.blend>: saved here, before the unwrap,
+    # for trying the unwrap on its own; with BAKE_STOP=1, nothing more.
+    if os.environ.get("BAKE_CHECKPOINT_UNWRAP"):
+        bpy.ops.wm.save_as_mainfile(filepath=os.environ["BAKE_CHECKPOINT_UNWRAP"], copy=True)
+        log("checkpoint saved:", os.environ["BAKE_CHECKPOINT_UNWRAP"])
+        if os.environ.get("BAKE_STOP"):
+            sys.exit(0)
     zones = unwrap(lightmapped, settings, args.size)
     texel = texel_size(lightmapped, args.size)
     log(f"house texels: {texel * 100:.1f} cm")

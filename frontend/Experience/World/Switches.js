@@ -2,6 +2,7 @@ import { EventEmitter } from "events";
 import * as THREE from "three";
 
 import { chromaURL, lightmapURL } from "../Utils/device.js";
+import { distinguish } from "./Fittings.js";
 
 /**
  * The light switches of a public view whose fittings were baked switch by
@@ -50,6 +51,9 @@ export default class Switches extends EventEmitter {
                 level: room ? levelOf(room.elevation, levels) : 0,
             };
         });
+        // Switches called alike told apart (a version baked before they were: Fittings.js).
+        const named = distinguish(this.list.map((item) => ({ switch: item.id, kind: item.kind, room: item.room, label: item.label })));
+        named.forEach((light, i) => (this.list[i].label = light.label));
         this.byId = new Map(this.list.map((item) => [item.id, item]));
 
         /** The rooms each switch's layers are drawn in, as the view laid them out. */
@@ -174,10 +178,25 @@ export default class Switches extends EventEmitter {
 }
 
 /** Which floor a room at `elevation` is on, of floors at `levels`. */
-function levelOf(elevation, levels) {
+export function levelOf(elevation, levels) {
     let level = 0;
     levels.forEach((height, i) => {
         if (elevation >= height - 0.05) level = i;
     });
     return level;
 }
+
+/**
+ * A floor's name, of floors at `levels` (their elevations, lowest first),
+ * the same in the lights panels and the bird's-eye view's floor picker:
+ * "Ground floor", "First floor"… for one house; where buildings stand at
+ * different heights (a floor of one is not the same floor of another),
+ * its height — "Level +3.0 m".
+ */
+export function floorName(level, levels = []) {
+    const plain = levels.length <= 5 && Math.abs(levels[0] ?? 0) < 0.3;
+    if (plain) return ["Ground floor", "First floor", "Second floor", "Third floor", "Fourth floor"][level] ?? `Floor ${level}`;
+    const height = levels[level] ?? 0;
+    return `Level ${height >= 0 ? "+" : "−"}${Math.abs(height).toFixed(1)} m`;
+}
+

@@ -154,6 +154,22 @@ cars are loaded with it, any other only when chosen. To add a car, put its
 GLB in `assets/cars/`, list it in `cars.json`, and run `npm run models --
 --cars <id>`.
 
+Driven, a car's lamps work (`World/Vehicle/CarLights.js`): its daytime
+running lamps and tail lamps while it is, its headlights, on by themselves at
+night and off by day — `H` turns them on or off for the drive — its brake
+lamps, the tail lamps brighter, when it brakes (`Space`, or backing while it
+still rolls forward) and its reversing lamps when it backs. Each lamp is the
+model's own, lit in its own shape: its glass, light guides and reflectors —
+the X6's rings, the M4's laser-blue guides, the Raptor's C-shaped running
+lamps, the Jaecoo's full-width tail bar. Which of a model's parts is which
+lamp is listed for each car in `LAMPS` (a material, at the nose or the tail,
+at a height, lit by its red or its clear parts); a car not listed lights its
+lamp materials at its nose white and the red ones at its tail. At night each
+lamp has a glow round it as well. The beam: where the view takes live light
+(the editor, a public view lit live), a dipped spotlight that lights the
+road, the garage, the house; drawn from the bake, a pool of light on the
+road ahead. Parked, everything is off.
+
 The X6 was also modelled, and that is kept to take further:
 `blender/export_car.py` builds an X6 M as a quad cage the way a car
 modeller does — the method of Enpix's *Best Way To Model A Car In Blender*
@@ -262,7 +278,8 @@ Click once to capture the pointer, then look with the mouse.
 | `Enter` | chat |
 | `Esc` | free the cursor |
 
-Behind the wheel, `WASD` steers and `Space` brakes; `F` gets you out.
+Behind the wheel, `WASD` steers and `Space` brakes; `H` turns the
+headlights on or off; `F` gets you out.
 Touch devices fall back to drag-to-look plus an on-screen joystick.
 
 **Share the URL.** `?scene=<id>` puts everyone in the same property.
@@ -274,8 +291,10 @@ chats exactly like the walkthrough, but nothing in it edits or saves: no edit
 mode (its code is not even downloaded), no finish picker, no way back to the
 library. Because nothing will move, it is also drawn far more cheaply: once
 the furniture is in, everything static is merged into one mesh per material
-per floor, and refractive glass becomes plain see-through glass — together a
-tenth of the draw calls.
+per floor — a tenth of the draw calls. (All glass is plain see-through glass,
+here and in the walkthrough, never refracting: a refractive pane anywhere in
+view redrew every opaque thing and darkened the whole frame — a shower's door
+left a bathroom near black.)
 
 **Bird's-eye view.** **B**, or the *Bird's-eye* button, looks down on one
 floor at a time with everything over it taken away: the floors above, the
@@ -568,11 +587,204 @@ through. Live, the sun's shadow reaches over the hills, so the trees and
 the grass shade them as in the demo; the shadow map is twice as big then
 (except on phones), so the house's own shadows stay as sharp.
 
+**The neighbourhood.** Round the plot is a neighbourhood
+(`shared/neighbourhood.js`), planned from the spec as the garden is: the
+street in front of the plot carried on both ways to the edge of the world;
+a cross street beside the plot, on the side of its drive, meeting it at the
+one junction, its back arm running past the plot and winding up and over a
+hill behind it — the hills put that hill on its way, eight metres high, and
+grade the ground to the road, cut and filled, so it never climbs steeper
+than one in ten — asphalt with a dashed line down the middle, gravel each
+side, then grass, the hills' tufts on the verges, and trees along every
+road; and five neighbours' houses round the junction and across the street,
+only their outsides — walls, a gable roof with eaves, windows of dark glass
+in white frames, a door, a chimney, a path to the street
+(`World/Builders/NeighbourhoodBuilder.js`). It is the house's own ground and
+walls: published (kept whole — no viewpoint stands on the roads), baked
+(coarse, as scenery), walked and driven on. The car drives up and over the
+hill and back, its body lying along the slope.
+
+The world ends a radius round the plot's middle (150 m): over its last 55
+everything fades into the dark — by how far it is from the middle, wherever
+it is seen from (`Environment.applyDome`'s fog) — and the sky darkens down
+to the horizon to meet it, a dome the world sits in; a wall no one sees
+keeps people and the car inside it. The Garden panel's *Neighbourhood* has
+the radius, the hill's height, how many houses, how close the road trees
+are, how thick the verges' grass, and whether there is one at all; a version
+published before it had none, and draws none.
+
+A tree farther than 30 m off (22 on a phone) is drawn light: a quarter of
+its crown's leaf cards, each grown to fill in for the others, on a plain
+trunk — a sixth of its triangles. The tufts thin out with distance as the
+blades do, all of them up to a third of their draw distance, then fewer.
+
+**Performance or realism** is a slider in the view's panel, five steps from
+*Fastest* to *Maximum realism* (`QUALITY_STEPS` in `Utils/device.js`): the
+pixel ratio (1 to 2), multisampling, ambient occlusion's samples, the sun's
+shadow map (1024 hard-edged to 8192 with contact-hardening soft shadows,
+fitted to what the camera sees), texture filtering, how far and how dense
+the trees and grass are drawn, the colour grade, and on the top two steps a
+light probe captured per room so a room's surfaces and furniture are lit by
+its own bounced light. The AO, grade, probe and the trees' and grass's reach
+apply to a space with its own landscape (Ladonia); elsewhere the slider sets
+the pixel ratio, the shadows' filter and texture filtering. Each device
+starts at the step its graphics keep up with (a phone 1, other discrete cards
+3, Apple Pro/Max/Ultra chips and RTX cards 4); a visitor's own choice is kept
+on their device, and if the GPU gives up (its WebGL context lost) the next
+visit starts a step lower. The shadow map is never bigger than the device
+can make. In Ladonia's street view at 1920 × 1080 on an M-series Pro a frame
+takes about 12 ms at the first step and 24 ms at the last (twice that with
+another 3D page busy on the same GPU).
+
 Phones and tablets draw at a pixel ratio of at most 1.5 with a smaller,
 harder-edged sun shadow, in the public view and the walkthrough alike.
-`?quality=low` or `?quality=high` forces either tier on any device, and
+`?quality=low` or `?quality=high` forces step 1 or 3 on any device
+(`?quality=0`…`4` or `max` any step), and
 `?stats` on any link shows frame rate, draw calls, triangles and the bytes
 downloaded — which is how to compare a change on the device it is for.
+
+### A site of its own: Ladonia Residence, Kosinožići
+
+**Kosinožići Villas** (`scripts/spaces/ladonia/`, id `kosinozici-villas`) is
+Ladonia Residence near Poreč, built from its listing (konekt-nekretnine.hr
+project 253): the developer's floor plans of every floor, measured, and its
+renders for the look. Three buildings of five flats each:
+
+- **A and B** (`ab.js`), one design built twice — two wings in sand render
+  joined under a stone-clad box on the roof, three ground-floor flats with
+  gardens under louvred pergolas, two first-floor flats up an outside stair,
+  each with its own stair up into the box and out onto a roof terrace. B has
+  the pool in front.
+- **C** (`c.js`), banded in corten over sand render, with a stone-clad
+  recess through both floors on each long side and glass wrapping its four
+  corners; three flats on the ground floor, two above, and their roof
+  terraces.
+
+Every flat is **furnished** as its plan draws it (`furnish.js`): the kitchens,
+sofas, dining tables, beds, wardrobes and bathroom fittings where the plans
+put them, in the renders' style — A's honey oak and mustard kitchens with an
+oak table under a felt dome and an oatmeal basket-weave sofa, B's and C's sage
+kitchens with round white tables, oak chairs and pleated paper pendants,
+slip-covered linen sofas, oak TV walls and track lights, and felt headboards
+over long floating nightstands throughout. The two kitchens the renders show
+(A1's and B's A2's) are modelled as drawn, unit by unit. Outside, every
+ground-floor terrace has a garden table under a woven pendant, orange lounge
+chairs and an outdoor kitchen; every roof terrace a dining table under its
+pergola, sofas, a parasol and an outdoor kitchen against the stone box (the
+plans' jacuzzis are left out, as the renders show the roofs); B's pool deck
+three loungers, a bar and armchairs.
+The pieces are modelled in Blender (`blender/lib/ladonia.py`, ids `ld-*` in the
+catalogue) and are editable like any other furniture.
+
+Its buildings are the spec's rooms, walls and flat roofs like any other
+space's (written per building in its own frame by `kit.js`), with modern
+joinery — slim anthracite frames (`style: "slim"`), external venetian blinds
+lowered part way (`blind`), glass sliding doors (`door.glazed`) and
+solar-control glass — and photographed finishes. `npm run seed --
+kosinozici-villas` writes it alone.
+
+**Walkable throughout.** The walking character is a capsule 0.7 m wide and
+1.9 m tall, and every route is clear for it: from the parking up the garden
+steps through the stone walls (the paths stop at the top step), up the
+outside stairs, into every flat and every room, and up each flat's own stair
+to its roof terrace. Doors are 0.9 m (`kit.js` widens narrower ones where
+the wall has room; the two squeezed between cross walls, `door(…, { fit:
+true })`, are 0.84 m), and each room's furniture leaves a way to its door
+and in front of each piece — the bathrooms laid out so the WC, the basin
+and the shower each have their own floor (`vanity-small`, a 0.6 m hand
+basin, where a full vanity left none). Where a flat's stair climbs over its
+bathroom, a low wall closes the bathroom off under it. C stands at the
+street's level beside its lane, a metre below A's and B's gardens, with its
+own path in from the parking.
+
+**No flicker.** Faces that share a plane are layered in depth
+(`MaterialLibrary.js`'s `layer`): window frames and glass, and doors' linings
+(`getTrimFront`), in front; walls' ends, tops and reveals, stairs' risers and
+roofs' soffits (`getTrimBehind`) behind, while a trim laid on a surface —
+skirting, road paint — is drawn as it stands; the terrain behind the paving;
+in the furniture, screens, glass, hobs and handles in front and grooves,
+gaps and plinths behind (`FurnitureLibrary.js`). The runtime file and the
+baked public view keep the layering. Floors have none of their own, so a rug 1 cm over one stays on
+top, and the camera's near plane is 5 cm, so a centimetre apart is enough
+at any distance a room is seen from. Where two things really overlapped,
+they were moved apart: partitions stop 2 cm under the floor above, the
+stairwells' edges sit inside the walls beside them, showers stand a
+centimetre off their walls, landscape walls meet at corners without
+overlapping. How it was built, and what to do
+differently next time, is the `build-property-space` skill
+(`.claude/skills/build-property-space/`).
+
+Everything round its buildings is its **landscape** (`spec.landscape`,
+`shared/landscape.js`), and in a space that has one the Fluffy Tree garden,
+fence, hills and neighbourhood are left out:
+
+- **The ground** is a terrain (`World/Builders/LandscapeBuilder.js`): a base
+  height raised along slopes and over hills, roughened by noise, held flat
+  on pads — the gardens, the street a metre below them — and eased back to
+  the hillside; a metre-square grid round the villas, coarser out to 300 m,
+  its grid lines run along every hard edge so the street drops sharply
+  inside the retaining wall and the pool and the steps have straight-sided
+  holes. It is painted lawn, meadow, gravel, forest floor or rocky
+  hillside by region, the five photographs blended in the shader at two
+  scales each, near and far, under a slow brightness variation, so nothing
+  visibly repeats. It is part of the house: walked on, driven on,
+  collided with, published.
+- **What stands on it**, also part of the house: dry-stone retaining walls
+  with copings, kerbs and road markings, pergolas (anthracite frames,
+  timber louvres, lattice screens), corten planters, glass balustrades and
+  a mosaic-lined pool with its hardwood deck. The pool's water ripples and
+  reflects the sky.
+- **What grows** (`World/Flora/`), drawn live and swaying in the wind:
+  - *Trees and shrubs* are grown with
+    [ez-tree](https://github.com/dgreenheck/ez-tree): downy oaks, an ash
+    and gnarled olives (`scripts/trees/`), scattered by thousands over the
+    woods' regions and placed by hand in the gardens. Each is drawn three
+    ways by distance: whole near; with a quarter of its leaf cards and its
+    twigs dropped further off; and past ~50 m as an impostor — a card that
+    turns to face the camera, showing the tree as rendered from the
+    nearest of eight sides into an atlas when it loads. Leaf normals point
+    out from the crown, so it is lit as a mass, and the sun shines through
+    leaves seen against it.
+  - *Photinia hedges* are dark cores under tens of thousands of instanced
+    leaf sprays, green below and red with new growth at the top.
+  - *Grass* is lawns, meadows and the roof planters' ornamental grasses:
+    clumps of curved, tapering blades in squares of ground, fewer of them
+    the further off a square is, until the ground's photograph carries it.
+- **The sky** (`World/Sky.js`) is a Poly Haven HDRI: its HDR lights
+  everything (PMREM), with the sun clipped out of it and drawn as a
+  directional light from where the sun is in the photograph, so shadows
+  fall the way the sky says; the photograph itself is the background, the
+  far terrain fading into its haze. `sky.turn` turns it, here so the
+  sun comes from the east-south-east (about 105°), lighting the street and
+  south faces as most of the developer's exterior renders do, and
+  `sky.elevation` sets the sun's height (36°) without moving the picture. Rooms
+  inside take less of the sky's light than the outside does, and a warmer,
+  greyer version of it, as it reaches a room bounced off floors and walls.
+- **Night** (`N`, or the sun and moon button, as for a baked view) is the
+  dusk sky darkened: the rooms glow warm from within, so the windows show
+  lit rooms without lamps that would light the walls' outsides; uplights
+  under the olives, downlights under the pergolas, step lights up the
+  outside stairs and the pool lit from under the water; bloom.
+- **Post-processing** (`frontend/Experience/PostProcessing.js`), not on
+  phones: [N8AO](https://github.com/N8python/n8ao)'s ambient occlusion,
+  half-resolution and upsampled by depth, from the depth buffer alone — so
+  a leaf card shades as its leaf, not its square — then bloom at night,
+  then tone mapping. Its chunk is only downloaded for such a space.
+
+Its assets are bought in, all CC0 or MIT — Poly Haven textures and skies,
+ambientCG grass, ez-tree's trees — listed with their sources in
+`assets/THIRD_PARTY.md`:
+
+```bash
+npm run site-assets              # textures and skies → public/textures/pbr, public/textures/sky
+npm run trees -- --textures      # ez-tree's bark and leaves → public/textures/trees
+npx vite scripts/trees           # grow the trees in the browser, "Download all"
+npm run trees -- ~/Downloads     # pack them → public/models/vegetation
+```
+
+Its live view has not been through publishing and baking yet: open it
+unpublished (`/view/kosinozici-villas`, which is drawn live and merged) or
+with `?live`.
 
 ### Edit mode
 
@@ -688,8 +900,10 @@ tiled while the hallway side stays painted.
 To keep a piece in the generated catalogue instead, write it as a function in
 `blender/lib/loose.py` (or `joinery.py`) that builds it from primitives at its
 real size, add a line to `PIECES` in `blender/export_furniture.py`, and run
-`npm run furniture`. Wall-hung pieces take `"wall"` as their anchor, so the
-editor places them at hanging height and does not drop them to the floor.
+`npm run furniture` (`npm run furniture -- ld-` rebuilds only the pieces whose
+ids start so). Wall-hung pieces take `"wall"` as their anchor, so the
+editor places them at hanging height and does not drop them to the floor;
+pendants take `"ceiling"`.
 
 A whole house's furnishings can come from Blender as one GLB. With
 `"role": "furnishings"` on the model, every top-level node — each sofa,

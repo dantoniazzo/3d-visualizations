@@ -1,9 +1,10 @@
 import * as THREE from "three";
 
 /**
- * What moves — the visitors, the car, the furniture's doors and drawers —
- * lit as the house round it is, in a public view lit live
- * (Utils/device.js's lightingMode) — or drawn from the bake, as on a phone,
+ * What moves — the visitors, the people round the property, the car, the
+ * furniture's doors and drawers — lit as the house round it is, in a
+ * public view lit live (Utils/device.js's lightingMode) — or drawn from
+ * the bake, as on a phone,
  * where the house casts no shadow: then with the sun on it as far as the
  * probes say it reaches (`sunFromProbes`), and the room doors' leaves too.
  *
@@ -33,6 +34,8 @@ import * as THREE from "three";
 const ADAPT = 8;
 /** Reflections at least this share of their daylight strength. */
 const LEAST_REFLECTION = 0.02;
+/** How far over a person's rig its light is taken, in metres: the middle of its pose, within these. */
+const PERSON_LIFT = { least: 0.2, most: 1.0 };
 
 const _position = new THREE.Vector3();
 const _box = new THREE.Box3();
@@ -113,14 +116,23 @@ export default class ProbeLight {
         for (const [root, lift] of roots) {
             let entry = this.tracked.get(root);
             if (!entry) {
-                entry = { cube: Array.from({ length: 6 }, () => new THREE.Vector3()), sun: { value: 1 }, fresh: true, factor: 1 };
+                entry = { cube: Array.from({ length: 6 }, () => new THREE.Vector3()), sun: { value: 1 }, fresh: true, factor: 1, at: null, room: null };
                 this.tracked.set(root, entry);
             }
-            this.dress(root, entry);
             root.getWorldPosition(_position);
-            const room = this.builder.roomAt(_position.x, _position.y, _position.z);
+            // Which room it is in, looked for again only once it has moved:
+            // the people round the property stay where they are.
+            if (!entry.at?.equals(_position)) {
+                entry.at = (entry.at ?? new THREE.Vector3()).copy(_position);
+                entry.room = this.builder.roomAt(_position.x, _position.y, _position.z);
+            }
             _position.y += lift;
-            const target = this.sample(_position, room?.id ?? "outside");
+            const target = this.sample(_position, entry.room?.id ?? "outside");
+            // Nowhere the probes measured (up on a roof deck the grid does
+            // not reach): until it is, as the scene lights it, rather than
+            // dark — what has had the probes' light keeps the last of it.
+            if (!target && entry.fresh) continue;
+            this.dress(root, entry);
             if (!target) continue;
             const k = entry.fresh ? 1 : blend;
             entry.fresh = false;
@@ -142,8 +154,11 @@ export default class ProbeLight {
 
     /**
      * What moves, and how far above where it stands its light is taken: the
-     * visitor's own avatar and everyone else's, the cars, and the
-     * furniture's doors and drawers (Openables.js), which are not baked.
+     * visitor's own avatar and everyone else's, the people round the
+     * property (World/People.js) — at the middle of each, standing, sitting
+     * or lying, hidden or not, so each keeps the materials it was given —
+     * the cars, and the furniture's doors and drawers (Openables.js), which
+     * are not baked.
      */
     roots() {
         const roots = new Map();
@@ -154,6 +169,9 @@ export default class ProbeLight {
         const player = this.world.player;
         if (player?.avatar) roots.set(player.avatar.avatar, 1.0);
         for (const other of Object.values(player?.otherPlayers || {})) if (other.model?.avatar) roots.set(other.model.avatar, 1.0);
+        for (const person of this.world.people?.list ?? []) {
+            roots.set(person.group, THREE.MathUtils.clamp(person.sphere.center.y - person.group.position.y, PERSON_LIFT.least, PERSON_LIFT.most));
+        }
         for (const car of this.builder.cars || []) roots.set(car.group, 0.3);
         return roots;
     }

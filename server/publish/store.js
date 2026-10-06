@@ -87,11 +87,13 @@ export async function publishSnapshot(sceneId, glb, options = {}) {
 export async function addRuntime(sceneId, version, glb) {
     const manifest = await versionManifest(sceneId, version);
     if (!manifest) throw Object.assign(new Error("No such version."), { status: 404 });
-    const { glb: runtime, collision } = await compressRuntime(glb, { draco: manifest.options?.compress !== false });
+    const { glb: runtime, collision, casters } = await compressRuntime(glb, { draco: manifest.options?.compress !== false });
     await writeFile(path.join(PUBLISH_DIR, sceneId, version, "runtime.glb"), runtime);
     return updateVersion(sceneId, version, {
         runtime: `${version}/runtime.glb`,
         collision,
+        // The shadow casters' triangles before and after they were simplified, and in how many pieces.
+        ...(casters.before && { shadowCasters: casters }),
         sizes: { ...manifest.sizes, runtime: runtime.length },
     });
 }

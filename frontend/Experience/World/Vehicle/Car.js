@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import { Capsule } from "three/examples/jsm/math/Capsule.js";
 
-import { applyReflections } from "../../Utils/reflections.js";
+import { applyReflections, plainGlass } from "../../Utils/reflections.js";
+import CarLights from "./CarLights.js";
 
 /**
  * A drivable car.
@@ -21,6 +22,7 @@ import { applyReflections } from "../../Utils/reflections.js";
 const _v = new THREE.Vector3();
 const _ray = new THREE.Vector3();      // ground probes only, never shared
 const _down = new THREE.Vector3(0, -1, 0);
+const _worldUp = new THREE.Vector3(0, 1, 0);
 const _forward = new THREE.Vector3();
 const _normal = new THREE.Vector3();
 const _q = new THREE.Quaternion();
@@ -83,6 +85,8 @@ export default class Car {
         this.model = null;
         this.parts = [];
         this.wheels = [];
+        // Its headlamps, tail, brake and reversing lamps (CarLights.js).
+        this.lights = new CarLights(this);
         this.setModel(model);
 
         this.group.userData = { kind: "car", id: spec.id, label: "Car", car: this };
@@ -162,6 +166,9 @@ export default class Car {
         // The models were made for a viewer's image-based lighting: their
         // chrome, lamp reflectors and rims need something to reflect.
         applyReflections(this.group, { imageLit: true });
+        plainGlass(this.group);
+        // Its lamps where this model has them.
+        this.lights.attach(model);
     }
 
     // ------------------------------------------------------------------
@@ -234,6 +241,8 @@ export default class Car {
             this.verticalVelocity = 0;
             this.onGround = true;
             _normal.copy(ground.normal);
+            // For the body's capsule to lie along it (collider).
+            (this.slope ??= new THREE.Vector3()).copy(ground.normal);
         } else {
             this.verticalVelocity -= p.gravity * dt;
             this.group.position.y += this.verticalVelocity * dt;
@@ -276,6 +285,9 @@ export default class Car {
             wheel.spinner.rotation.set(wheel.spin, 0, 0);
         }
 
+        // --- lamps -------------------------------------------------------
+        this.lights.update(this.controls, this.speed);
+
     }
 
     /**
@@ -290,12 +302,14 @@ export default class Car {
         const size = this.size || { width: 2, length: 4.9, middle: 0 };
         const radius = Math.min(CAPSULE_MAX_RADIUS, size.width * 0.46);
         const half = Math.max(0, size.length / 2 - radius);
+        // Along the ground it stands on, and lifted off it square to it: on
+        // a hill, level, its nose would be in the road going up.
+        const up = this.onGround && this.slope ? this.slope : _worldUp;
         const axis = _v.set(Math.sin(this.heading), 0, Math.cos(this.heading));
+        axis.addScaledVector(up, -axis.dot(up)).normalize();
         const middle = this.group.position.clone().addScaledVector(axis, size.middle);
-        const a = middle.clone().addScaledVector(axis, -half);
-        const b = middle.clone().addScaledVector(axis, half);
-        a.y += radius - CAPSULE_CLEARANCE;
-        b.y += radius - CAPSULE_CLEARANCE;
+        const a = middle.clone().addScaledVector(axis, -half).addScaledVector(up, radius - CAPSULE_CLEARANCE);
+        const b = middle.clone().addScaledVector(axis, half).addScaledVector(up, radius - CAPSULE_CLEARANCE);
         return new Capsule(a, b, radius);
     }
 

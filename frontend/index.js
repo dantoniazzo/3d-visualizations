@@ -2,11 +2,13 @@ import "./index.scss";
 import { io } from "socket.io-client";
 
 import Experience from "./Experience/Experience.js";
+import BirdView from "./Experience/World/BirdView.js";
 import elements from "./Experience/Utils/functions/elements.js";
-import { setLighting, setQuality } from "./Experience/Utils/device.js";
+import { QUALITY, QUALITY_STEP, QUALITY_STEPS, deviceDefaultStep, needsReloadFor, setLighting, setQuality, setQualityStep } from "./Experience/Utils/device.js";
 import { chooseLighting, chosenLighting } from "./Experience/Utils/viewerChoices.js";
 import { finishesFor, FINISHES } from "../shared/catalog.js";
 import { publishOptions } from "../shared/publishOptions.js";
+import { publishedSpec } from "../shared/neighbourhood.js";
 
 /**
  * App shell.
@@ -38,9 +40,14 @@ const dom = elements({
     lightsPanel: "#lights-panel",
     lightsList: "#lights-list",
     lightsAllOff: "#lights-all-off",
+    lightsAllOn: "#lights-all-on",
     lightingSection: "#lighting-section",
     lightingChoices: "#lighting-choices",
     lightingNote: "#lighting-note",
+    qualityRange: "#quality-range",
+    qualityName: "#quality-name",
+    qualityNote: "#quality-note",
+    qualityReload: "#quality-reload",
     scenerySection: "#scenery-section",
     sceneryList: "#scenery-list",
     pickLabel: "#pick-label",
@@ -180,7 +187,8 @@ async function findPublished(sceneId, version = null) {
             : await fetch(`${base}/manifest.json`, { cache: "no-cache" });
         if (!response.ok) return null;
         const manifest = await response.json();
-        const spec = await (await fetch(`${base}/${manifest.spec}`)).json();
+        // As published: one from before the neighbourhood has none.
+        const spec = publishedSpec(await (await fetch(`${base}/${manifest.spec}`)).json());
         // Baked lighting (npm run bake), when there is any: a lightmap for
         // each of day and night — and one without the sun, for a view that
         // draws it live — each light switch's light, room by room, when the
@@ -242,7 +250,10 @@ function enterScene(sceneId, spec, options = {}) {
     window.experience = experience;
 
     const world = experience.world;
-    world.on("ready", () => setupHud(spec));
+    world.on("ready", () => {
+        setupHud(spec);
+        setupQuality();
+    });
     world.on("room", updateRoomReadout);
     world.on("look", onLook);
     world.on("view", updateViewToggle);
@@ -625,8 +636,10 @@ function setupFloorPicker(count) {
     const birdView = experience.world.birdView;
     dom.floorPicker.innerHTML = birdView.floors
         .map(({ level }) => {
-            const name = birdView.constructor.floorName(level);
-            return `<button data-level="${level}"><span class="floor-long">${name}</span><span class="floor-short">${name.split(" ")[0]}</span></button>`;
+            const name = birdView.constructor.floorName(level, birdView.levels);
+            // Short: "Ground", "First"… — or, named by height, the height.
+            const short = name.startsWith("Level ") ? name.split(" ")[1] : name.split(" ")[0];
+            return `<button data-level="${level}"><span class="floor-long">${name}</span><span class="floor-short">${short}</span></button>`;
         })
         .join("");
     // One floor has nothing to pick between.
@@ -663,10 +676,10 @@ dom.editorToggle.addEventListener("click", (event) => {
     editor()?.enter();
 });
 
-/** Day and night, when the published view has both baked. */
+/** Day and night, when the published view has both baked — or the view is lit live, under a sky of its own or with its lights switched live. */
 function updateLightingToggle(variant) {
     const variants = Object.keys(experience?.published?.lighting?.variants || {});
-    dom.lightingToggle.hidden = variants.length < 2;
+    dom.lightingToggle.hidden = variants.length < 2 && !experience?.world?.sky && !experience?.world?.liveLights;
     dom.lightingToggleLabel.textContent = variant === "night" ? "Night" : "Day";
     dom.lightingToggle.classList.toggle("is-night", variant === "night");
 }
@@ -683,11 +696,16 @@ dom.lightingToggle.addEventListener("click", (event) => {
 });
 
 /**
- * The light switches, when the published view's fittings were baked apart
- * (World/Switches.js): a button, and a panel of them floor by floor.
+ * The light switches — a published view's fittings baked apart
+ * (World/Switches.js), or drawn live in the editor and a version lit live
+ * (World/LiveSwitches.js): a button, and a panel of them floor by floor.
+ * Built again whenever the fittings change (an edit).
  */
 function setupLights(switches) {
-    dom.lightsToggle.hidden = false;
+    // Nothing to switch: no button, no panel.
+    dom.lightsToggle.hidden = !switches.list.length;
+    if (!switches.list.length) toggleLights(false);
+    dom.lightsAllOn.hidden = typeof switches.allOn !== "function";
     const floors = switches.floors;
     dom.lightsList.innerHTML = floors
         .map(({ level, switches: items }) => {
@@ -700,7 +718,8 @@ function setupLights(switches) {
                 )
                 .join("");
             // One floor needs no heading.
-            const heading = floors.length > 1 ? `<h5>${escapeHtml(experience.world.birdView?.constructor.floorName(level) ?? `Floor ${level}`)}</h5>` : "";
+            const levels = switches.levels ?? experience.world.birdView?.levels ?? [];
+            const heading = floors.length > 1 ? `<h5>${escapeHtml(switches.floorName?.(level) ?? BirdView.floorName(level, levels))}</h5>` : "";
             return `<div class="hud-panel-section">${heading}<div class="light-switches">${rows}</div></div>`;
         })
         .join("");
@@ -718,6 +737,7 @@ function renderLights(switches) {
     }
     dom.lightsToggle.classList.toggle("is-lit", lit);
     dom.lightsAllOff.disabled = !lit;
+    dom.lightsAllOn.disabled = switches.list.every((item) => switches.isOn(item.id));
 }
 
 function toggleLights(force) {
@@ -725,6 +745,7 @@ function toggleLights(force) {
     const show = force === undefined ? dom.lightsPanel.hidden : force;
     dom.lightsPanel.hidden = !show;
     dom.lightsToggle.classList.toggle("is-active", show);
+    dom.lightsToggle.setAttribute("aria-expanded", String(show));
     if (show) {
         toggleMenu(false);
         // The panel is only clickable once the cursor is free again.
@@ -743,6 +764,7 @@ dom.lightsList.addEventListener("click", (event) => {
 });
 
 dom.lightsAllOff.addEventListener("click", () => experience?.world?.switches?.allOff());
+dom.lightsAllOn.addEventListener("click", () => experience?.world?.switches?.allOn?.());
 
 // ---------------------------------------------------------------------
 // The view's options: lighting and scenery, for a slow phone
@@ -802,6 +824,53 @@ dom.lightingChoices.addEventListener("click", (event) => {
     url.searchParams.delete("lighting");
     window.location.replace(url);
 });
+
+// ---------------------------------------------------------------------
+// Performance ↔ Quality (Utils/device.js's QUALITY_STEPS)
+// ---------------------------------------------------------------------
+
+/** What each step adds, in a line. */
+const QUALITY_NOTES = [
+    "Lowest resolution, hard shadows, no ambient occlusion, sparse grass.",
+    "As a phone draws it: lighter shadows, no ambient occlusion.",
+    "Ambient occlusion, soft shadows fitted to the view, the renders' colour grade.",
+    "Full resolution, sharper shadows and occlusion, all the grass and trees.",
+    "Sun-soft 8K shadows, the light bounced and reflected in each room, finer occlusion, trees in full further off.",
+];
+
+/** The slider, as the view is drawn now; kept on this device for every space. */
+function setupQuality() {
+    dom.qualityRange.value = String(QUALITY_STEP);
+    renderQuality();
+}
+
+function renderQuality() {
+    const step = QUALITY_STEP;
+    const best = deviceDefaultStep();
+    dom.qualityName.textContent = `${QUALITY.name}${step === best ? " · this device's default" : ""}`;
+    // Across the phone line, what was chosen as the view was built — a
+    // published view's lighting and lightmaps, how densely the grass and
+    // hedges were grown — waits for a reload.
+    const reload = needsReloadFor(step);
+    dom.qualityNote.textContent = `${QUALITY_NOTES[step]}${step > best ? " More than this device is expected to keep up with." : ""}${
+        reload ? " Applied now, but for the lighting and the planting's density, which need a reload." : " Applied now."
+    }`;
+    dom.qualityReload.hidden = !reload;
+}
+
+dom.qualityRange.addEventListener("input", () => {
+    const step = Math.max(0, Math.min(QUALITY_STEPS.length - 1, Number(dom.qualityRange.value)));
+    setQualityStep(step);
+    // A link's own ?quality= would overrule it next time.
+    const url = new URL(window.location.href);
+    if (url.searchParams.has("quality")) {
+        url.searchParams.delete("quality");
+        window.history.replaceState({}, "", url);
+    }
+    renderQuality();
+});
+
+dom.qualityReload.addEventListener("click", () => window.location.reload());
 
 dom.sceneryList.addEventListener("click", (event) => {
     const button = event.target.closest("[data-scenery]");

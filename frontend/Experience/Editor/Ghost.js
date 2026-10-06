@@ -3,7 +3,8 @@ import * as THREE from "three";
 /**
  * The red stand-in drawn where the cursor wants a piece that does not fit
  * there. It shares the piece's geometry, so building one costs no more
- * than a handful of mesh objects.
+ * than a handful of mesh objects. A piece that draws its own (a person, as
+ * posed: `ghostObject`) gives it in the frame of its pose.
  */
 export default class Ghost {
     constructor(scene) {
@@ -38,7 +39,9 @@ export default class Ghost {
         const root = new THREE.Group();
         root.name = "ghost";
         root.userData.helper = true;
-        object.traverse((child) => {
+        const own = editable.ghostObject?.(this.material);
+        if (own) root.add(own);
+        else object.traverse((child) => {
             if (!child.isMesh || !child.geometry) return;
             const mesh = new THREE.Mesh(child.geometry, this.material);
             mesh.matrixAutoUpdate = false;
@@ -58,6 +61,8 @@ export default class Ghost {
     }
 
     reset() {
+        // A person's copy has skeletons of its own (their bone textures); the geometry is the person's.
+        this.root?.traverse((node) => node.isSkinnedMesh && node.skeleton.dispose());
         if (this.root) this.scene.remove(this.root);
         this.root = null;
         this.source = null;

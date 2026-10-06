@@ -1,0 +1,98 @@
+<!doctype html>
+<!--
+    The Kosinožići space's trees, grown with ez-tree (MIT) and saved as GLB:
+    geometry only, in metres, the bark's texture repeat baked into its UVs —
+    the app gives them their textures (World/Flora/trees.js).
+
+        npx vite scripts/trees --port 5180     then open it, and Download all
+        npm run trees -- ~/Downloads           packs them into public/models/vegetation
+
+    ez-tree needs three r167 or later, which the app is not on: this page
+    loads its own from a CDN.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tree grower</title>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/",
+  "@dgreenheck/ez-tree": "https://cdn.jsdelivr.net/npm/@dgreenheck/ez-tree@1.1.0/build/ez-tree.es.js"
+} }
+</script>
+<style>
+    :root { --bg: #f4f3ef; --fg: #1f2124; --muted: #6b6f75; }
+    @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #16181b; --fg: #eceae4; --muted: #9a9ea4; } }
+    body { margin: 0; padding: 16px; font: 14px/1.4 system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+    button { font: inherit; padding: 6px 12px; margin: 0 8px 12px 0; }
+    #list { color: var(--muted); }
+</style>
+</head>
+<body>
+<button id="all">Download all</button>
+<div id="list"></div>
+<script type="module">
+import * as THREE from "three";
+import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
+import { Tree } from "@dgreenheck/ez-tree";
+import { SPECIES } from "./species.js";
+
+/** A species as plain meshes in metres, its base at the origin: `bark:<type>` and `leaves:<type>`. */
+function grow(spec) {
+    const tree = new Tree();
+    tree.loadPreset(spec.preset);
+    const o = tree.options;
+    o.seed = spec.seed;
+    spec.edit?.(o);
+    tree.generate();
+    tree.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(tree);
+    const scale = spec.height / (box.max.y - box.min.y);
+    const group = new THREE.Group();
+    group.name = spec.name;
+    for (const [mesh, name, uvScale] of [
+        [tree.branchesMesh, `bark:${o.bark.type}`, o.bark.textureScale],
+        [tree.leavesMesh, `leaves:${o.leaves.type}`, null],
+    ]) {
+        const g = mesh.geometry.clone();
+        g.translate(0, -box.min.y, 0);
+        g.scale(scale, scale, scale);
+        for (const key of Object.keys(g.attributes)) if (!["position", "normal", "uv"].includes(key)) g.deleteAttribute(key);
+        if (uvScale) {
+            const uv = g.attributes.uv;
+            for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * uvScale.x, uv.getY(i) / uvScale.y);
+        }
+        const out = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ name }));
+        out.name = name;
+        group.add(out);
+    }
+    return group;
+}
+
+async function download(spec) {
+    const glb = await new GLTFExporter().parseAsync(grow(spec), { binary: true });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(new Blob([glb], { type: "model/gltf-binary" }));
+    link.download = `${spec.name}.glb`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+}
+
+const list = document.getElementById("list");
+for (const spec of SPECIES) {
+    const button = document.createElement("button");
+    button.textContent = spec.name;
+    button.onclick = () => download(spec);
+    list.append(button);
+}
+document.getElementById("all").onclick = async () => {
+    for (const spec of SPECIES) {
+        await download(spec);
+        await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+};
+</script>
+</body>
+</html>

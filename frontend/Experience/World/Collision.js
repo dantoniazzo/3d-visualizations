@@ -14,6 +14,10 @@ import { Capsule } from "three/examples/jsm/math/Capsule.js";
  * is small and is rebuilt whenever the visitor returns to the walkthrough
  * after an edit.
  *
+ * `people` are the people standing and sitting round the property
+ * (World/People.js), a box each, kept by them; `outdoor` the garden's trees.
+ * Neither stops a ray: a camera's boom or a pointed finger passes them.
+ *
  * Both answer the same two questions three's Octree does, so this object
  * stands in for one anywhere an octree was passed before.
  */
@@ -81,6 +85,8 @@ export default class Collision {
         // The garden's trees (Vegetation), which neither the building nor
         // what moves in it knows of.
         this.outdoor = new SceneOctree();
+        // The people round the property (World/People.js).
+        this.people = new SceneOctree();
     }
 
     setStatic(octree) {
@@ -95,45 +101,69 @@ export default class Collision {
         this.outdoor = octree;
     }
 
+    setPeople(octree) {
+        this.people = octree ?? new SceneOctree();
+    }
+
     /**
      * Resolve against the building first, then against whatever the
-     * building's push left the capsule touching — what moves, then the
-     * garden's trees — and report the sum.
+     * building's push left the capsule touching — what moves, the people,
+     * then the garden's trees — and report the sum.
      */
     capsuleIntersect(capsule) {
-        const a = this.static.capsuleIntersect(capsule);
-
         _capsule.copy(capsule);
-        if (a) _capsule.translate(_shift.copy(a.normal).multiplyScalar(a.depth));
-
-        const b = this.dynamic.capsuleIntersect(_capsule);
-        if (b) _capsule.translate(_shift.copy(b.normal).multiplyScalar(b.depth));
-        const c = this.outdoor.capsuleIntersect(_capsule);
-        if (!a && !b && !c) return false;
-
-        const total = new THREE.Vector3();
+        let first = null;
+        let total = null;
         let last = null;
-        for (const hit of [a, b, c]) {
+        for (const tree of [this.static, this.dynamic, this.people, this.outdoor]) {
+            const hit = tree.capsuleIntersect(_capsule);
             if (!hit) continue;
+            _capsule.translate(_shift.copy(hit.normal).multiplyScalar(hit.depth));
+            if (!first) {
+                first = hit;
+                continue;
+            }
+            total ??= new THREE.Vector3().addScaledVector(first.normal, first.depth);
             total.addScaledVector(hit.normal, hit.depth);
             last = hit;
         }
-        if (!a && !c) return b;
-        if (!b && !c) return a;
+        if (!first) return false;
+        if (!total) return first;
 
         const depth = total.length();
         if (depth < 1e-9) return { normal: last.normal, depth: 0 };
         return { normal: total.divideScalar(depth), depth };
     }
 
-    rayIntersect(ray) {
+    rayIntersect(ray, { twoSided = false } = {}) {
         let nearest = null;
         for (const tree of [this.static, this.dynamic, this.outdoor]) {
-            const hit = tree.rayIntersect(ray);
+            if (!tree) continue;
+            const hit = twoSided ? rayIntersectEither(tree, ray) : tree.rayIntersect(ray);
             if (hit && (!nearest || hit.distance < nearest.distance)) nearest = hit;
         }
         return nearest;
     }
+}
+
+const _rayPoint = new THREE.Vector3();
+
+/**
+ * The first triangle of a tree a ray crosses, whichever way it faces:
+ * three's Octree meets only those facing the ray, and a published house's
+ * collision (its runtime file) has a floor's top and no ceiling under it —
+ * seen from the room below, a ray goes up through it.
+ */
+function rayIntersectEither(tree, ray) {
+    if (ray.direction.lengthSq() === 0) return false;
+    let nearest = false;
+    for (const triangle of tree.getRayTriangles(ray, [])) {
+        const point = ray.intersectTriangle(triangle.a, triangle.b, triangle.c, false, _rayPoint);
+        if (!point) continue;
+        const distance = point.distanceTo(ray.origin);
+        if (!nearest || distance < nearest.distance) nearest = { distance, triangle, position: point.clone() };
+    }
+    return nearest;
 }
 
 /**

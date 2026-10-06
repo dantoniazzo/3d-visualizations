@@ -69,7 +69,9 @@ export default class Camera extends EventEmitter {
         this.params = {
             fov: 70,
             aspect: this.sizes.aspect,
-            near: 0.01,
+            // Not nearer: depth precision over 800 m is what keeps a rug off
+            // its floor and a door's lining off its wall at a distance.
+            near: 0.05,
             far: 800,
         };
 

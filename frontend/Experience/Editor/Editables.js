@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 
 import FitChecker from "./FitChecker.js";
 import { AXES, DEG, round, toBlender, yawQuaternion } from "./axes.js";
@@ -6,6 +7,7 @@ import SceneBuilder, { localBox } from "../World/SceneBuilder.js";
 import StructureBuilder from "../World/Builders/StructureBuilder.js";
 import { creditLine } from "../World/Vehicle/CarModels.js";
 import { DOOR_TYPES, DOOR_SWINGS } from "../../../shared/catalog.js";
+import { DRINKS, POSES, seatsOf } from "../../../shared/people.js";
 
 /**
  * Everything the editor can select, behind one interface.
@@ -204,8 +206,8 @@ export class FurnitureEditable extends Editable {
             move: "free",
             rotate: true,
             scale: "uniform",
-            // Pictures and mirrors hang where they are put.
-            gravity: this.item?.anchor !== "wall",
+            // Pictures, mirrors and pendants hang where they are put.
+            gravity: this.item?.anchor !== "wall" && this.item?.anchor !== "ceiling",
             carry: true,
             fit: true,
             duplicate: true,
@@ -1125,6 +1127,393 @@ export class VehicleEditable extends Editable {
 }
 
 // ---------------------------------------------------------------------
+// People
+// ---------------------------------------------------------------------
+
+const POSE_NAMES = { stand: "Standing", sit: "Sitting", lie: "Lying" };
+/** What a person can hold or have, by its id, in words. */
+const PROP_NAMES = {
+    "wine-red": "Red wine",
+    "wine-white": "White wine",
+    flute: "Champagne",
+    tumbler: "Tumbler",
+    beer: "Beer",
+    coffee: "Coffee",
+    towel: "Towel",
+    book: "Book",
+    "book-open": "Open book",
+    sunglasses: "Sunglasses",
+};
+/** Before a person is built: a box round someone of each pose, from the point they are placed by, facing −z. */
+const PERSON_BOXES = {
+    stand: { centre: [0, 0.88, 0], half: [0.28, 0.88, 0.18] },
+    sit: { centre: [0, 0.22, -0.2], half: [0.3, 0.62, 0.42] },
+    lie: { centre: [0, 0.1, 0.2], half: [0.3, 0.22, 0.95] },
+};
+/** Moved freely (Shift), a person still sits on its seat until this far from it, in metres. */
+const SEAT_KEEP = 0.6;
+/** Dragged, a person sitting or lying takes a free seat this near the pointer, in plan, or none. */
+const SEAT_REACH = 1.5;
+
+const _seatRay = new THREE.Raycaster();
+
+/**
+ * One of the people round the property (World/People.js): its entry in
+ * the spec's `people` is the save file, and its group in the scene what is
+ * selected, outlined and dragged. A pose here is the spec's: `position`
+ * the point it is placed by — the feet standing, the seat under the pelvis
+ * sitting or lying — and `yaw` its `rotation` (the way it faces, lying the
+ * way its head points), as a piece of furniture's; it carries the seat it
+ * is on, if any.
+ *
+ * Standing, it rests on what is under it and has to fit, as a piece of
+ * furniture does, but is never pulled flush against a wall; sitting or
+ * lying, a move takes it to the free seat or lounger nearest the pointer
+ * (`seatFor`), or with Shift anywhere, off its seat once well away from it.
+ * It is in no one's way: other pieces move through it, and a piece it sits
+ * on carries it (Editor.ridersOf). Whether it is drawn is People's, through
+ * the editor's filter (Editor.applyVisibility).
+ */
+export class PersonEditable extends Editable {
+    constructor(editor, person) {
+        super(editor, `person:${person.id}`);
+        this.id = person.id;
+        this.people = editor.world.people;
+        this.object3d = person.group;
+        this.type = "person";
+        this.icon = "person";
+    }
+
+    /** Its record in People, as it is now (null while it is being built again). */
+    get person() {
+        return this.people?.get(this.id) ?? null;
+    }
+
+    get entry() {
+        return this.person?.entry ?? this.people?.spec?.people?.find((p) => p.id === this.id) ?? null;
+    }
+
+    get pose() {
+        return this.entry?.pose ?? "stand";
+    }
+
+    get caps() {
+        const standing = this.pose === "stand";
+        return {
+            move: "free",
+            rotate: true,
+            scale: false,
+            gravity: standing,
+            carry: false,
+            fit: standing,
+            flush: false,
+            duplicate: true,
+            remove: true,
+        };
+    }
+
+    get label() {
+        return this.person?.character?.name || this.entry?.character || "Person";
+    }
+
+    get subtitle() {
+        const entry = this.entry;
+        if (!entry) return "";
+        const clip = this.person?.clipEntry?.name;
+        return [POSE_NAMES[entry.pose], clip, propName(entry.prop)].filter(Boolean).join(" · ");
+    }
+
+    getPose() {
+        const entry = this.entry;
+        const [x = 0, y = 0, z = 0] = entry?.position ?? [];
+        return {
+            position: new THREE.Vector3(x, y, z),
+            yaw: (entry?.rotation ?? 0) * DEG,
+            scale: new THREE.Vector3(1, 1, 1),
+            seat: entry?.seat ?? null,
+        };
+    }
+
+    /**
+     * Where it is moved to, and turned: its seat as the pose says, or — a
+     * pose that says nothing of one (a move with Shift) — the one it had,
+     * if it is still on it.
+     */
+    applyPose(pose) {
+        const entry = this.entry;
+        if (!entry) return;
+        const position = pose.position.toArray().map((n) => round(n, 3));
+        let seat = pose.seat !== undefined ? pose.seat : entry.seat ?? null;
+        if (pose.free && seat) {
+            const at = this.editor.seatPoint(seat, entry.pose);
+            if (at && Math.hypot(at[0] - position[0], at[2] - position[2]) > SEAT_KEEP) seat = null;
+        }
+        this.people.update({ id: this.id, position, rotation: round(normaliseDegrees(pose.yaw / DEG), 1), seat: seat ? { ...seat } : null });
+        this.moved();
+    }
+
+    /**
+     * The turn of its rig at a pose, and where on the rig it is placed by
+     * (People.place's): a rig faces +z, so it is turned half round; lying,
+     * by its clip's own way of lying too.
+     */
+    frame(pose) {
+        const person = this.person;
+        const info = person?.info;
+        const turn = pose.yaw + Math.PI - (this.pose === "lie" && info ? info.headYaw : 0);
+        const contact = person && this.pose !== "stand" && info?.seat ? info.seat.clone() : new THREE.Vector3();
+        return { turn, contact };
+    }
+
+    /**
+     * The box round it as it is posed — its collision box, or a stand-in's
+     * while it is built. Standing, a square round its feet that does not
+     * turn with it, as wide as its body is deep: someone turning on the
+     * spot takes no more room, and is never stopped by a box's corner.
+     */
+    hulls(pose = this.getPose()) {
+        const person = this.person;
+        let centre;
+        let half;
+        let turn;
+        if (this.pose === "stand") {
+            const box = person?.collisionBox && !person.collisionBox.isEmpty() ? person.collisionBox : null;
+            const fallback = PERSON_BOXES.stand;
+            const height = box ? box.max.y - Math.max(0, box.min.y) : fallback.half[1] * 2;
+            const radius = box ? Math.max(0.2, Math.min(box.max.x - box.min.x, box.max.z - box.min.z) / 2) : fallback.half[2];
+            return [{ center: pose.position.clone().add(new THREE.Vector3(0, height / 2, 0)), half: new THREE.Vector3(radius, height / 2, radius), quat: new THREE.Quaternion() }];
+        }
+        if (person?.collisionBox && !person.collisionBox.isEmpty()) {
+            const frame = this.frame(pose);
+            const box = person.collisionBox;
+            centre = box.getCenter(new THREE.Vector3()).sub(frame.contact);
+            half = box.getSize(new THREE.Vector3()).multiplyScalar(0.5);
+            turn = frame.turn;
+        } else {
+            const fallback = PERSON_BOXES[this.pose] ?? PERSON_BOXES.stand;
+            centre = new THREE.Vector3(...fallback.centre);
+            half = new THREE.Vector3(...fallback.half);
+            turn = pose.yaw;
+        }
+        const quat = yawQuaternion(turn);
+        return [{ center: centre.applyQuaternion(quat).add(pose.position), half, quat }];
+    }
+
+    footprint(pose = this.getPose()) {
+        const hull = this.hulls(pose)[0];
+        const u = new THREE.Vector3(1, 0, 0).applyQuaternion(hull.quat);
+        const v = new THREE.Vector3(0, 0, 1).applyQuaternion(hull.quat);
+        return {
+            cx: hull.center.x,
+            cz: hull.center.z,
+            u: [u.x, u.z],
+            v: [v.x, v.z],
+            hu: hull.half.x,
+            hv: hull.half.z,
+            y0: hull.center.y - hull.half.y,
+            y1: hull.center.y + hull.half.y,
+        };
+    }
+
+    /** Standing, its feet; sitting or lying, the floor under what it is on. */
+    bottom(pose = this.getPose()) {
+        if (this.pose === "stand") return pose.position.y;
+        const seat = pose.seat ?? this.entry?.seat;
+        const placement = seat && this.builder.furniture.get(seat.furniture)?.placement;
+        return placement ? placement.position[1] : pose.position.y - 0.45;
+    }
+
+    worldBox() {
+        return FitChecker.bounds(this.hulls());
+    }
+
+    isFlat() {
+        return false;
+    }
+
+    /** Never in another piece's way: a sofa is moved through whoever stands by it. */
+    isObstacle() {
+        return false;
+    }
+
+    collisionMeshes() {
+        return [];
+    }
+
+    /** Hidden while a move has nowhere for it yet — through People's filter, which owns whether it is drawn. */
+    setHidden(hidden) {
+        this.editor.setPersonHidden(this.id, hidden);
+    }
+
+    /**
+     * Sitting or lying, the pose a move takes it to: the free seat (or
+     * lounger) nearest where the pointer is on the piece under it, or else
+     * nearest the moved point — within reach of it, facing as the seat
+     * does. Undefined standing (a move as any other); null when there is no
+     * free seat near.
+     */
+    seatFor(candidate, ray) {
+        if (this.pose === "stand") return undefined;
+        let near = candidate.position;
+        const hit = ray ? this.editor.seatingUnder(ray) : null;
+        if (hit) near = hit;
+        const placed = this.editor.planPerson({ pose: this.pose, near: near.toArray(), exclude: this.id });
+        if (!placed || Math.hypot(placed.position[0] - near.x, placed.position[2] - near.z) > SEAT_REACH) return null;
+        return {
+            ...candidate,
+            position: new THREE.Vector3(...placed.position),
+            yaw: placed.rotation * DEG,
+            seat: placed.seat,
+        };
+    }
+
+    /**
+     * Its stand-in for the ghost: a copy of it as it is posed now, still,
+     * in `material`, in the frame of its pose (Ghost.js).
+     */
+    ghostObject(material) {
+        const person = this.person;
+        if (!person) return null;
+        const copy = SkeletonUtils.clone(person.group);
+        const { turn, contact } = this.frame({ yaw: 0 });
+        copy.position.copy(contact.applyAxisAngle(AXES.z, turn).negate());
+        copy.rotation.set(0, turn, 0);
+        copy.traverse((node) => {
+            node.userData = { helper: true };
+            if (!node.isMesh) return;
+            node.material = material;
+            node.castShadow = false;
+            node.receiveShadow = false;
+            node.renderOrder = 10;
+        });
+        return copy;
+    }
+
+    duplicateSpec(id) {
+        const copy = structuredClone(this.entry);
+        return { ...copy, id, seed: Math.floor(Math.random() * 1e6) };
+    }
+
+    /**
+     * Its character, pose, clip or what it holds changed (it is built
+     * again), or — `pose` — sat down on the nearest free seat, laid on the
+     * nearest free lounger or stood up on the nearest clear floor.
+     */
+    setParam(key, value) {
+        const entry = this.entry;
+        if (!entry) return { ok: false };
+        if (key === "character") {
+            if (!value || value === entry.character) return { ok: false };
+            this.people.update({ id: this.id, character: value });
+        } else if (key === "clip") {
+            this.people.update({ id: this.id, clip: value || null });
+        } else if (key === "prop") {
+            this.people.update({ id: this.id, prop: value || null });
+        } else if (key === "pose") {
+            if (!POSES.includes(value) || value === entry.pose) return { ok: false };
+            const floor = this.bottom();
+            const near = value === "stand" ? [entry.position[0], floor, entry.position[2]] : entry.position;
+            const placed = this.editor.planPerson({ pose: value, near, exclude: this.id, facing: entry.rotation });
+            if (!placed) {
+                const what = value === "stand" ? "clear floor" : value === "lie" ? "free lounger" : "free seat";
+                return { ok: false, message: `No ${what} near enough` };
+            }
+            this.people.update({
+                id: this.id,
+                pose: value,
+                clip: null,
+                position: placed.position,
+                rotation: placed.rotation,
+                seat: placed.seat,
+                group: value === "stand" ? placed.group : null,
+            });
+        } else {
+            return { ok: false };
+        }
+        this.invalidate();
+        return { ok: true };
+    }
+
+    properties() {
+        const entry = this.entry;
+        if (!entry) return [{ title: "Person", text: "Being built…" }];
+        const index = this.editor.peopleIndex;
+        const person = this.person;
+        const option = (value, label) => ({ value, label });
+
+        const characters = (index?.characters ?? []).map((c) => option(c.id, c.name || c.id));
+        // A character the index lacks is played by one it has (People.characterFor): say which.
+        if (!characters.some((o) => o.value === entry.character)) {
+            characters.unshift(option(entry.character, `${person?.character?.name ?? "Stand-in"} (for “${entry.character}”)`));
+        }
+        const clips = (index?.clips?.list ?? []).filter((c) => c.pose === entry.pose).map((c) => option(c.name, c.name));
+        if (entry.clip && !clips.some((o) => o.value === entry.clip)) clips.push(option(entry.clip, `${entry.clip} (not in the index)`));
+        const propIds = [...new Set([...DRINKS, ...(index?.props?.list ?? []).map((p) => p.id)])];
+        if (entry.prop && !propIds.includes(entry.prop)) propIds.push(entry.prop);
+
+        const fields = [
+            { key: "character", label: "Character", type: "select", value: entry.character, options: characters },
+            { key: "pose", label: "Pose", type: "select", value: entry.pose, options: POSES.map((p) => option(p, POSE_NAMES[p])) },
+            {
+                key: "clip",
+                label: "Animation",
+                type: "select",
+                value: entry.clip ?? "",
+                options: [option("", `The pose's own${person?.clipEntry && !entry.clip ? ` (${person.clipEntry.name})` : ""}`), ...clips],
+            },
+            { key: "prop", label: "Holding", type: "select", value: entry.prop ?? "", options: [option("", "Nothing"), ...propIds.map((id) => option(id, propName(id)))] },
+        ];
+
+        const notes = [];
+        const seat = entry.seat && this.editor.editables.get(`furniture:${entry.seat.furniture}`);
+        if (entry.seat) notes.push(`${entry.pose === "lie" ? "Lying on" : "Sitting on"} the ${(seat?.label ?? entry.seat.furniture).split(",")[0].trim().toLowerCase()}${entry.pose === "lie" ? "" : ` (seat ${entry.seat.index + 1})`} — moves with it.`);
+        if (entry.group) {
+            const others = (this.people.spec?.people ?? []).filter((p) => p.group === entry.group && p.id !== entry.id).length;
+            notes.push(others ? `One of a group of ${others + 1}.` : "Its group has no one else in it.");
+        }
+        if (entry.prop && person && !person.clipEntry?.hand && !/towel|sunglass|glasses|book-open/.test(entry.prop)) {
+            notes.push("Its animation has no hand free, so it holds nothing.");
+        }
+        notes.push(entry.pose === "stand" ? "Moves on the floor it stands on." : "Dragged, it takes the free seat nearest the pointer — hold Shift to place it freely.");
+
+        return [
+            { title: "Person", fields },
+            { title: "Transform", fields: this.transformFields() },
+            { title: "Where", text: notes.join(" ") },
+            {
+                title: "Everyone",
+                fields: [{ key: "people-count", label: "How many", value: this.people.count, step: 1, integer: true }],
+                text: "Re-rolled, everyone is placed afresh: who stands where, who sits and who lies by the pool.",
+                actions: [{ id: "reroll-people", label: "Re-roll everyone" }],
+            },
+        ];
+    }
+}
+
+/** A prop's name in words. */
+export function propName(id) {
+    if (!id) return "";
+    return PROP_NAMES[id] ?? id.replace(/[-_]+/g, " ").replace(/^./, (c) => c.toUpperCase());
+}
+
+// ---------------------------------------------------------------------
+
+/** The seat (or lying surface) of a placed piece that `seat` names, where it is: [x, y, z], or null. */
+export function seatPointOf(placement, seat, pose, seats) {
+    const placed = placement && seatsOf(placement, seats);
+    if (!placed) return null;
+    if (pose === "lie") return placed.lie?.at ?? null;
+    return placed.seats[seat.index]?.at ?? null;
+}
+
+/** A ray's first hit on a shown piece of furniture with seats (Editor.seatingUnder). */
+export function seatingHit(ray, furnitureGroup, accept) {
+    _seatRay.ray.copy(ray);
+    for (const hit of _seatRay.intersectObject(furnitureGroup, true)) {
+        if (accept(hit)) return hit;
+    }
+    return null;
+}
 
 function localHull(pose, quat, centre, half) {
     return {

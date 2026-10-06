@@ -16,6 +16,10 @@ import { pointInPolygon, polygonCentroid } from "../Utils/geometry.js";
  *           (and the ceiling over it, so it can be seen into from above);
  *   hidden  collections switched off with their eye in the outliner.
  *
+ * The people round the property belong where they stand, sit or lie — a
+ * room, or the site outside — as a piece of furniture does, and to a
+ * collection of their own, "people", that switches them all off.
+ *
  * Membership of the building is derived, not authored. A generated shell
  * says where its rooms and walls are, so a wall belongs to the rooms whose
  * edges run along it. An imported model only has named nodes, so each node
@@ -79,6 +83,12 @@ export default class Collections {
             (room) => !this.isOutdoor(room) && Math.abs(room.elevation - elevation) < 0.05 && inside(room)
         );
         if (indoor) return indoor;
+        // A terrace or a roof deck under the point — a lamp hangs a metre or
+        // two over it — the highest; or any ground at the lowest storey.
+        const outdoor = this.outdoorRooms()
+            .filter((room) => inside(room) && (room.elevation ?? 0) <= y + 0.35 && y - (room.elevation ?? 0) < 2.5)
+            .sort((a, b) => (b.elevation ?? 0) - (a.elevation ?? 0))[0];
+        if (outdoor) return outdoor;
         if (level === 0) return this.outdoorRooms().find(inside) || null;
         return null;
     }
@@ -302,10 +312,12 @@ export default class Collections {
         }
 
         const room = this.roomAt(x, bottom + 0.05, z);
-        if (room && this.isOutdoor(room)) return { outside: true, rooms: [room.id] };
+        // People are a collection of their own too ("people").
+        const kind = editable.type === "person" ? { kind: "person" } : {};
+        if (room && this.isOutdoor(room)) return { outside: true, rooms: [room.id], ...kind };
         const level = this.levelOf(bottom);
-        if (!room && level === 0) return { outside: true, rooms: [] };
-        return { levels: [level], rooms: room ? [room.id] : [] };
+        if (!room && level === 0) return { outside: true, rooms: [], ...kind };
+        return { levels: [level], rooms: room ? [room.id] : [], ...kind };
     }
 
     // ------------------------------------------------------------------
@@ -319,6 +331,7 @@ export default class Collections {
      */
     shows(member, focus, hidden) {
         if (member.kind === "roof") return !focus && !hidden.has("roof");
+        if (member.kind === "person" && hidden.has("people")) return false;
 
         if (member.outside) {
             if (hidden.has("outside")) return false;

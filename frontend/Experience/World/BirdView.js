@@ -1,6 +1,7 @@
 import * as THREE from "three";
 
 import Experience from "../Experience.js";
+import { floorName } from "./Switches.js";
 
 /**
  * The bird's-eye view of a public view: one floor at a time, seen from
@@ -117,10 +118,9 @@ export default class BirdView {
         return box;
     }
 
-    /** "Ground floor", "First floor", … */
-    static floorName(level) {
-        const names = ["Ground floor", "First floor", "Second floor", "Third floor", "Fourth floor"];
-        return names[level] ?? `Floor ${level}`;
+    /** "Ground floor", "First floor", … — or, buildings at different heights, "Level +3.0 m" (Switches.js's floorName). */
+    static floorName(level, levels) {
+        return floorName(level, levels);
     }
 
     /** Whether something on `level`, of `kind`, shows in the view of floor `shown`. */
@@ -257,7 +257,24 @@ export default class BirdView {
         for (const entry of this.looseMeshes()) {
             entry.mesh.visible = all ? entry.visible : entry.visible && BirdView.shows(entry.level, entry.kind, shown);
         }
+        this.showResidents(all ? null : shown);
         if (all) this.showPeople(null);
+    }
+
+    /**
+     * The people round the property (World/People.js) on the floors shown,
+     * by the floor under them — someone on the roof deck over the floor
+     * looked at goes with the roof — or, with `null`, all of them. Only as
+     * the floor changes: each change boxes them for collision again.
+     */
+    showResidents(shown) {
+        const people = this.world.people;
+        if (!people || shown === this.residentsShown) return;
+        this.residentsShown = shown;
+        // A rig's root is on the floor standing or sitting, on the lounger
+        // lying (well within the 0.3 m a floor allows); until it is built, its spot.
+        const floorOf = (entry) => people.get(entry.id)?.group.position.y ?? entry.position?.[1] ?? 0;
+        people.setFilter(shown === null ? null : (entry) => this.levelAt(floorOf(entry)) <= shown);
     }
 
     /** Everything drawn live under the property, with its floor, found once. */

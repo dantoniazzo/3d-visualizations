@@ -19,7 +19,10 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
  * merged, say. Their GPU buffers are freed, as they will not be drawn again.
  *
  * Batches are kept per floor so a floor can later be shown or hidden on its
- * own. Transparent, skinned, instanced and moving things are left alone.
+ * own. Transparent, skinned, instanced and moving things are left alone. A
+ * light's glass or bulb — a mesh whose `userData.glow` names its switch —
+ * stays a mesh of its own, still saying so, for its switch to light it up
+ * alone (`glowOf`).
  *
  * `collectStatic` is the first half on its own — every static triangle, in
  * world space, with its material and floor — which the public-view snapshot
@@ -50,7 +53,7 @@ HIDDEN.name = "batched";
  * @param {THREE.Object3D} root
  * @param {StaticOptions} options
  * @returns {{ parts: object[], meshes: THREE.Mesh[] }}
- *          parts: { mesh, material, geometry, level, kind, cast, receive, names }
+ *          parts: { mesh, material, geometry, level, kind, cast, receive, names, glow }
  */
 export function collectStatic(root, { skip = () => false, levelOf = () => 0, kindOf = () => null } = {}) {
     root.updateWorldMatrix(true, true);
@@ -64,7 +67,7 @@ export function collectStatic(root, { skip = () => false, levelOf = () => 0, kin
             const kind = kindOf(object);
             for (const part of extractMesh(object)) {
                 part.geometry.computeBoundingBox();
-                parts.push({ ...part, mesh: object, kind, level: levelOf(object, part.geometry.boundingBox) });
+                parts.push({ ...part, mesh: object, kind, glow: glowOf(object), level: levelOf(object, part.geometry.boundingBox) });
             }
         }
         for (const child of object.children) visit(child);
@@ -116,6 +119,15 @@ export function materialKeys(materials) {
     return keys;
 }
 
+/**
+ * The light switch a light's glass or bulb is lit by (its `userData.glow`,
+ * a switch id), or null: such a mesh is never merged with anything else.
+ */
+export function glowOf(mesh) {
+    const glow = mesh.userData?.glow;
+    return typeof glow === "string" && glow ? glow : null;
+}
+
 /** Stop drawing originals that something else now draws for them. */
 export function hideOriginals(meshes) {
     for (const mesh of meshes) {
@@ -138,10 +150,12 @@ export default function batchStatic(root, options = {}) {
     /** key -> { material, level, kind, cast, receive, geometries } */
     const buckets = new Map();
     for (const part of parts) {
-        const key = [part.material.uuid, part.level, part.kind ?? "", part.names.join(","), part.cast, part.receive].join("|");
+        // A bulb alone, as the mesh it was.
+        const own = part.glow ? `glow:${part.mesh.uuid}` : "";
+        const key = [part.material.uuid, part.level, part.kind ?? "", part.names.join(","), part.cast, part.receive, own].join("|");
         let bucket = buckets.get(key);
         if (!bucket) {
-            bucket = { material: part.material, level: part.level, kind: part.kind, cast: part.cast, receive: part.receive, geometries: [] };
+            bucket = { material: part.material, level: part.level, kind: part.kind, cast: part.cast, receive: part.receive, glow: part.glow, geometries: [] };
             buckets.set(key, bucket);
         }
         bucket.geometries.push(part.geometry);
@@ -158,7 +172,7 @@ export default function batchStatic(root, options = {}) {
         mesh.name = `batch:${bucket.material.name || bucket.material.type}:${bucket.level}`;
         mesh.castShadow = bucket.cast;
         mesh.receiveShadow = bucket.receive;
-        mesh.userData = { batch: true, level: bucket.level, kind: bucket.kind ?? null };
+        mesh.userData = { batch: true, level: bucket.level, kind: bucket.kind ?? null, ...(bucket.glow && { glow: bucket.glow }) };
         // Draws only: every question about the scene goes to the originals.
         mesh.raycast = () => {};
         group.add(mesh);
@@ -190,6 +204,8 @@ function attributesFor(material, geometry) {
     if (geometry.attributes.uv1) names.push("uv1");
     if (material.vertexColors && geometry.attributes.color) names.push("color");
     if (material.normalMap && geometry.attributes.tangent) names.push("tangent");
+    // Any its shader reads of its own (the terrain's paint, LandscapeBuilder.js).
+    for (const name of material.userData.attributes ?? []) if (geometry.attributes[name]) names.push(name);
     return names;
 }
 

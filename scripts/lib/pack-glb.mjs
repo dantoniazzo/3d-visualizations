@@ -16,11 +16,13 @@ import sharp from "sharp";
 
 /**
  * @param {string} path
- * @param {{ maxTexture?: number }} [options] maxTexture: textures larger than
- *   this many pixels a side are scaled down to it
+ * @param {{ maxTexture?: number, keepAttributes?: boolean }} [options]
+ *   maxTexture: textures larger than this many pixels a side are scaled
+ *   down to it; keepAttributes: keep texture coordinates its own materials
+ *   do not use — a model whose textures are given it in the app
  * @returns {Promise<string>} its size before and after, as sent (gzipped)
  */
-export async function packGlb(path, { maxTexture } = {}) {
+export async function packGlb(path, { maxTexture, keepAttributes = false } = {}) {
     await MeshoptEncoder.ready;
     await MeshoptDecoder.ready;
     const io = new NodeIO().registerExtensions(ALL_EXTENSIONS).registerDependencies({
@@ -33,7 +35,7 @@ export async function packGlb(path, { maxTexture } = {}) {
     await document.transform(
         dedup(),
         weld(),
-        prune(),
+        prune({ keepAttributes }),
         textureCompress({ encoder: sharp, targetFormat: "webp", ...(maxTexture ? { resize: [maxTexture, maxTexture] } : {}) }),
         meshopt({ encoder: MeshoptEncoder, level: "medium" })
     );

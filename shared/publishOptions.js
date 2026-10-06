@@ -37,9 +37,9 @@ export const PUBLISH_OPTIONS = [
     {
         id: "bake",
         label: "Bake lighting",
-        hint: "Day and night light baked in Blender, on this machine, right after publishing. The view then draws no live light at all.",
+        hint: "Off, it is lit live, as the editor's walkthrough is: the sun, the sky and the lights drawn live, and switched live. Draft or Final bakes day and night light in Blender, on this machine, right after publishing, and the view draws from that bake instead.",
         choices: [
-            { value: "off", label: "Off" },
+            { value: "off", label: "Off", detail: "lit live, as in the editor; lights switch live" },
             { value: "draft", label: "Draft", detail: "2048², 128 samples, ~3 min" },
             { value: "final", label: "Final", detail: "4096², 512 samples, ~15 min" },
         ],
@@ -84,6 +84,21 @@ export const BAKE_QUALITY = {
 
 /** Every option at its default. */
 export const DEFAULT_PUBLISH_OPTIONS = Object.fromEntries(PUBLISH_OPTIONS.map((option) => [option.id, option.default]));
+
+/**
+ * Sets of options published in one click (the Publish panel): lit live, as
+ * the editor's walkthrough draws it — every optimisation that leaves the
+ * look alone (hidden faces, merging, compression, plain glass), nothing
+ * baked, the phone quality left to the device, all the scenery.
+ */
+export const PUBLISH_PRESETS = [
+    {
+        id: "live",
+        label: "Lit live — as in the editor",
+        hint: "Hidden faces removed, merged, compressed, plain glass; not baked: the sun, the sky and the lights live, switched live; quality auto; all the scenery.",
+        options: { ...DEFAULT_PUBLISH_OPTIONS, cull: true, merge: true, compress: true, glass: true, bake: "off", quality: "auto", scenery: [...SCENERY_IDS] },
+    },
+];
 
 /**
  * Options as sent or stored, made whole and valid: anything missing or

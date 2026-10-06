@@ -175,7 +175,138 @@ def grass(base, blade, dark, seed="grass"):
     return out * 0.6 + np.asarray(base) * 0.4
 
 
+def terrazzo(base, chips, density=0.035, seed="terrazzo"):
+    """Terrazzo: a pale ground strewn with chips of stone, 1–5 px across."""
+    rng = _rng(seed)
+    img = _fill(base) * (0.97 + 0.06 * _tile_noise(rng, 6, 3))[..., None]
+    chips = [np.asarray(c, dtype=np.float64) for c in chips]
+    disks = {}
+    for r in range(1, 6):
+        dy, dx = np.mgrid[-r:r + 1, -r:r + 1]
+        keep = dx * dx + dy * dy <= r * r + (rng.random(dx.shape) - 0.5) * r
+        disks[r] = (dy[keep], dx[keep])
+    count = int(SIZE * SIZE * density / 12)
+    radii = np.minimum(5, 1 + rng.geometric(0.55, count))
+    ys, xs = rng.integers(0, SIZE, count), rng.integers(0, SIZE, count)
+    which = rng.integers(0, len(chips), count)
+    for y, x, r, k in zip(ys, xs, radii, which):
+        dy, dx = disks[int(r)]
+        img[(y + dy) % SIZE, (x + dx) % SIZE] = chips[k] * (0.9 + 0.2 * rng.random())
+    return img
+
+
+def grain(base, dark, stripes=120, seed="grain"):
+    """Wood veneer: fine straight grain running up the image."""
+    rng = _rng(seed)
+    line = _tile_noise(rng, stripes, 2)[0]          # one row: a stripe pattern across
+    broad = _tile_noise(rng, 4, 3)
+    fine = _tile_noise(rng, 64, 1)
+    n = np.clip(0.55 * line[None, :] + 0.25 * broad + 0.2 * fine, 0, 1)
+    a, b = np.asarray(base), np.asarray(dark)
+    return a * (1 - n[..., None]) + b * n[..., None]
+
+
+def twill(base, dark, period=8, contrast=2.2, seed="twill"):
+    """A woven twill: fine ribs running diagonally across the image, one every
+    `period` px (a divisor of SIZE, so it tiles), soft-edged so they do not
+    shimmer, the yarn's slubs running along them and a faint broad drift;
+    `contrast` pushes the ribs beyond the two colours (about their mean) so
+    the weave still reads from across a room."""
+    rng = _rng(seed)
+    yy, xx = np.mgrid[0:SIZE, 0:SIZE]
+    phase = 2 * np.pi * ((xx + yy) % period) / period
+    rib = (0.5 + 0.5 * np.sin(phase)) ** 1.6
+    # Slubs: thicker, lighter or darker runs of the weft, long and level.
+    slub = _tile_noise(rng, 96, 2)[:, :1] * (0.4 + 0.6 * _tile_noise(rng, 6, 2))
+    fine = _tile_noise(rng, 128, 1)
+    broad = _tile_noise(rng, 4, 3)
+    n = np.clip(0.62 * rib + 0.18 * (slub - 0.5) + 0.12 * (fine - 0.5) + 0.19, 0, 1)
+    n = 0.5 + (n - n.mean()) * contrast
+    a, b = np.asarray(base), np.asarray(dark)
+    img = a * (1 - n[..., None]) + b * n[..., None]
+    return img * (0.97 + 0.06 * broad)[..., None]
+
+
+def nubbly(base, dark, cells=96, contrast=1.0, seed="nubbly"):
+    """Bouclé or a fine basket weave: soft round nubs of yarn a few pixels
+    across (`cells` to the tile), darker in the gaps between them, a faint
+    over-under basket under them, warped so it never lines up into a grid,
+    and a faint broad drift — low contrast, as cloth is, and no grout."""
+    rng = _rng(seed)
+    yy, xx = np.mgrid[0:SIZE, 0:SIZE]
+    nub = 0.6 * _tile_noise(rng, cells, 2) + 0.4 * _tile_noise(rng, cells * 2, 1)
+    nub = (nub - nub.min()) / max(1e-6, nub.max() - nub.min())
+    nub = nub * nub * (3 - 2 * nub)
+    # The basket, 8 px blocks of ribs turning a quarter each block, its
+    # lines wandering a few pixels (a wrapping warp, so it still tiles).
+    wx = ((_tile_noise(rng, 12, 2) - 0.5) * 16).astype(int)
+    wy = ((_tile_noise(rng, 12, 2) - 0.5) * 16).astype(int)
+    u, v = (xx + wx) % SIZE, (yy + wy) % SIZE
+    across = (u // 8 + v // 8) % 2 == 0
+    rib = np.where(across, np.sin(2 * np.pi * v / 4), np.sin(2 * np.pi * u / 4)) * 0.5 + 0.5
+    broad = _tile_noise(rng, 5, 3)
+    n = 0.7 * nub + 0.08 * rib + 0.22 * broad
+    n = np.clip(0.5 + (n - n.mean()) * 2.0 * contrast, 0, 1)
+    a, b = np.asarray(base), np.asarray(dark)
+    return a * (1 - n[..., None]) + b * n[..., None]
+
+
+def linen(base, dark, contrast=1.0, seed="linen"):
+    """Plain-woven linen: warp and weft threads a few pixels apart, the
+    weft's slubs — thicker, lighter or darker runs a few centimetres long —
+    lying across it, and a faint broad drift, so a sheet of it reads as
+    cloth in its folds rather than as flat colour."""
+    rng = _rng(seed)
+    yy, xx = np.mgrid[0:SIZE, 0:SIZE]
+    warp = 0.5 + 0.5 * np.sin(2 * np.pi * xx / 4)
+    weft = 0.5 + 0.5 * np.sin(2 * np.pi * yy / 4)
+    row = rng.random(SIZE) * 2 - 1
+    row = np.sign(row) * np.abs(row) ** 2                   # most threads even, some slubbed
+    run = _tile_noise(rng, 24, 2)
+    slub = row[:, None] * (run - run.min()) / max(1e-6, run.max() - run.min())   # each slub a run, fading in and out
+    broad = _tile_noise(rng, 4, 3)
+    n = 0.5 + contrast * (0.7 * slub + 0.14 * (warp - 0.5) + 0.12 * (weft - 0.5) + 0.3 * (broad - 0.5))
+    n = np.clip(n, 0, 1)
+    a, b = np.asarray(base), np.asarray(dark)
+    return a * (1 - n[..., None]) + b * n[..., None]
+
+
+def heather(base, flecks, density=0.5, seed="heather", width=1, mottle=0.06):
+    """Heathered wool felt: a mid ground mottled at a few scales (`mottle`,
+    the strength of the patches a centimetre or so across) and strewn with
+    short fibres of lighter and darker wool, each 2-7 px long and `width` px
+    thick, at random angles, so it reads as fleck, not as stone chips or
+    noise."""
+    rng = _rng(seed)
+    broad = _tile_noise(rng, 6, 3)
+    mid = _tile_noise(rng, 40, 2)
+    img = _fill(base) * (0.93 + 0.10 * broad + 2 * mottle * (mid - 0.5))[..., None]
+    flecks = [np.asarray(c, dtype=np.float64) for c in flecks]
+    count = int(SIZE * SIZE * density / (5 * width))
+    steps = 7
+    x0, y0 = rng.random(count) * SIZE, rng.random(count) * SIZE
+    ang = rng.random(count) * np.pi
+    ln = 2 + rng.random(count) * 5
+    which = rng.integers(0, len(flecks), count)
+    tone = 0.88 + 0.24 * rng.random(count)
+    t = np.linspace(0, 1, steps)[None, :]
+    cols = np.repeat(np.stack([flecks[k] for k in which]) * tone[:, None], steps, axis=0)
+    for dx, dy in [(0, 0), (1, 0), (0, 1), (1, 1)][:max(1, min(4, width * width))]:
+        xs = (x0[:, None] + dx + np.cos(ang)[:, None] * ln[:, None] * t).astype(int) % SIZE
+        ys = (y0[:, None] + dy + np.sin(ang)[:, None] * ln[:, None] * t).astype(int) % SIZE
+        img[ys.ravel(), xs.ravel()] = cols
+    # A felted surface: the fibres half-buried, so soften them into the ground.
+    soft = (img + np.roll(img, 1, 0) + np.roll(img, 1, 1)) / 3
+    return img * 0.6 + soft * 0.4
+
+
 GENERATORS = {
+    "terrazzo": terrazzo,
+    "grain": grain,
+    "twill": twill,
+    "nubbly": nubbly,
+    "linen": linen,
+    "heather": heather,
     "planks": planks,
     "tiles": tiles,
     "mottle": mottle,

@@ -363,7 +363,11 @@ def join(objects, name):
     bpy.ops.object.select_all(action="DESELECT")
     for o in objects:
         o.select_set(True)
-    bpy.context.view_layer.objects.active = objects[0]
+    # Joined, a mesh keeps only the UV maps of the one joined into: that
+    # one is a part with the most of them, or a model whose first part has
+    # none (the Chery's) loses all its textures' UVs — its lamps' and
+    # badges' among them.
+    bpy.context.view_layer.objects.active = max(objects, key=lambda o: len(o.data.uv_layers))
     if len(objects) > 1:
         bpy.ops.object.join()
     joined = bpy.context.view_layer.objects.active

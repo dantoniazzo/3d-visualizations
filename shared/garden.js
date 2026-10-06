@@ -100,6 +100,17 @@ export const GARDEN = {
         label: "Mown shells",
         enabled: { label: "Shells under the blades", value: false },
     },
+    neighbourhood: {
+        label: "Neighbourhood",
+        enabled: { label: "Show the neighbourhood", value: true },
+        // The world ends this far from the plot's middle, fading into the
+        // dark over its last stretch (World/Environment.js's dome).
+        radius: { label: "World radius (m)", value: 150, min: 80, max: 300, step: 5 },
+        hill: { label: "Hill height (m)", value: 8, min: 0, max: 20, step: 0.5 },
+        houses: { label: "Neighbours' houses", value: 5, min: 0, max: 6, step: 1 },
+        roadTrees: { label: "m of road a tree", value: 18, min: 8, max: 80, step: 1 },
+        verge: { label: "Tufts on the verges (share)", value: 0.2, min: 0, max: 1, step: 0.01 },
+    },
 };
 
 /**

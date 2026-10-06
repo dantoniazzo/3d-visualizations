@@ -18,7 +18,7 @@ sys.path.insert(0, HERE)
 
 import bpy
 
-from lib import geometry as g, joinery as j, loose as L, materials as m
+from lib import geometry as g, joinery as j, ladonia as LD, loose as L, materials as m
 from export_app import bake_tiling_textures, build_box_uvs   # noqa: E402
 
 OUT = os.path.join(REPO, "public", "models", "furniture")
@@ -54,12 +54,32 @@ PIECES = [
      lambda c, mats: j.shelving(c, mats, -0.8, 0.8, 0, h=0.6, d=0.42, shelves=1)),
     ("vanity", "Basin vanity", "bathroom",
      lambda c, mats: j.vanity(c, mats, 0, 0, w=1.0, d=0.48)),
+    ("vanity-small", "Hand-basin vanity", "bathroom",
+     lambda c, mats: j.vanity(c, mats, 0, 0, w=0.6, d=0.4)),
     ("wc", "WC", "bathroom",
      lambda c, mats: j.wc(c, mats, 0, 0)),
     ("bath", "Bath", "bathroom",
      lambda c, mats: j.bath(c, mats, 0, 0)),
     ("shower", "Shower enclosure", "bathroom",
      lambda c, mats: j.shower(c, mats, 0, 0)),
+    ("shower-m", "Shower enclosure, mirrored", "bathroom",
+     lambda c, mats: LD.mirrored(j.shower(c, mats, 0, 0))),
+    ("ld-shower-walkin", "Walk-in shower, 2.2 m, black-framed screen at its +X end (left as you face it)", "bathroom",
+     lambda c, mats: LD.shower_walkin(c, mats)),
+    ("ld-shower-walkin-r", "Walk-in shower, 2.2 m, black-framed screen at its -X end (right as you face it)", "bathroom",
+     lambda c, mats: LD.shower_walkin(c, mats, side=-1)),
+    ("ld-shower-walkin-w", "Walk-in shower, 2.2 m, screen at +X, pre-wall open for a window (u 0.26-1.06)", "bathroom",
+     lambda c, mats: LD.shower_walkin(c, mats, window=(0.26, 1.06, 0.95))),
+    ("ld-shower-walkin-r-w", "Walk-in shower, 2.2 m, screen at -X, pre-wall open for a window (u -0.94--0.14)", "bathroom",
+     lambda c, mats: LD.shower_walkin(c, mats, side=-1, window=(-0.94, -0.14, 0.95))),
+    ("ld-shower-walkin-c2", "Walk-in shower, 1.54 m, glass at its -X end (right as you face it)", "bathroom",
+     lambda c, mats: LD.shower_walkin(c, mats, w=1.54, d=0.80, screen=0.85, side=-1, style="chrome")),
+    ("ld-shower-walkin-c2-r", "Walk-in shower, 1.54 m, glass at its +X end (left as you face it)", "bathroom",
+     lambda c, mats: LD.shower_walkin(c, mats, w=1.54, d=0.80, screen=0.85, side=1, style="chrome")),
+    ("ld-shower-walkin-c1", "Walk-in shower, 1.6 m, glass at its -X end (right as you face it)", "bathroom",
+     lambda c, mats: LD.shower_walkin(c, mats, w=1.60, d=0.70, screen=0.65, side=-1, style="chrome")),
+    ("ld-vanity-double-145", "Floating oak double vanity, 1.45 m, mirror over (hang at y 0.40)", "bathroom",
+     lambda c, mats: LD.vanity_double(c, mats), "wall"),
     ("towel-rail", "Heated towel rail", "bathroom",
      lambda c, mats: j.towel_rail(c, mats, 0, 0)),
     ("fridge", "Fridge freezer", "kitchen",
@@ -126,6 +146,223 @@ PIECES = [
      lambda c, mats: L.picture(c, mats, 0, 0), "wall"),
     ("mirror", "Mirror", "decor",
      lambda c, mats: L.mirror(c, mats, 0, 0), "wall"),
+] + [
+    # Ladonia Residence (lib/ladonia.py), after its renders.
+    ("ld-sofa", "Slip-covered linen sofa, 3-seat", "seating", lambda c, mats: LD.sofa(c, mats, w=2.30)),
+    ("ld-sofa-2", "Slip-covered linen sofa, 2-seat", "seating", lambda c, mats: LD.sofa(c, mats, w=1.80)),
+    ("ld-sofa-chaise-r", "Slip-covered linen corner sofa, chaise right", "seating",
+     lambda c, mats: LD.sofa(c, mats, w=2.50, chaise="right"), {"collision": "mesh"}),
+    ("ld-sofa-chaise-l", "Slip-covered linen corner sofa, chaise left", "seating",
+     lambda c, mats: LD.sofa(c, mats, w=2.50, chaise="left"), {"collision": "mesh"}),
+    ("ld-sofa-boucle", "Ivory boucle sofa, 2.6 m", "seating", lambda c, mats: LD.sofa(c, mats, w=2.60, style="boucle")),
+    ("ld-sofa-boucle-chaise-r", "Ivory boucle corner sofa, chaise right", "seating",
+     lambda c, mats: LD.sofa(c, mats, w=2.60, chaise="right", style="boucle", chaise_len=1.7), {"collision": "mesh"}),
+    ("ld-sofa-boucle-chaise-l", "Ivory boucle corner sofa, chaise left", "seating",
+     lambda c, mats: LD.sofa(c, mats, w=2.60, chaise="left", style="boucle", chaise_len=1.7), {"collision": "mesh"}),
+    ("ld-sofa-c25-chaise-l", "Slip-covered linen sofa, 2.5 m, narrow chaise left", "seating",
+     lambda c, mats: LD.sofa(c, mats, w=2.47, chaise="left", d=0.85, chaise_len=1.5, cw=0.8), {"collision": "mesh"}),
+    ("ld-sofa-c25-chaise-r", "Slip-covered linen sofa, 2.5 m, narrow chaise right", "seating",
+     lambda c, mats: LD.sofa(c, mats, w=2.47, chaise="right", d=0.85, chaise_len=1.5, cw=0.8), {"collision": "mesh"}),
+    ("ld-sofa-c21-chaise-l", "Slip-covered linen sofa, 2.15 m, narrow chaise left", "seating",
+     lambda c, mats: LD.sofa(c, mats, w=2.15, chaise="left", d=0.85, chaise_len=1.5, cw=0.8), {"collision": "mesh"}),
+    ("ld-sofa-c21-chaise-r", "Slip-covered linen sofa, 2.15 m, narrow chaise right", "seating",
+     lambda c, mats: LD.sofa(c, mats, w=2.15, chaise="right", d=0.85, chaise_len=1.5, cw=0.8), {"collision": "mesh"}),
+    ("ld-sofa-corner-l", "Slip-covered linen corner sofa, backs on two walls, 2.36 x 2.30 m", "seating",
+     lambda c, mats: LD.sofa_corner(c, mats, w=2.36, ret=2.30, depth=0.96), {"collision": "mesh"}),
+    ("ld-sofa-boucle-corner-l", "Ivory boucle corner sofa, backs on two walls, 2.36 x 2.30 m", "seating",
+     lambda c, mats: LD.sofa_corner(c, mats, w=2.36, ret=2.30, depth=0.96, style="boucle"), {"collision": "mesh"}),
+    ("ld-sofa-corner-s-l", "Slip-covered linen corner sofa, backs on two walls, 2.27 x 2.26 m", "seating",
+     lambda c, mats: LD.sofa_corner(c, mats, w=2.27, ret=2.26, depth=0.90, ret_seats=2), {"collision": "mesh"}),
+    ("ld-sofa-boucle-corner-s-l", "Ivory boucle corner sofa, backs on two walls, 2.27 x 2.26 m", "seating",
+     lambda c, mats: LD.sofa_corner(c, mats, w=2.27, ret=2.26, depth=0.90, style="boucle", ret_seats=2), {"collision": "mesh"}),
+    ("ld-coffee-slat", "Slatted oak coffee table", "tables", lambda c, mats: LD.slatted_table(c, mats)),
+    ("ld-stump", "Teak drum side table, armillary sphere", "tables", lambda c, mats: LD.stump(c, mats)),
+    ("ld-pouf", "Square soft pouf, ecru linen", "seating", lambda c, mats: LD.pouf(c, mats)),
+    ("ld-coffee-round-60", "Round microcement drum coffee table, 0.6 m", "tables", lambda c, mats: LD.coffee_round(c, mats)),
+    ("ld-rug-round", "Round rug, rust, 2.0 m", "decor", lambda c, mats: LD.rug_round(c, mats)),
+    ("ld-rug-sage", "Rug, sage, rounded, 2.0 x 1.4 m", "decor", lambda c, mats: LD.rug(c, mats, 2.0, 1.4, "rug_sage")),
+    ("ld-art-dracaena", "Framed print, dracaena on yellow", "decor", lambda c, mats: LD.art_dracaena(c, mats), "wall"),
+    ("ld-table-decor", "Dining table candles", "decor", lambda c, mats: LD.table_decor(c, mats)),
+    ("ld-sideboard-decor", "Lantern and plaster bust on books", "decor", lambda c, mats: LD.sideboard_decor(c, mats)),
+    ("ld-alocasia", "Alocasia, 1.3 m, in a pot", "decor", lambda c, mats: LD.alocasia(c, mats)),
+    ("ld-ficus", "Ficus in a terracotta pot", "decor", lambda c, mats: LD.ficus(c, mats)),
+    ("ld-coffee-maker", "Pour-over coffee maker", "kitchen", lambda c, mats: LD.coffee_maker(c, mats)),
+    ("ld-media-ochre", "TV wall, oak niche and cream", "storage", lambda c, mats: LD.media_wall(c, mats)),
+    ("ld-media-oak", "TV wall, rift oak block, 2.0 m", "storage", lambda c, mats: LD.tv_volume(c, mats, w=2.0, niche=False)),
+    ("ld-tv-volume", "TV wall, rift oak block to the ceiling, 2.6 m", "storage", lambda c, mats: LD.tv_volume(c, mats)),
+    ("ld-tv-volume-30", "TV wall, rift oak block to the ceiling, 3.0 m, TV off centre", "storage",
+     lambda c, mats: LD.tv_volume(c, mats, w=3.0, d=0.6, tv_x=0.62, joints=(-3.0 / 2 + 0.66,))),
+    ("ld-tv-wall", "Wall-hung 55-inch television", "decor", lambda c, mats: LD.tv_wall(c, mats), "wall"),
+    ("ld-dining-oak", "Pale oak dining table, 6-seat", "tables", lambda c, mats: LD.dining_table(c, mats)),
+    ("ld-dining-oak-4", "Pale oak dining table, 4-seat", "tables", lambda c, mats: LD.dining_table(c, mats, w=1.5, d=0.85)),
+    ("ld-table-round", "Round microcement table", "tables", lambda c, mats: LD.round_table(c, mats)),
+    ("ld-table-round-90", "Round microcement table, 0.9 m", "tables", lambda c, mats: LD.round_table(c, mats, r=0.45, drum=0.2)),
+    ("ld-dining-oak-4s", "Pale oak dining table, 4-seat, 1.4 m", "tables",
+     lambda c, mats: LD.dining_table(c, mats, w=1.4, d=0.75, base=0.9)),
+    ("ld-vase-zigzag", "Bottle vase, zig-zag bands", "decor", lambda c, mats: LD.vase_zigzag(c, mats)),
+    ("ld-chair-shell", "Upholstered dining chair", "seating", lambda c, mats: LD.shell_chair(c, mats)),
+    ("ld-chair-oak", "Oak dining chair", "seating", lambda c, mats: LD.oak_chair(c, mats)),
+    ("ld-pendant-felt", "Olive felt dome pendant", "lighting", lambda c, mats: LD.pendant_felt(c, mats), "ceiling"),
+    ("ld-pendant-pleat", "Pleated fabric pendant", "lighting", lambda c, mats: LD.pendant_pleat(c, mats), "ceiling"),
+    ("ld-pendant-woven", "Black cone pendant, woven band", "lighting", lambda c, mats: LD.pendant_woven(c, mats), "ceiling"),
+    ("ld-track-20", "Ceiling track, 2 m, 3 spots", "lighting", lambda c, mats: LD.track(c, mats, 2.0, 3), "ceiling"),
+    ("ld-track-30", "Ceiling track, 3 m, 4 spots", "lighting", lambda c, mats: LD.track(c, mats, 3.0, 4), "ceiling"),
+    ("ld-track-40", "Ceiling track, 4 m, 5 spots", "lighting", lambda c, mats: LD.track(c, mats, 4.0, 5), "ceiling"),
+    ("ld-track-50", "Ceiling track, 5 m, 6 spots", "lighting", lambda c, mats: LD.track(c, mats, 5.0, 6), "ceiling"),
+    ("ld-track-40-led", "Ceiling track, 4 m, 2 LED modules, 3 spots", "lighting", lambda c, mats: LD.track(c, mats, 4.0, 3, leds=2),
+     "ceiling"),
+    ("ld-wall-light", "Wall light, oak-capped tube", "lighting", lambda c, mats: LD.wall_light(c, mats), "wall"),
+    ("ld-shelf-cubes", "Oak wall boxes", "storage", lambda c, mats: LD.shelf_cubes(c, mats), "wall"),
+    ("ld-sideboard", "Low handleless oak sideboard, 2.4 m", "storage", lambda c, mats: LD.sideboard(c, mats)),
+    ("ld-sideboard-30", "Handleless oak sideboard, 3.0 m", "storage", lambda c, mats: LD.sideboard(c, mats, w=3.0, h=0.8)),
+    ("ld-sideboard-18", "Low handleless oak sideboard, 1.8 m", "storage", lambda c, mats: LD.sideboard(c, mats, w=1.8, doors=3)),
+    ("ld-cabinet", "Low oak cabinet with lamp and sculptures", "storage", lambda c, mats: LD.cabinet(c, mats)),
+    ("ld-table-lamp", "Table lamp", "lighting", lambda c, mats: LD.table_lamp(c, mats)),
+    ("ld-curtain", "Sheer linen curtain, 1.6 m", "decor", lambda c, mats: LD.curtain(c, mats, w=1.6)),
+    ("ld-curtain-wide", "Sheer linen curtain, 2.6 m", "decor", lambda c, mats: LD.curtain(c, mats, w=2.6)),
+    ("ld-sheer-05", "Sheer linen curtain, drawn open (0.5 m stack)", "decor",
+     lambda c, mats: LD.curtain(c, mats, w=0.5, depth=0.15, folds=6)),
+] + [
+    (f"ld-sheer-{int(w * 10)}", f"Sheer linen curtain, {w:.1f} m", "decor", (lambda w: lambda c, mats: LD.curtain(c, mats, w=w))(w))
+    for w in (1.2, 1.8, 2.4, 3.0, 3.6, 4.5)
+] + [
+    ("ld-curtain-ochre", "Caramel linen curtain, 1.2 m", "decor", lambda c, mats: LD.curtain(c, mats, w=1.2, mat="curtain_caramel", heading="pinch")),
+    ("ld-curtain-caramel-06", "Caramel linen curtain, drawn open (0.6 m stack)", "decor",
+     lambda c, mats: LD.curtain(c, mats, w=0.6, mat="curtain_caramel", depth=0.115, folds=6, heading="pinch")),
+    ("ld-curtain-caramel-18", "Caramel linen curtain, 1.8 m", "decor",
+     lambda c, mats: LD.curtain(c, mats, w=1.8, mat="curtain_caramel", heading="pinch")),
+    ("ld-curtain-caramel-24", "Caramel linen curtain, 2.4 m", "decor",
+     lambda c, mats: LD.curtain(c, mats, w=2.4, mat="curtain_caramel", heading="pinch")),
+    ("ld-bed", "Double bed 1.8 x 2.0, olive runner (headboard is ld-headboard-210)", "bedroom", lambda c, mats: LD.bed(c, mats, w=1.80)),
+    ("ld-bed-sage", "Double bed 1.8 x 2.0, sage rooms (headboard is ld-headboard-210-sage)", "bedroom",
+     lambda c, mats: LD.bed(c, mats, w=1.80)),
+    ("ld-bed-single", "Single bed 0.9 x 2.0 (headboard is ld-headboard-110)", "bedroom",
+     lambda c, mats: LD.bed(c, mats, w=0.9, l=2.0, single=True)),
+    ("ld-nightstand", "Floating walnut drawer, 1.0 m (hang at y 0.28)", "bedroom", lambda c, mats: LD.nightstand(c, mats)),
+    ("ld-nightstand-60", "Floating walnut drawer, 0.6 m (hang at y 0.28)", "bedroom",
+     lambda c, mats: LD.nightstand(c, mats, w=0.6)),
+    ("ld-rug-taupe", "Rug, taupe loop pile, rounded, 1.7 x 2.4 m", "decor", lambda c, mats: LD.rug(c, mats, 1.7, 2.4, "rug_taupe")),
+    ("ld-wardrobe-12", "Linen wardrobe, 1.2 m", "bedroom", lambda c, mats: LD.wardrobe(c, mats, w=1.2)),
+    ("ld-wardrobe-15", "Linen wardrobe, 1.5 m", "bedroom", lambda c, mats: LD.wardrobe(c, mats, w=1.5)),
+    ("ld-wardrobe-18", "Linen wardrobe, 1.8 m", "bedroom", lambda c, mats: LD.wardrobe(c, mats, w=1.8)),
+    ("ld-wardrobe-21", "Linen wardrobe, 2.1 m", "bedroom", lambda c, mats: LD.wardrobe(c, mats, w=2.1)),
+    ("ld-wardrobe-24", "Linen wardrobe, 2.4 m", "bedroom", lambda c, mats: LD.wardrobe(c, mats, w=2.4)),
+    ("ld-wardrobe-06s", "Linen wardrobe, 0.6 m, one door, 0.50 deep", "bedroom", lambda c, mats: LD.wardrobe(c, mats, w=0.6, d=0.50)),
+    ("ld-wardrobe-08", "Linen wardrobe, 0.8 m, 0.55 deep", "bedroom", lambda c, mats: LD.wardrobe(c, mats, w=0.8, d=0.55)),
+    ("ld-wardrobe-10", "Linen wardrobe, 1.0 m", "bedroom", lambda c, mats: LD.wardrobe(c, mats, w=1.0)),
+    ("ld-wardrobe-12s", "Linen wardrobe, 1.2 m, 0.45 deep", "bedroom", lambda c, mats: LD.wardrobe(c, mats, w=1.2, d=0.45)),
+    ("ld-wardrobe-13s", "Linen wardrobe, 1.3 m, 0.50 deep", "bedroom", lambda c, mats: LD.wardrobe(c, mats, w=1.3, d=0.50)),
+    ("ld-wardrobe-27", "Linen wardrobe, 2.7 m, 0.56 deep", "bedroom", lambda c, mats: LD.wardrobe(c, mats, w=2.7, d=0.56)),
+    ("ld-wardrobe-30", "Linen wardrobe, 3.0 m", "bedroom", lambda c, mats: LD.wardrobe(c, mats, w=3.0)),
+    ("ld-wardrobe-30s", "Linen wardrobe, 3.0 m, 0.45 deep", "bedroom", lambda c, mats: LD.wardrobe(c, mats, w=3.0, d=0.45)),
+    ("ld-bed-sage-160", "Double bed 1.6 x 2.0, sage rooms (headboard is ld-headboard-180-sage)", "bedroom",
+     lambda c, mats: LD.bed(c, mats, w=1.60)),
+    ("ld-bed-sage-140", "Double bed 1.4 x 1.9, building C (headboard is ld-headboard-160-sage)", "bedroom",
+     lambda c, mats: LD.bed(c, mats, w=1.40, l=1.90)),
+    ("ld-bed-single-80", "Single bed 0.8 x 1.9, C's twin rooms (headboard is ld-headboard-90-sage)", "bedroom",
+     lambda c, mats: LD.bed(c, mats, w=0.80, l=1.90, single=True)),
+    ("ld-headboard-210", "Felt headboard, two panels, 2.1 m (hang at y 0.55)", "bedroom",
+     lambda c, mats: LD.headboard(c, mats, w=2.10), "wall"),
+    ("ld-headboard-210-sage", "Felt headboard, sage, two panels, 2.1 m (hang at y 0.55)", "bedroom",
+     lambda c, mats: LD.headboard(c, mats, w=2.10, felt="felt_sage"), "wall"),
+    ("ld-headboard-180-sage", "Felt headboard, sage, two panels, 1.8 m (hang at y 0.55)", "bedroom",
+     lambda c, mats: LD.headboard(c, mats, w=1.80, felt="felt_sage"), "wall"),
+    ("ld-headboard-160-sage", "Felt headboard, sage, two panels, 1.6 m (hang at y 0.55)", "bedroom",
+     lambda c, mats: LD.headboard(c, mats, w=1.60, felt="felt_sage"), "wall"),
+    ("ld-headboard-110", "Felt headboard, one panel, 1.1 m (hang at y 0.55)", "bedroom",
+     lambda c, mats: LD.headboard(c, mats, w=1.10, panels=1), "wall"),
+    ("ld-headboard-110-sage", "Felt headboard, sage, one panel, 1.1 m (hang at y 0.55)", "bedroom",
+     lambda c, mats: LD.headboard(c, mats, w=1.10, panels=1, felt="felt_sage"), "wall"),
+    ("ld-headboard-90-sage", "Felt headboard, sage, one panel, 0.9 m (hang at y 0.55)", "bedroom",
+     lambda c, mats: LD.headboard(c, mats, w=0.90, panels=1, felt="felt_sage"), "wall"),
+    ("ld-nightstand-45", "Floating walnut drawer, 0.45 m (hang at y 0.28)", "bedroom",
+     lambda c, mats: LD.nightstand(c, mats, w=0.45)),
+    ("ld-nightstand-40", "Floating walnut drawer, 0.4 m (hang at y 0.28)", "bedroom",
+     lambda c, mats: LD.nightstand(c, mats, w=0.40)),
+    ("ld-rug-taupe-26", "Rug, taupe loop pile, rounded, 2.6 x 2.0 m", "decor",
+     lambda c, mats: LD.rug(c, mats, 2.6, 2.0, "rug_taupe", r=0.10)),
+    ("ld-kitchen-ochre-a1", "Kitchen, ochre, flat A1 (3.0 m)", "kitchen", lambda c, mats: LD.kitchen_a1(c, mats)),
+    ("ld-kitchen-sage-a2", "Kitchen, sage, flat B2 (5.05 m)", "kitchen", lambda c, mats: LD.kitchen_a2(c, mats, L=5.05)),
+    ("ld-kitchen-ochre-a2", "Kitchen, ochre, flat A2 (5.05 m)", "kitchen",
+     lambda c, mats: LD.kitchen_a2(c, mats, L=5.05, scheme="ochre")),
+    ("ld-kitchen-sage-a1", "Kitchen, sage, flat B1 (3.0 m)", "kitchen", lambda c, mats: LD.kitchen_a1(c, mats, scheme="sage")),
+    ("ld-kitchen-sage-42s", "Kitchen, sage, 4.2 m, sink by the columns", "kitchen", lambda c, mats: LD.kitchen_42s(c, mats)),
+    ("ld-kitchen-ochre-40n", "Kitchen, ochre, 3.95 m, upper north flat", "kitchen",
+     lambda c, mats: LD.kitchen_40n(c, mats, "ochre")),
+    ("ld-kitchen-sage-40n", "Kitchen, sage, 3.95 m, upper north flat", "kitchen", lambda c, mats: LD.kitchen_40n(c, mats, "sage")),
+    ("ld-kitchen-sage-c2", "Kitchen, sage, flat C2 (2.8 m)", "kitchen", lambda c, mats: LD.kitchen_c2(c, mats)),
+    ("ld-kitchen-sage-c2-r", "Kitchen, sage, flat C3 (2.8 m, columns right)", "kitchen",
+     lambda c, mats: LD.kitchen_c2(c, mats, hand=1)),
+    ("ld-kitchen-sage-c1", "Kitchen, sage, flat C1 (3.9 m)", "kitchen", lambda c, mats: LD.kitchen_c1(c, mats)),
+    ("ld-peninsula-ochre", "Kitchen peninsula, ochre", "kitchen", lambda c, mats: LD.peninsula(c, mats, scheme="ochre")),
+    ("ld-peninsula-sage", "Kitchen peninsula, sage", "kitchen", lambda c, mats: LD.peninsula(c, mats, scheme="sage")),
+] + [
+    (f"ld-kitchen-{scheme}-{int(length * 10)}{'-r' if side > 0 else ''}",
+     f"Kitchen, {scheme}, {length:.1f} m{', tall units right' if side > 0 else ''}", "kitchen",
+     (lambda length, scheme, side, tall: lambda c, mats: LD.kitchen(c, mats, length, scheme, tall=tall, tall_side=side))(
+         length, scheme, side, 2 if length >= 3.6 else 1))
+    for scheme in ("ochre", "sage") for length in (2.4, 3.0, 3.6, 4.2, 4.8) for side in (-1, 1)
+] + [
+    # Base units alone: a sink, a hob, no tall units or wall cupboards.
+    (f"ld-counter-{scheme}-{int(length * 10)}", f"Kitchen counter, {scheme}, {length:.1f} m", "kitchen",
+     (lambda length, scheme: lambda c, mats: LD.kitchen(c, mats, length, scheme, tall=0, uppers=False, shelves=False))(length, scheme))
+    for scheme in ("ochre", "sage") for length in (1.8, 2.4)
+] + [
+    (f"ld-counter-{scheme}-{kind}-{int(length * 10)}", f"Kitchen counter, {scheme}, {kind}, {length:.1f} m", "kitchen",
+     (lambda length, scheme, kind: lambda c, mats: LD.counter(c, mats, length, scheme, kind))(length, scheme, kind))
+    for scheme in ("ochre", "sage") for kind, length in (("hob", 2.4), ("sink", 1.8))
+] + [
+    # Under a window: no wall units, no upstand (plain), or a low one (sink).
+    ("ld-counter-ochre-plain-22", "Kitchen counter, ochre, plain, 2.2 m", "kitchen",
+     lambda c, mats: LD.counter(c, mats, 2.2, "ochre", "plain")),
+    ("ld-counter-sage-plain-22", "Kitchen counter, sage, plain, 2.2 m", "kitchen",
+     lambda c, mats: LD.counter(c, mats, 2.2, "sage", "plain")),
+    ("ld-counter-sage-low-24", "Kitchen counter, sage, 2.4 m, no back panel", "kitchen",
+     lambda c, mats: LD.counter(c, mats, 2.4, "sage", "low")),
+    ("ld-counter-sage-low-24-r", "Kitchen counter, sage, 2.4 m, no back panel, sink left", "kitchen",
+     lambda c, mats: LD.counter(c, mats, 2.4, "sage", "low", hand=1)),
+    ("ld-counter-ochre-sink-20", "Kitchen counter, ochre, sink, 2.0 m, low upstand", "kitchen",
+     lambda c, mats: LD.counter(c, mats, 2.0, "ochre", "sink", lead=0.7, splash=0.18)),
+    ("ld-counter-sage-sink-20", "Kitchen counter, sage, sink, 2.0 m, low upstand", "kitchen",
+     lambda c, mats: LD.counter(c, mats, 2.0, "sage", "sink", lead=0.7, splash=0.18)),
+] + [
+    ("ld-kitchen-ochre-l", "Kitchen, ochre, L-shaped corner (2.49 x 2.20 m)", "kitchen",
+     lambda c, mats: LD.kitchen_l(c, mats, "ochre")),
+    ("ld-kitchen-sage-l", "Kitchen, sage, L-shaped corner (2.49 x 2.20 m)", "kitchen",
+     lambda c, mats: LD.kitchen_l(c, mats, "sage")),
+    ("ld-kitchen-ochre-u", "Kitchen, ochre, U-shaped, upper south flat (place facing W)", "kitchen",
+     lambda c, mats: LD.kitchen_u(c, mats, "ochre")),
+    ("ld-kitchen-sage-u", "Kitchen, sage, U-shaped, upper south flat (place facing W)", "kitchen",
+     lambda c, mats: LD.kitchen_u(c, mats, "sage")),
+    ("ld-out-table", "Garden table, round, green on a sage drum", "outdoor",
+     lambda c, mats: LD.round_table(c, mats, r=0.5, top="outdoor_green", base="outdoor_pedestal", t=0.04, drum=0.2)),
+    ("ld-out-chair", "Garden armchair, sage", "outdoor", lambda c, mats: LD.garden_chair(c, mats)),
+    ("ld-out-lounge", "Lounge chair, terracotta slats", "outdoor", lambda c, mats: LD.lounge_chair(c, mats)),
+    ("ld-out-side", "Side table, white cone, marble top", "outdoor", lambda c, mats: LD.side_table_out(c, mats)),
+    ("ld-out-candles", "Candle tray, three black candlesticks", "outdoor", lambda c, mats: LD.candles_out(c, mats)),
+    ("ld-out-sofa", "Garden sofa", "outdoor", lambda c, mats: LD.garden_sofa(c, mats)),
+    ("ld-out-coffee", "Garden coffee table", "outdoor", lambda c, mats: LD.coffee_table_out(c, mats)),
+    ("ld-out-dining", "Garden dining table", "outdoor", lambda c, mats: LD.dining_table_out(c, mats)),
+    ("ld-parasol", "Parasol, tan", "outdoor", lambda c, mats: LD.parasol(c, mats)),
+    ("ld-parasol-closed", "Parasol, tan, closed", "outdoor", lambda c, mats: LD.parasol(c, mats, closed=True)),
+    ("ld-jacuzzi", "Jacuzzi", "outdoor", lambda c, mats: LD.jacuzzi(c, mats)),
+    ("ld-out-kitchen", "Outdoor kitchen, 2.4 m, sink and grill", "outdoor", lambda c, mats: LD.outdoor_kitchen(c, mats, w=2.4, grill=True)),
+    ("ld-out-kitchen-32", "Outdoor kitchen, 3.2 m, sink and grill", "outdoor",
+     lambda c, mats: LD.outdoor_kitchen(c, mats, w=3.2, grill=True)),
+    ("ld-out-island-16", "Outdoor kitchen island, 1.6 m, sink", "outdoor", lambda c, mats: LD.outdoor_kitchen(c, mats, w=1.6)),
+    ("ld-lounger", "Sun lounger", "outdoor", lambda c, mats: LD.lounger(c, mats)),
+    ("ld-bar-stool", "Garden bar stool", "outdoor", lambda c, mats: LD.bar_stool_out(c, mats)),
+    ("ld-olive-pot", "Olive in a planter", "outdoor", lambda c, mats: LD.olive_pot(c, mats)),
+    ("ld-wisteria-pot", "Flowering lilac in a bronze planter (as ld-lilac-pot)", "outdoor", lambda c, mats: LD.lilac_pot(c, mats)),
+    ("ld-lilac-pot", "Multi-stem lilac, 3 m, in a bronze planter", "outdoor", lambda c, mats: LD.lilac_pot(c, mats)),
+    ("ld-out-coffee-round", "Garden coffee table, round, white marble on a white drum", "outdoor",
+     lambda c, mats: LD.coffee_table_round_out(c, mats)),
+    ("ld-out-shower", "Outdoor shower, brushed stainless gooseneck, teak plate", "outdoor", lambda c, mats: LD.outdoor_shower(c, mats)),
+    ("ld-out-sofa-green", "Garden sofa, bottle green", "outdoor",
+     lambda c, mats: LD.garden_sofa(c, mats, frame="frame_bottle", fabric="canvas_bottle")),
+    ("ld-grill-kamado", "Kamado grill on a stand", "outdoor", lambda c, mats: LD.kamado(c, mats)),
+    ("ld-out-kitchen-r", "Outdoor kitchen, 2.4 m, sink and grill, mirrored", "outdoor",
+     lambda c, mats: LD.outdoor_kitchen(c, mats, w=2.4, grill=True, mirror=True)),
 ]
 
 CATEGORIES = [
@@ -137,15 +374,31 @@ CATEGORIES = [
     {"id": "bathroom", "label": "Bathroom"},
     {"id": "lighting", "label": "Lighting"},
     {"id": "decor", "label": "Decor & plants"},
+    {"id": "outdoor", "label": "Garden & terrace"},
 ]
 
 
 def main():
     os.makedirs(OUT, exist_ok=True)
     items = []
+    # `-- <prefix>...` rebuilds only the pieces whose ids start with one of
+    # them; every other piece keeps its GLB and its entry as they were.
+    only = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+    try:
+        with open(os.path.join(OUT, "catalog.json")) as f:
+            before = {i["id"]: i for i in json.load(f)["items"]}
+    except (OSError, ValueError, KeyError):
+        before = {}
 
     for piece_id, label, category, build, *rest in PIECES:
-        anchor = rest[0] if rest else "floor"
+        # A trailing string is the anchor; a dict, more catalogue fields
+        # (e.g. {"collision": "mesh"} for a piece over the app's budget whose
+        # box would wall off floor it doesn't cover, like an L-shaped sofa).
+        anchor = next((r for r in rest if isinstance(r, str)), "floor")
+        extra = next((r for r in rest if isinstance(r, dict)), {})
+        if only and not any(piece_id.startswith(p) for p in only) and piece_id in before:
+            items.append(before[piece_id])
+            continue
         fresh()
         mats = m.library()
         col = g.collection("piece")
@@ -172,6 +425,8 @@ def main():
             child.location.x -= shift[0]
             child.location.y -= shift[1]
             child.location.z -= shift[2]
+        # A lamp's lights, moved with it, as the node extras the app reads.
+        LD.place_lights(obj, shift)
 
         bake_tiling_textures()
 
@@ -205,6 +460,7 @@ def main():
             "anchor": anchor,
             "credit": "Built procedurally by blender/export_furniture.py",
             "enabled": True,
+            **extra,
         })
 
     catalog = {

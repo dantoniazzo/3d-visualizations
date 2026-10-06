@@ -192,6 +192,30 @@ body.mode-edit {
     color: var(--ed-text-dim);
 }
 
+// In a narrow window the floor/room menu gives way, not the buttons beside it.
+.ed-focus-select {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+
+    select {
+        min-width: 0;
+        width: 100%;
+        max-width: 220px;
+        text-overflow: ellipsis;
+    }
+}
+
+// Below about 900 px the save chip gives the menu room too.
+@media (max-width: 900px) {
+    .ed-save {
+        max-width: 48px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+}
+
 .ed-snap {
     display: flex;
     align-items: center;
@@ -199,6 +223,7 @@ body.mode-edit {
 }
 
 .ed-toggle {
+    flex: none;
     width: 26px;
     height: 24px;
     display: grid;
@@ -212,6 +237,9 @@ body.mode-edit {
     &.is-on {
         background: var(--ed-active);
         color: #fff;
+    }
+    &[hidden] {
+        display: none;
     }
 }
 
@@ -1292,4 +1320,129 @@ body:not(.mode-edit) .lil-gui.garden-panel {
 }
 body.mode-edit.ed-no-sidebar .lil-gui.garden-panel {
     right: 8px;
+}
+
+// The light switches (L, or the header's bulb): beside the tool shelf,
+// clear of the Garden panel on the right.
+.ed-lights {
+    position: absolute;
+    top: 60px;
+    left: 12px;
+    width: 250px;
+    max-height: calc(100% - 80px);
+    display: flex;
+    flex-direction: column;
+    background: var(--ed-bg);
+    border: 1px solid var(--ed-border);
+    border-radius: 4px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+    color: var(--ed-text);
+    font: 11px var(--ed-font);
+    pointer-events: auto;
+
+    &[hidden] {
+        display: none;
+    }
+    // Out of the move / rotate / scale readout's way while it shows.
+    .is-session & {
+        visibility: hidden;
+    }
+}
+
+.ed-lights-head {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 8px;
+    background: var(--ed-bg-deep);
+    border-bottom: 1px solid var(--ed-border);
+
+    span {
+        flex: 1;
+        font-weight: 600;
+    }
+    button {
+        padding: 2px 8px;
+        border: 0;
+        border-radius: 3px;
+        background: var(--ed-bg-button);
+        color: var(--ed-text);
+        font: inherit;
+        cursor: pointer;
+
+        &:hover:not(:disabled) {
+            background: var(--ed-bg-button-hover);
+        }
+        &:disabled {
+            opacity: 0.4;
+            cursor: default;
+        }
+    }
+}
+
+.ed-lights-list {
+    overflow-y: auto;
+    padding: 4px 0;
+
+    h5 {
+        margin: 6px 8px 2px;
+        color: var(--ed-text-dim);
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+}
+
+.ed-light {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    padding: 3px 8px;
+    border: 0;
+    background: none;
+    color: var(--ed-text-dim);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+
+    &:hover {
+        background: var(--ed-bg-button-hover);
+        color: var(--ed-text);
+    }
+    // The switch: a pill that lights up when it is on.
+    i {
+        flex: none;
+        width: 22px;
+        height: 12px;
+        border-radius: 6px;
+        background: var(--ed-bg-field);
+        position: relative;
+
+        &::after {
+            content: "";
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--ed-text-faint);
+            transition: transform 0.12s;
+        }
+    }
+    &.is-on {
+        color: var(--ed-text);
+
+        i {
+            background: #b8892c;
+
+            &::after {
+                background: #ffe2a8;
+                transform: translateX(10px);
+            }
+        }
+    }
 }

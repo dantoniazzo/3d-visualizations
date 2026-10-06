@@ -553,11 +553,30 @@ kbd {
 .lights-panel {
     // Clear of the menu's spot, which it closes; as wide as a row of names.
     width: min(300px, calc(100vw - 2.2rem));
+    // Its heading and All on / All off kept in sight; the list scrolls under them.
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+
+    #lights-list {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+    }
 
     .lights-head {
+        flex: none;
         flex-direction: row;
         align-items: center;
         justify-content: space-between;
+        gap: 0.4rem;
+
+        // The heading on the left, its buttons together on the right.
+        h4 {
+            flex: 1;
+        }
 
         button:disabled {
             opacity: 0.4;
@@ -786,4 +805,48 @@ body:not(.public-view) [data-public-only] {
             cursor: grabbing;
         }
     }
+}
+
+// The Performance ↔ Quality slider, in the menu (index.js's setupQuality).
+.quality-slider {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+
+    input[type="range"] {
+        flex: 1;
+        min-width: 0;
+        accent-color: var(--accent);
+        cursor: pointer;
+    }
+}
+
+.quality-end {
+    font-size: 0.72rem;
+    color: var(--text-faint);
+    white-space: nowrap;
+}
+
+// One mark under each step, between the two ends' words.
+.quality-ticks {
+    display: flex;
+    justify-content: space-between;
+    margin: -0.45rem 3.6rem 0 3.1rem;
+
+    span {
+        width: 1px;
+        height: 5px;
+        background: var(--border-strong);
+    }
+}
+
+.quality-name {
+    font-size: 0.85rem !important;
+    color: var(--text) !important;
+    font-weight: 600;
+}
+
+// A section the menu has nothing for (the lighting, before a view is baked) stays hidden.
+.hud-panel-section[hidden] {
+    display: none;
 }

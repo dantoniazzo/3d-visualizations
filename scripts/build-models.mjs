@@ -12,8 +12,10 @@
  *   npm run models               # everything below, and the house
  *   npm run models -- --shell    # the house's shell only, unfurnished
  *   npm run furniture            # the catalogue only
+ *   npm run furniture -- ld-     # only the pieces whose ids start so
  *   npm run models -- --cars     # the cars only (or --cars <id> ...)
  *   npm run models -- --kit      # the doors, windows and stairs kit only
+ *   npm run props                # what people hold: people/props.glb only
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
@@ -50,21 +52,27 @@ const carOnly = process.argv.includes("--cars") || process.argv.includes("--car"
 // `--cars bmw-x6-m ford-f150-raptor`: just those
 const carIds = carOnly ? process.argv.slice(process.argv.findIndex((a) => a === "--cars" || a === "--car") + 1).filter((a) => !a.startsWith("--")) : [];
 const kitOnly = process.argv.includes("--kit");
+const propsOnly = process.argv.includes("--props");
+// `--furniture ld- sofa`: just the pieces whose ids start with those
+const pieceIds = furnitureOnly ? process.argv.slice(process.argv.indexOf("--furniture") + 1).filter((a) => !a.startsWith("--")) : [];
 const steps = furnitureOnly
-    ? [["export_furniture.py", []]]
+    ? [["export_furniture.py", pieceIds]]
     : carOnly
       ? [["import_cars.py", carIds]]
       : kitOnly
         ? [["export_kit.py", []]]
-        : shellOnly
-          ? [["build_house.py", ["--shell-only"]]]
-          : [
-                ["build_house.py", []],
-                ["export_app.py", []],
-                ["export_furniture.py", []],
-                ["import_cars.py", []],
-                ["export_kit.py", []],
-            ];
+        : propsOnly
+          ? [["export_props.py", []]]
+          : shellOnly
+            ? [["build_house.py", ["--shell-only"]]]
+            : [
+                  ["build_house.py", []],
+                  ["export_app.py", []],
+                  ["export_furniture.py", []],
+                  ["import_cars.py", []],
+                  ["export_kit.py", []],
+                  ["export_props.py", []],
+              ];
 
 for (const [script, args] of steps) {
     console.log(`> ${script} ${args.join(" ")}`.trim());
@@ -79,9 +87,12 @@ for (const [script, args] of steps) {
 if (steps.some(([script]) => script === "import_cars.py")) await packCars(ROOT, carIds);
 
 const glb = join(ROOT, "public", "models",
-    furnitureOnly ? "furniture/catalog.json" : carOnly ? "cars/index.json" : kitOnly ? "kit.glb" : "wrenfield_furnishings.glb");
+    furnitureOnly ? "furniture/catalog.json" : carOnly ? "cars/index.json" : kitOnly ? "kit.glb" :
+        propsOnly ? "people/props.glb" : "wrenfield_furnishings.glb");
 console.log(
     existsSync(glb)
-        ? "\nDone. Run `npm run seed` to register the property."
+        ? propsOnly
+            ? "\nDone. Run `npm run build` to serve it."
+            : "\nDone. Run `npm run seed` to register the property."
         : `\nFinished, but ${glb} is missing — check the log above.`
 );

@@ -4,8 +4,10 @@ import Experience from "../../Experience.js";
 import { buildOctree } from "../Collision.js";
 import { LOW_POWER, movingShadowsOnly } from "../../Utils/device.js";
 import { gardenSettings } from "../../../../shared/garden.js";
-import { lawnRooms, planBushes, planFence, planHillTrees, planHills, planTrees } from "../../../../shared/vegetation.js";
-import { bladeChunks, bladeMap, buildBushes, hillGrass, lawnPieces, tuftGeometry } from "./build.js";
+import { GROUND_TYPES } from "../../../../shared/catalog.js";
+import { FLUFFY_TREE, lawnRooms, planBushes, planFence, planHillTrees, planHills, planTrees } from "../../../../shared/vegetation.js";
+import { planNeighbourhood, planRoadTrees } from "../../../../shared/neighbourhood.js";
+import { bladeChunks, bladeMap, buildBushes, hillGrass, lawnPieces, tuftGeometry, vergeGrass } from "./build.js";
 import { applySettings, barkMaterial, bladeMaterial, canopyMaterial, lawnMaterial, tuftDepthMaterial, tuftMaterial, uniforms } from "./shaders.js";
 
 /**
@@ -50,8 +52,16 @@ const TREE_MODEL = "/models/fluffy-tree.glb";
 const LAWN = LOW_POWER ? { shells: 8, height: 0.04, fadeStart: 2, fadeEnd: 9 } : { shells: 16, height: 0.045, fadeStart: 3, fadeEnd: 16 };
 /** On a phone, this much of the grass the settings ask for, and drawn this far of the way. */
 const LOW = LOW_POWER ? { density: 0.4, distance: 0.6 } : { density: 1, distance: 1 };
+/**
+ * A tree farther off than this is drawn light (lightTree): a quarter of
+ * its crown's cards, each grown to fill in for the others, on a plain
+ * trunk — a sixth of its triangles, which at that distance nobody counts.
+ */
+const NEAR_TREE = LOW_POWER ? 22 : 30;
 /** A square of blades has them all up to this share of their draw distance, then fewer, down to the least share. */
 const BLADES_NEAR = 0.3;
+/** The tufts likewise, all of them up to this share of their draw distance. */
+const TUFTS_NEAR = 0.3;
 const THINNEST = 0.15;
 
 /**
@@ -110,7 +120,7 @@ export default class Vegetation {
         if (this.bushLeaves) this.bushLeaves.visible = this.shown.trees;
         this.buildTrunks();
         // The grass is shown or not as it is drawn (update).
-        if (!this.shown.grass || !this.shown.hills) for (const chunk of this.tuftChunks ?? []) chunk.mesh.visible = false;
+        for (const chunk of this.tuftChunks ?? []) if (!this.shown.grass || (!chunk.verge && !this.shown.hills)) chunk.mesh.visible = false;
         if (!this.shown.grass) {
             for (const chunk of this.bladeChunks ?? []) chunk.mesh.visible = false;
             for (const piece of this.pieces ?? []) piece.mesh.visible = false;
@@ -119,7 +129,9 @@ export default class Vegetation {
 
     /** Whether the tree planted `index`th is shown: a hill's only with the hills. */
     treeShown(index) {
-        return this.shown.trees && (index < this.gardenTreeCount || this.shown.hills);
+        if (!this.shown.trees) return false;
+        const hill = index >= this.gardenTreeCount && index < this.gardenTreeCount + this.hillTreeCount;
+        return !hill || this.shown.hills;
     }
 
     /**
@@ -136,11 +148,11 @@ export default class Vegetation {
 
     /** Grow what has not been grown for these settings yet. */
     grow() {
-        const { hills, trees, tufts, blades, shells } = this.settings;
+        const { hills, trees, tufts, blades, shells, neighbourhood } = this.settings;
         const keys = {
-            plan: JSON.stringify([hills, trees]),
-            tufts: JSON.stringify([hills, trees, tufts.enabled, tufts.density, tufts.coverage, tufts.patchSize]),
-            blades: JSON.stringify([trees, blades.enabled, blades.density, blades.joints]),
+            plan: JSON.stringify([hills, trees, neighbourhood]),
+            tufts: JSON.stringify([hills, trees, neighbourhood, tufts.enabled, tufts.density, tufts.coverage, tufts.patchSize]),
+            blades: JSON.stringify([trees, neighbourhood, blades.enabled, blades.density, blades.joints]),
             shells: JSON.stringify([shells.enabled]),
         };
         const stale = (name) => this.grown?.[name] !== keys[name];
@@ -156,13 +168,16 @@ export default class Vegetation {
         this.fit();
     }
 
-    /** Where the trees, the bushes and the hills are. */
+    /** Where the trees, the bushes, the hills and the neighbourhood's roads are. */
     plan() {
         const gardenTrees = planTrees(this.spec);
-        // The garden's first, the hills' after them.
-        this.gardenTreeCount = gardenTrees.length;
         this.hills = planHills(this.spec);
-        this.trees = [...gardenTrees, ...planHillTrees(this.spec, this.hills)];
+        this.neighbourhood = planNeighbourhood(this.spec);
+        const hillTrees = planHillTrees(this.spec, this.hills);
+        // The garden's first, the hills' after them, the roads' last.
+        this.gardenTreeCount = gardenTrees.length;
+        this.hillTreeCount = hillTrees.length;
+        this.trees = [...gardenTrees, ...hillTrees, ...planRoadTrees(this.spec, this.neighbourhood)];
         this.bushes = planBushes(this.spec, planFence(this.spec), gardenTrees);
     }
 
@@ -178,6 +193,7 @@ export default class Vegetation {
             mesh.dispose();
         }
         this.treeMeshes = [];
+        this.treeParts = [];
         const trees = this.trees;
         const token = (this.treeToken = (this.treeToken ?? 0) + 1);
 
@@ -205,30 +221,24 @@ export default class Vegetation {
         for (const trunk of trunks.children) trunk.geometry.dispose();
     }
 
-    /** Each tree's instance where it stands, or none for a tree hidden (treeShown). */
+    /** The trees again where they are, those a visitor has hidden (treeShown) left out. */
     showTrees() {
-        const none = new THREE.Matrix4().makeScale(0, 0, 0);
-        const matrix = new THREE.Matrix4();
-        for (const mesh of this.treeMeshes ?? []) {
-            const { placed, part } = mesh.userData;
-            let any = false;
-            placed.forEach((m, i) => {
-                const shown = this.treeShown(i);
-                any ||= shown;
-                mesh.setMatrixAt(i, shown ? matrix.multiplyMatrices(m, part) : none);
-            });
-            mesh.instanceMatrix.needsUpdate = true;
-            mesh.visible = any;
-        }
+        this.lodAt = null;
+        this.placeLod();
     }
 
+    /**
+     * Fluffy Tree's tree, once it has loaded, as instanced meshes: each of
+     * its parts twice — whole, for the trees near the camera, and light
+     * (lightTree), for the rest — the trees shared out between them as the
+     * camera moves (placeLod).
+     */
     placeTrees(gltf, trees) {
         const at = new THREE.Vector3();
         const turn = new THREE.Quaternion();
         const size = new THREE.Vector3();
         const up = new THREE.Vector3(0, 1, 0);
-        const placed = trees.map((tree) => new THREE.Matrix4().compose(at.set(tree.x, tree.y, tree.z), turn.setFromAxisAngle(up, tree.turn), size.setScalar(tree.scale)));
-        const matrix = new THREE.Matrix4();
+        this.treePlaced = trees.map((tree) => new THREE.Matrix4().compose(at.set(tree.x, tree.y, tree.z), turn.setFromAxisAngle(up, tree.turn), size.setScalar(tree.scale)));
         gltf.scene.updateMatrixWorld(true);
         gltf.scene.traverse((part) => {
             if (!part.isMesh) return;
@@ -241,19 +251,58 @@ export default class Vegetation {
             } else {
                 material = barkMaterial(part.material.color);
             }
-            const mesh = new THREE.InstancedMesh(part.geometry, material, trees.length);
-            placed.forEach((m, i) => mesh.setMatrixAt(i, matrix.multiplyMatrices(m, part.matrixWorld)));
-            mesh.instanceMatrix.needsUpdate = true;
-            mesh.computeBoundingSphere();
-            mesh.userData = { placed, part: part.matrixWorld.clone() };
-            mesh.castShadow = this.castsShadows;
-            mesh.receiveShadow = true;
-            mesh.name = crown ? "tree-leaves" : "tree-trunks";
-            this.group.add(mesh);
-            this.treeMeshes.push(mesh);
+            this.lightGeometries ??= new Map();
+            if (!this.lightGeometries.has(part.geometry)) this.lightGeometries.set(part.geometry, crown ? lightCrown(part.geometry) : lightTrunk());
+            const make = (geometry, name) => {
+                const mesh = new THREE.InstancedMesh(geometry, material, trees.length);
+                mesh.count = 0;
+                // Spread round the whole garden and the roads: no one box to cull them by.
+                mesh.frustumCulled = false;
+                mesh.castShadow = this.castsShadows;
+                mesh.receiveShadow = true;
+                mesh.name = name;
+                this.group.add(mesh);
+                this.treeMeshes.push(mesh);
+                return mesh;
+            };
+            const kind = crown ? "tree-leaves" : "tree-trunks";
+            this.treeParts.push({
+                near: make(part.geometry, kind),
+                far: make(this.lightGeometries.get(part.geometry), `${kind}-light`),
+                part: part.matrixWorld.clone(),
+                // The light trunk is the tree's own, not the part's.
+                farPart: crown ? part.matrixWorld.clone() : new THREE.Matrix4(),
+            });
         });
-        // Those a visitor has hidden, hidden.
         this.showTrees();
+    }
+
+    /**
+     * Each tree shown, whole if it is within NEAR_TREE of the camera and
+     * light if not — again once the camera has moved a couple of metres.
+     */
+    placeLod() {
+        if (!this.treeParts?.length || !this.treePlaced) return;
+        if (this.lodAt && this.lodAt.distanceToSquared(_camera) < 4) return;
+        this.lodAt = _camera.clone();
+        const near = [];
+        const far = [];
+        this.trees.forEach((tree, i) => {
+            if (!this.treeShown(i)) return;
+            const close = (tree.x - _camera.x) ** 2 + (tree.z - _camera.z) ** 2 < NEAR_TREE * NEAR_TREE;
+            (close ? near : far).push(i);
+        });
+        const matrix = new THREE.Matrix4();
+        for (const part of this.treeParts) {
+            near.forEach((i, k) => part.near.setMatrixAt(k, matrix.multiplyMatrices(this.treePlaced[i], part.part)));
+            far.forEach((i, k) => part.far.setMatrixAt(k, matrix.multiplyMatrices(this.treePlaced[i], part.farPart)));
+            part.near.count = near.length;
+            part.far.count = far.length;
+            part.near.instanceMatrix.needsUpdate = true;
+            part.far.instanceMatrix.needsUpdate = true;
+            part.near.visible = near.length > 0;
+            part.far.visible = far.length > 0;
+        }
     }
 
     /** The bushes' leaves, one mesh for all of them. */
@@ -363,7 +412,7 @@ export default class Vegetation {
             chunk.mesh.dispose();
         }
         this.tuftChunks = null;
-        if (!this.hills || !this.settings.tufts.enabled) return;
+        if ((!this.hills && !this.neighbourhood) || !this.settings.tufts.enabled) return;
         if (!this.tuftTexture) {
             this.tuftTexture = new THREE.TextureLoader().load("/textures/vegetation/grass-tuft.png");
             this.tuftTexture.colorSpace = THREE.SRGBColorSpace;
@@ -378,7 +427,10 @@ export default class Vegetation {
         const root = new THREE.Vector3();
         const up = new THREE.Vector3(0, 1, 0);
         const tufts = { ...this.settings.tufts, density: this.settings.tufts.density * LOW.density };
-        this.tuftChunks = hillGrass(this.hills, this.trees, tufts).map(({ box, tufts }) => {
+        // The hills', and the verges' along the neighbourhood's streets.
+        const verge = this.neighbourhood ? vergeGrass(this.neighbourhood, this.trees, this.spec.rooms || [], tufts, this.settings.neighbourhood.verge) : [];
+        const chunks = [...(this.hills ? hillGrass(this.hills, this.trees, tufts) : []), ...verge.map((chunk) => ({ ...chunk, verge: true }))];
+        this.tuftChunks = chunks.map(({ box, tufts, verge }) => {
             // Each square's own, for where the ground under each card is in
             // the lightmap once the view is baked.
             const geometry = new THREE.BufferGeometry();
@@ -394,10 +446,10 @@ export default class Vegetation {
             mesh.castShadow = this.castsShadows;
             mesh.customDepthMaterial = this.tuftDepth;
             mesh.receiveShadow = true;
-            mesh.name = "hill-grass";
+            mesh.name = verge ? "verge-grass" : "hill-grass";
             mesh.visible = false;
             this.group.add(mesh);
-            return { mesh, box, tufts, total: tufts.length };
+            return { mesh, box, tufts, total: tufts.length, verge: Boolean(verge) };
         });
     }
 
@@ -497,6 +549,8 @@ export default class Vegetation {
         // The lawns', and the hills' (SceneBuilder.buildHills's finish).
         const grounds = new Set(lawnRooms(this.spec).map((room) => room.floor_finish));
         if (this.hills) grounds.add(builder.hills?.material.name ?? "hill_grass");
+        // The field the verges' tufts grow on.
+        if (this.tuftChunks?.some((chunk) => chunk.verge)) grounds.add(GROUND_TYPES[this.spec.environment?.ground]?.finish ?? "rough_grass");
         const triangles = [];
         const a = new THREE.Vector3();
         const b = new THREE.Vector3();
@@ -636,10 +690,20 @@ export default class Vegetation {
             piece.mesh.count = count;
             piece.mesh.visible = count > 0;
         }
+        // The tufts likewise: all of a square's near the camera, fewer
+        // farther off — they are scattered in no order, so any first so
+        // many are spread over it — none past their distance.
         const tuftDistance = this.settings.tufts.distance * LOW.distance;
-        for (const chunk of grass && this.shown.hills ? this.tuftChunks ?? [] : []) {
-            chunk.mesh.visible = chunk.box.distanceToPoint(_camera) < tuftDistance;
+        const tuftsNear = tuftDistance * TUFTS_NEAR;
+        for (const chunk of grass ? this.tuftChunks ?? [] : []) {
+            const distance = chunk.box.distanceToPoint(_camera);
+            let share = distance < tuftsNear ? 1 : Math.max(THINNEST, 1 - (distance - tuftsNear) / (tuftDistance - tuftsNear));
+            if (distance >= tuftDistance || (!chunk.verge && !this.shown.hills)) share = 0;
+            chunk.mesh.count = Math.round(chunk.total * share);
+            chunk.mesh.visible = chunk.mesh.count > 0;
         }
+        // The trees near the camera whole, the rest light.
+        this.placeLod();
         const bladeDistance = this.settings.blades.distance * LOW.distance;
         const near = bladeDistance * BLADES_NEAR;
         for (const chunk of grass ? this.bladeChunks ?? [] : []) {
@@ -702,6 +766,10 @@ function openLight(sun, [zenith, horizon], strength) {
  * there) — or null.
  */
 function groundUv(triangles, { x, y, z }) {
+    // The ground nearest in height: a lawn over the neighbourhood's field
+    // (rough_grass, a little below it) is the lawn's, not the field's.
+    let best = null;
+    let nearest = 0.3;
     for (const { p, uv, y: heights } of triangles) {
         const [ax, az, bx, bz, cx, cz] = p;
         const d = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz);
@@ -709,8 +777,57 @@ function groundUv(triangles, { x, y, z }) {
         const v = ((cz - az) * (x - cx) + (ax - cx) * (z - cz)) / d;
         const w = 1 - u - v;
         if (u < -1e-3 || v < -1e-3 || w < -1e-3) continue;
-        if (Math.abs(u * heights[0] + v * heights[1] + w * heights[2] - y) > 0.3) continue;
-        return [u * uv[0] + v * uv[2] + w * uv[4], u * uv[1] + v * uv[3] + w * uv[5]];
+        const off = Math.abs(u * heights[0] + v * heights[1] + w * heights[2] - y);
+        if (off > nearest) continue;
+        nearest = off;
+        best = [u * uv[0] + v * uv[2] + w * uv[4], u * uv[1] + v * uv[3] + w * uv[5]];
     }
-    return null;
+    return best;
+}
+
+/**
+ * A tree's crown clump drawn light, for far off: one card in four of its
+ * own (each card two triangles over corners of its own), each grown about
+ * its middle to fill the gaps the others leave.
+ */
+function lightCrown(geometry, keep = 4, grow = 1.6) {
+    const position = geometry.getAttribute("position");
+    const normal = geometry.getAttribute("normal");
+    const uv = geometry.getAttribute("uv");
+    const index = geometry.index ? geometry.index.array : Array.from({ length: position.count }, (_, i) => i);
+    const positions = [];
+    const normals = [];
+    const uvs = [];
+    const indices = [];
+    const middle = new THREE.Vector3();
+    const point = new THREE.Vector3();
+    for (let card = 0; card * 6 + 5 < index.length; card += keep) {
+        const corners = [...new Set(Array.from(index.slice(card * 6, card * 6 + 6)))];
+        middle.set(0, 0, 0);
+        for (const v of corners) middle.add(point.fromBufferAttribute(position, v));
+        middle.divideScalar(corners.length);
+        const first = positions.length / 3;
+        const local = new Map(corners.map((v, k) => [v, first + k]));
+        for (const v of corners) {
+            point.fromBufferAttribute(position, v).sub(middle).multiplyScalar(grow).add(middle);
+            positions.push(point.x, point.y, point.z);
+            if (normal) normals.push(normal.getX(v), normal.getY(v), normal.getZ(v));
+            if (uv) uvs.push(uv.getX(v), uv.getY(v));
+        }
+        for (const v of index.slice(card * 6, card * 6 + 6)) indices.push(local.get(v));
+    }
+    const light = new THREE.BufferGeometry();
+    light.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    if (normal) light.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
+    if (uv) light.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+    light.setIndex(indices);
+    light.computeBoundingSphere();
+    return light;
+}
+
+/** A tree's trunk drawn light, for far off: a tapering post up into its crown. */
+function lightTrunk() {
+    const { trunk, crownBottom, height } = FLUFFY_TREE;
+    const tall = crownBottom + (height - crownBottom) * 0.45;
+    return new THREE.CylinderGeometry(trunk * 0.55, trunk, tall, 6, 1, true).translate(0, tall / 2, 0);
 }

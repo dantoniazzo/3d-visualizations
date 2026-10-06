@@ -74,3 +74,27 @@ export function applyReflections(root, options = {}) {
         for (const material of materials) applyReflection(material, options);
     });
 }
+
+/**
+ * Refractive glass swapped for plain see-through glass, under `root`.
+ *
+ * A single transmissive material anywhere in view makes three render
+ * every opaque object a second time, into the texture the glass refracts:
+ * it doubles the frame, and through the post-processing it darkens the
+ * whole of it too (a shower's door left a bathroom near black). At the
+ * glass's own thinness the refraction is hard to see; the reflection it
+ * carries from the environment map is what reads as glass, and that stays.
+ */
+export function plainGlass(root) {
+    root.traverse((node) => {
+        if (!node.isMesh) return;
+        for (const material of Array.isArray(node.material) ? node.material : [node.material]) {
+            if (!material || !(material.transmission > 0)) continue;
+            material.transmission = 0;
+            material.transparent = true;
+            material.opacity = Math.min(material.opacity ?? 1, 0.3);
+            material.depthWrite = false;
+            material.needsUpdate = true;
+        }
+    });
+}

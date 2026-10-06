@@ -4,7 +4,7 @@ import { OutlinePass } from "three/examples/jsm/postprocessing/OutlinePass.js";
 
 import Experience from "../Experience.js";
 import EditorCamera from "./EditorCamera.js";
-import EditorUI from "./EditorUI.js";
+import EditorUI, { overlap } from "./EditorUI.js";
 import CarPicker from "./CarPicker.js";
 import GardenPanel from "./GardenPanel.js";
 import FieldEdit from "./FieldEdit.js";
@@ -14,10 +14,11 @@ import Ghost from "./Ghost.js";
 import Snapper, { STEP_UP } from "./Snapper.js";
 import Collections, { LEVEL_NAMES } from "./Collections.js";
 import TransformSession from "./TransformSession.js";
-import { FurnitureEditable, StairEditable, FloorOpeningEditable, WallOpeningEditable, VehicleEditable } from "./Editables.js";
+import { FurnitureEditable, StairEditable, FloorOpeningEditable, WallOpeningEditable, VehicleEditable, PersonEditable, seatPointOf, seatingHit } from "./Editables.js";
 import { DEG, round } from "./axes.js";
 import { FINISHES } from "../../../shared/catalog.js";
 import { DEFAULT_CAR } from "../../../shared/cars.js";
+import { planOne, planPeople, rotationTowards } from "../../../shared/people.js";
 
 /**
  * Edit mode: a Blender-style editor over the live scene.
@@ -25,7 +26,10 @@ import { DEFAULT_CAR } from "../../../shared/cars.js";
  * The building — walls, slabs, roof — is fixed. Everything else can be
  * selected and moved: furniture (catalogue pieces and the pieces lifted out
  * of an imported house), staircases, the openings in floors that stairs
- * need, doors and windows along their walls, and the car.
+ * need, doors and windows along their walls, the car, and the people round
+ * the property (World/People.js) — added standing, sitting or lying, each
+ * one's character, clip and drink chosen, or everyone placed afresh
+ * (shared/people.js's planner).
  *
  * The view can be narrowed to one floor or one room (the outliner's
  * collections, the header's picker, `/` and Page Up/Down), collections can
@@ -52,6 +56,28 @@ import { DEFAULT_CAR } from "../../../shared/cars.js";
 const _ray = new THREE.Raycaster();
 const _v = new THREE.Vector3();
 const _down = new THREE.Vector3(0, -1, 0);
+const _sphereHit = new THREE.Vector3();
+const _boneA = new THREE.Vector3();
+const _boneB = new THREE.Vector3();
+const _onRay = new THREE.Vector3();
+
+/** How thick each of a person's bones is picked by, in metres: by its name; the fingers and eyes not at all. */
+const BONE_RADII = [
+    [/HeadTop/, 0.1],
+    [/(Thumb|Index|Middle|Ring|Pinky|Eye|_end|End$)/i, 0],
+    [/Head/, 0.12],
+    [/(Hips|Spine|Neck|Shoulder)/, 0.15],
+    [/(UpLeg|Leg)/, 0.085],
+    [/(Arm|Hand)/, 0.06],
+    [/(Foot|Toe)/, 0.06],
+];
+/** Each person's bones as picked: a segment from its parent, and its thickness. */
+const PICK_BONES = new WeakMap();
+
+/** Where each piece one can sit or lie on is sat or lain on (scripts/measure-seats.mjs). */
+const SEATS_URL = "/models/furniture/seats.json";
+/** What undo calls a change made in the properties panel, by its field; anything else is an "Edit". */
+const EDIT_LABELS = { character: "Change character", clip: "Change animation", prop: "Change what they hold", pose: "Change pose" };
 
 export default class Editor extends EventEmitter {
     constructor() {
@@ -87,6 +113,10 @@ export default class Editor extends EventEmitter {
 
         this.history = { undo: [], redo: [] };
         this.editables = new Map();
+        /** People hidden while a move has nowhere for them yet (PersonEditable.setHidden). */
+        this.hiddenPeople = new Set();
+        this.personFilter = (entry) => this.personShown(entry);
+        this.peoplePicker = this.makePeoplePicker();
         this.owners = new WeakMap();
         this.holeHelpers = new Map();
 
@@ -120,10 +150,40 @@ export default class Editor extends EventEmitter {
         this.refreshRegistry();
         this.bind();
 
+        // The lights panel and the header's buttons follow the switches and the time of day.
+        this.world.on("switches-ready", () => {
+            this.ui.renderLights(true);
+            this.emit("settings");
+        });
+        this.world.on("switches", () => this.ui.renderLights());
+        this.world.on("lighting", () => {
+            // A switch of day or night begun in the walkthrough may end in edit mode: its haze is the walkthrough's.
+            this.keepFogOut();
+            this.emit("settings");
+        });
         this.world.on("furniture-ready", () => {
             this.refreshRegistry();
             for (const editable of this.editables.values()) editable.invalidate();
         });
+
+        // The people: in the registry once built, again whenever one is built anew.
+        const people = this.world.people;
+        if (people) {
+            people.on("ready", () => this.peopleChanged());
+            people.on("change", (id) => this.peopleChanged(id));
+            // Their cast and clips (the people index) and the seats, for the panel and the planner.
+            people
+                .index()
+                .then((index) => {
+                    this.peopleIndex = index;
+                    this.emit("changed");
+                })
+                .catch(() => {});
+        }
+        this.seatsReady = fetch(SEATS_URL)
+            .then((response) => (response.ok ? response.json() : {}))
+            .catch(() => ({}))
+            .then((seats) => (this.seats = seats));
     }
 
     /** Edit mode opens only once the visitor is actually in the space. */
@@ -291,6 +351,21 @@ export default class Editor extends EventEmitter {
                 create: () => new VehicleEditable(this, car),
             });
         }
+        // Each person built: built again (another character, pose, clip), a new
+        // group — and while it is being built, the one it had, still selected.
+        const people = this.world.people;
+        for (const entry of people?.spec?.people ?? []) {
+            const key = `person:${entry.id}`;
+            const person = people.get(entry.id);
+            if (person) {
+                keep(key, {
+                    reuse: (e) => e.object3d === person.group,
+                    create: () => new PersonEditable(this, person),
+                });
+            } else if (this.editables.has(key)) {
+                next.set(key, this.editables.get(key));
+            }
+        }
 
         // Helpers for openings that no longer exist.
         for (const [id, helper] of this.holeHelpers) {
@@ -405,7 +480,47 @@ export default class Editor extends EventEmitter {
 
     pickTargets() {
         const b = this.builder;
-        return [b.shell, b.fittings, b.furnitureGroup, b.vehicleGroup, b.model, b.doorAnchors, b.groundPlane, this.helpers].filter(Boolean);
+        return [b.shell, b.fittings, b.furnitureGroup, b.vehicleGroup, b.model, b.doorAnchors, b.groundPlane, this.helpers, this.world.people && this.peoplePicker].filter(Boolean);
+    }
+
+    /**
+     * The people, for a ray: each one drawn whose sphere the ray meets
+     * within its reach is hit where the ray passes within a hand of one of
+     * its bones as it is posed now — a capsule round each, thicker round
+     * the body and head — at the nearest. Not their skinned triangles:
+     * those cost 9 ms a person on Ladonia, every frame the walkthrough's
+     * crosshair rests on one (FieldEdit.aim). Not in the scene: a target of
+     * its own, whose hits are the person's own mesh.
+     */
+    makePeoplePicker() {
+        const picker = new THREE.Object3D();
+        picker.name = "people-picker";
+        picker.raycast = (raycaster, intersects) => {
+            const people = this.world.people;
+            if (!people?.root.visible) return;
+            const ray = raycaster.ray;
+            for (const person of people.list) {
+                if (!person.group.visible || !person.meshes?.length) continue;
+                const entered = ray.intersectSphere(person.sphere, _sphereHit);
+                if (!entered || ray.origin.distanceTo(entered) > raycaster.far) continue;
+                let best = Infinity;
+                for (const { bone, parent, radius } of pickBones(person)) {
+                    _boneA.setFromMatrixPosition(parent.matrixWorld);
+                    _boneB.setFromMatrixPosition(bone.matrixWorld);
+                    if (ray.distanceSqToSegment(_boneA, _boneB, _onRay) > radius * radius) continue;
+                    const distance = ray.origin.distanceTo(_onRay);
+                    if (distance >= raycaster.near && distance <= raycaster.far && distance < best) best = distance;
+                }
+                if (best === Infinity) continue;
+                intersects.push({ distance: best, point: ray.at(best, new THREE.Vector3()), object: person.meshes[0] });
+            }
+        };
+        return picker;
+    }
+
+    /** Whether an object is part of one of the people. */
+    isPerson(object) {
+        return Boolean(this.world.people?.personOf(object));
     }
 
     /**
@@ -455,6 +570,8 @@ export default class Editor extends EventEmitter {
         _ray.setFromCamera(ndc ? new THREE.Vector2(pointer.x, pointer.y) : this.toNdc(pointer), this.camera);
         for (const hit of _ray.intersectObjects(this.pickTargets(), true)) {
             if (!isShown(hit.object) || hit.object.userData?.helper || hit.object.userData?.xray || !hit.face) continue;
+            // Not a person's head or shoulders: what is under them.
+            if (this.isPerson(hit.object)) continue;
             _v.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
             if (Math.abs(_v.y) > 0.7) return hit.point.clone();
         }
@@ -463,9 +580,14 @@ export default class Editor extends EventEmitter {
         return _ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -y), point) ? point : null;
     }
 
-    /** Pieces standing on `editable`, which move when it does. */
+    /** Pieces standing on `editable`, and people sitting or lying on it, which move when it does. */
     ridersOf(editable) {
         const riders = [];
+        if (editable.type === "furniture") {
+            for (const other of this.editables.values()) {
+                if (other.type === "person" && other.entry?.seat?.furniture === editable.id) riders.push(other);
+            }
+        }
         const box = editable.worldBox();
         if (box.isEmpty()) return riders;
 
@@ -554,6 +676,8 @@ export default class Editor extends EventEmitter {
             floor_openings: spec.floor_openings,
             walls: Object.fromEntries((spec.walls || []).map((w) => [w.id, w.openings])),
             vehicles: spec.vehicles || [],
+            // Null for a scene that has never had any (it keeps no list).
+            people: spec.people ?? null,
         });
     }
 
@@ -653,6 +777,9 @@ export default class Editor extends EventEmitter {
             }
         }
 
+        // The people: moved, turned and built again only where they differ.
+        this.restorePeople(state.people);
+
         this.fit.invalidate();
         const selected = this.selection?.key;
         this.refreshRegistry();
@@ -661,6 +788,38 @@ export default class Editor extends EventEmitter {
         this.applyVisibility();
         this.edited();
         this.emit("selection", this.selection);
+    }
+
+    /**
+     * The spec's people as a snapshot had them: those it lacks taken away,
+     * those it adds built, those that differ changed — placed again if only
+     * moved, built again otherwise (People.update). Mostly new (a re-roll
+     * undone), all of them built again at once.
+     */
+    restorePeople(saved) {
+        const people = this.world.people;
+        const spec = this.builder.spec;
+        if (!people || JSON.stringify(spec.people ?? null) === JSON.stringify(saved ?? null)) return;
+        const wanted = saved ?? [];
+        const current = new Map((spec.people ?? []).map((entry) => [entry.id, entry]));
+        const kept = wanted.filter((entry) => current.has(entry.id)).length;
+        if (kept < Math.max(current.size, wanted.length) / 2) {
+            for (const id of current.keys()) this.hiddenPeople.delete(id);
+            spec.people = structuredClone(wanted);
+            people.rebuild(spec);
+        } else {
+            const ids = new Set(wanted.map((entry) => entry.id));
+            for (const id of current.keys()) if (!ids.has(id)) people.remove(id);
+            for (const entry of wanted) {
+                const now = current.get(entry.id);
+                if (!now) people.add(structuredClone(entry));
+                else if (JSON.stringify(now) !== JSON.stringify(entry)) people.update(structuredClone(entry));
+            }
+            const order = new Map(wanted.map((entry, i) => [entry.id, i]));
+            spec.people?.sort((a, b) => order.get(a.id) - order.get(b.id));
+        }
+        // A scene that had none keeps no list.
+        if (saved === null && !spec.people?.length) delete spec.people;
     }
 
     // ------------------------------------------------------------------
@@ -682,6 +841,7 @@ export default class Editor extends EventEmitter {
         // From the walkthrough's Add menu: take the pointer back now, while
         // this is still the click that chose — browsers want a gesture.
         if (!this.active) this.field.resume();
+        if (kind === "person") return this.addPerson(catalogId, pointer);
         const before = this.capture();
         const point =
             this.surfaceUnder(pointer) ||
@@ -690,8 +850,11 @@ export default class Editor extends EventEmitter {
         let key;
 
         if (kind === "furniture") {
-            // Wall-hung pieces start at hanging height, not on the floor.
-            if (b.furnitureLibrary.getItem(catalogId)?.anchor === "wall") point.y += 1.4;
+            // Wall-hung pieces start at hanging height, not on the floor;
+            // a pendant with its top at a 2.7 m ceiling.
+            const item = b.furnitureLibrary.getItem(catalogId);
+            if (item?.anchor === "wall") point.y += 1.4;
+            else if (item?.anchor === "ceiling") point.y += Math.max(0, 2.7 - (item.size?.[1] ?? 1));
             const placement = {
                 id: this.newId("f"),
                 catalog_id: catalogId,
@@ -846,6 +1009,14 @@ export default class Editor extends EventEmitter {
             b.spec.floor_openings.push(hole);
             this.openingsChanged([hole.elevation]);
             key = `hole:${hole.id}`;
+        } else if (source.type === "person") {
+            const entry = source.duplicateSpec(this.nextPersonId());
+            const person = await this.world.people.add(entry);
+            if (!person) {
+                this.world.people.remove(entry.id);
+                return this.ui.toast("That person couldn't be copied", "error");
+            }
+            key = `person:${entry.id}`;
         }
 
         this.refreshRegistry();
@@ -864,14 +1035,26 @@ export default class Editor extends EventEmitter {
             return this.ui.toast(`${editable.label} can't be deleted${why}`, "warn");
         }
         const before = this.capture();
+        const seated = editable.type === "furniture" ? this.peopleOn(editable.id).length : 0;
         this.removeEditable(editable);
         this.commit(before, `Delete ${editable.label}`);
+        if (seated) this.ui.toast(`Deleted ${editable.label}, and the ${seated === 1 ? "person" : `${seated} people`} on it`);
+    }
+
+    /** The ids of the people sitting or lying on a piece. */
+    peopleOn(furnitureId) {
+        return (this.builder.spec.people ?? []).filter((p) => p.seat?.furniture === furnitureId).map((p) => p.id);
     }
 
     removeEditable(editable) {
         const b = this.builder;
         if (editable.type === "furniture") {
+            // Whoever sits on it goes with it, rather than sitting on air.
+            for (const id of this.peopleOn(editable.id)) this.world.people?.remove(id);
             b.removeFurniture(editable.id);
+        } else if (editable.type === "person") {
+            this.hiddenPeople.delete(editable.id);
+            this.world.people?.remove(editable.id);
         } else if (editable.type === "stair") {
             const holes = editable.linkedOpenings();
             b.spec.floor_openings = b.spec.floor_openings.filter((h) => !holes.includes(h));
@@ -924,6 +1107,7 @@ export default class Editor extends EventEmitter {
     setProperty(key, value) {
         const editable = this.selection;
         if (!editable || this.session) return;
+        if (key === "people-count") return this.rerollPeople({ count: value });
 
         const pose = editable.poseWith(key, value);
         if (pose) {
@@ -934,7 +1118,7 @@ export default class Editor extends EventEmitter {
         if (editable.setParam) {
             const before = this.capture();
             const result = editable.setParam(key, value);
-            if (result.ok) this.commit(before, "Edit");
+            if (result.ok) this.commit(before, EDIT_LABELS[key] ?? "Edit");
             if (result.message) this.ui.toast(result.message, result.ok ? "info" : "error");
             this.refreshRegistry();
             this.emit("selection", this.selection);
@@ -948,6 +1132,7 @@ export default class Editor extends EventEmitter {
         if (id === "drop") return this.dropSelection();
         if (id === "frame") return this.frameSelected();
         if (id === "change-car") return this.carPicker.open();
+        if (id === "reroll-people") return this.rerollPeople();
         if (id === "cut-opening" && editable?.type === "stair") {
             const before = this.capture();
             const hole = { id: this.newId("hole"), position: [0, 0], elevation: 0, width: 1, depth: 1, yaw: 0, stair_id: editable.id };
@@ -989,6 +1174,165 @@ export default class Editor extends EventEmitter {
         editable.car.setModel(model);
         editable.invalidate();
         this.fit.invalidate();
+    }
+
+    // ------------------------------------------------------------------
+    // People
+    // ------------------------------------------------------------------
+
+    /**
+     * Whether a person is drawn: not while a move has nowhere for them; in
+     * edit mode, as their room or the site outside is shown, and not with
+     * the outliner's People switched off — but always when selected or
+     * being moved.
+     */
+    personShown(entry) {
+        if (this.hiddenPeople.has(entry.id)) return false;
+        if (!this.active) return true;
+        const editable = this.editables.get(`person:${entry.id}`);
+        if (!editable || editable === this.selection || this.session?.editable === editable) return true;
+        return Boolean(this.collections.shows(this.collections.membership(editable), this.focus, this.hiddenCollections));
+    }
+
+    setPersonHidden(id, hidden) {
+        if (hidden) this.hiddenPeople.add(id);
+        else this.hiddenPeople.delete(id);
+        this.world.people?.setFilter(this.active || this.hiddenPeople.size ? this.personFilter : null);
+    }
+
+    /**
+     * People built (all of them, or `id` alone): a person built anew is a
+     * new group, so the registry is made again; one only moved keeps its
+     * editable, its bounds forgotten.
+     */
+    peopleChanged(id = null) {
+        if (id) {
+            const editable = this.editables.get(`person:${id}`);
+            const group = this.world.people?.objectFor(id) ?? null;
+            if (editable && editable.object3d === group) {
+                editable.invalidate();
+                return;
+            }
+        }
+        this.refreshRegistry();
+        this.applyVisibility();
+    }
+
+    /** The next free "person-<n>". */
+    nextPersonId() {
+        let most = 0;
+        for (const entry of this.builder.spec.people ?? []) {
+            const match = /^person-(\d+)$/.exec(entry.id);
+            if (match) most = Math.max(most, Number(match[1]));
+        }
+        return `person-${most + 1}`;
+    }
+
+    /** The cast, clips and props the planner chooses from: the people index's. */
+    castOf(index = this.peopleIndex) {
+        return index ? { characters: index.characters, clips: index.clips.list, props: index.props.list } : {};
+    }
+
+    /**
+     * One person placed by the planner (shared/people.js planOne) near a
+     * point, as if `exclude` were not there: the nearest free seat, lounger
+     * or clear floor. Null without the seats, or with nowhere within 12 m.
+     */
+    planPerson({ pose, near, exclude = null, facing = null }) {
+        if (!this.seats) return null;
+        const spec = this.builder.spec;
+        const others = (spec.people ?? []).filter((p) => p.id !== exclude);
+        return planOne({ ...spec, people: others }, this.builder.furnitureLibrary.catalog, this.seats, {
+            pose,
+            near,
+            facing,
+            ...this.castOf(),
+        });
+    }
+
+    /** Where a seat a person is on is now, [x, y, z]: its piece's seat, or lounger lying. */
+    seatPoint(seat, pose) {
+        const placement = this.builder.furniture.get(seat?.furniture)?.placement;
+        return this.seats && placement ? seatPointOf(placement, seat, pose, this.seats) : null;
+    }
+
+    /**
+     * Where a ray first meets a piece of furniture shown that can be sat or
+     * lain on — for a person dragged onto it — or null.
+     */
+    seatingUnder(ray) {
+        const group = this.builder.furnitureGroup;
+        if (!group || !this.seats) return null;
+        const hit = seatingHit(ray, group, (candidate) => {
+            if (!isShown(candidate.object) || candidate.object.userData?.helper) return false;
+            const owner = this.editableFor(candidate.object);
+            return owner?.type === "furniture" && Boolean(this.seats[owner.entry.placement.catalog_id]);
+        });
+        return hit ? hit.point.clone() : null;
+    }
+
+    /**
+     * A person added where the pointer is (the Add menu's People): standing
+     * on the nearest clear floor — facing the nearest standing person, and
+     * one of their group, or this view — or sitting on the nearest free
+     * seat, or lying on the nearest free lounger (shared/people.js planOne).
+     */
+    async addPerson(pose, pointer) {
+        const people = this.world.people;
+        if (!people) return this.ui.toast("This view has no people", "warn");
+        const [index] = await Promise.all([people.index(), this.seatsReady]);
+        this.peopleIndex ??= index;
+        const point = this.surfaceUnder(pointer) || (this.active ? this.view.target.clone() : this.world.player.player.collider.start.clone());
+        const eye = this.camera.position;
+        const placed = this.planPerson({ pose, near: point.toArray(), facing: rotationTowards(eye.x - point.x, eye.z - point.z) });
+        if (!placed) {
+            const what = pose === "stand" ? "clear floor" : pose === "lie" ? "free lounger" : "free seat";
+            return this.ui.toast(`No ${what} within 12 m of there`, "warn");
+        }
+        // Its fields in the order the spec keeps them (shared/people.js sanitizePeople).
+        const { character, clip, position, rotation, seat, prop, group, seed } = placed;
+        const entry = { id: this.nextPersonId(), character, pose, clip, position, rotation, seat, prop, group, seed };
+        const before = this.capture();
+        const person = await people.add(entry);
+        this.refreshRegistry();
+        const editable = this.editables.get(`person:${entry.id}`);
+        if (!person || !editable) {
+            people.remove(entry.id);
+            return this.ui.toast("That person couldn't be added", "error");
+        }
+        this.select(editable);
+        this.commit(before, `Add ${editable.label}`);
+        const piece = seat && this.editables.get(`furniture:${seat.furniture}`);
+        this.ui.toast(piece ? `Added ${editable.label}, ${pose === "lie" ? "lying on" : "sitting on"} the ${shortName(piece.label)}` : `Added ${editable.label}`);
+        this.applyVisibility();
+    }
+
+    /**
+     * Everyone placed afresh by the planner (shared/people.js planPeople),
+     * with a new seed: as many as there are (or `count`), or as many as the
+     * space has room for when there are none. One step to undo.
+     */
+    async rerollPeople({ count = null } = {}) {
+        const people = this.world.people;
+        if (!people || this.session) return;
+        const [index] = await Promise.all([people.index(), this.seatsReady]);
+        this.peopleIndex ??= index;
+        if (!this.seats) return this.ui.toast("The seats didn't load — try again", "error");
+        const spec = this.builder.spec;
+        const wanted = count === null ? spec.people?.length || undefined : Math.max(0, Math.round(count));
+        const before = this.capture();
+        const seed = 1 + Math.floor(Math.random() * 1e9);
+        const planned = planPeople(spec, this.builder.furnitureLibrary.catalog, this.seats, { seed, count: wanted, ...this.castOf(index) });
+        if (this.selection?.type === "person") this.select(null);
+        this.hiddenPeople.clear();
+        spec.people = planned;
+        await people.rebuild(spec);
+        this.refreshRegistry();
+        this.commit(before, "Re-roll people");
+        this.applyVisibility();
+        const counts = { stand: 0, sit: 0, lie: 0 };
+        for (const entry of planned) counts[entry.pose]++;
+        this.ui.toast(`${planned.length} people placed afresh — ${counts.stand} standing, ${counts.sit} sitting, ${counts.lie} lying`);
     }
 
     // ------------------------------------------------------------------
@@ -1136,6 +1480,89 @@ export default class Editor extends EventEmitter {
         this.emit("settings");
     }
 
+    /**
+     * The light, or the wall switch, under the pointer on or off — when it
+     * is in sight, not behind a wall: what the view lights live, never saved
+     * with the scene. Whether there was one.
+     */
+    toggleLightAt(pointer) {
+        const switches = this.world.switches;
+        if (!switches) return false;
+        const sight = this.sightUnder(pointer);
+        const collections = this.collections;
+        const c = this.clipBox;
+        const light = this.builder.pickLight(_ray.ray, {
+            far: sight + 0.05,
+            // Only what the view shows: not a floor, room or garden hidden, nor what a room focus cuts away.
+            accept: ({ elevation, room, point, fixture }) => {
+                if (c && (point.x < c.x0 || point.x > c.x1 || point.z < c.z0 || point.z > c.z1)) return false;
+                // A lamp: as its piece is shown.
+                const piece = fixture && this.editables.get(`furniture:${fixture}`);
+                if (piece) return isShown(piece.object3d);
+                const spec = room ? this.builder.spec.rooms.find((r) => r.id === room) : null;
+                const member = spec && collections.isOutdoor(spec)
+                    ? { outside: true, rooms: [room] }
+                    : { levels: [collections.levelOf(elevation)], rooms: room ? [room] : [] };
+                return Boolean(collections.shows(member, this.focus, this.hiddenCollections));
+            },
+        });
+        if (!light) return false;
+        switches.toggle(light.id);
+        const label = switches.byId?.get(light.id)?.label ?? light.name ?? "Light";
+        this.ui.toast(`${label} ${switches.isOn(light.id) ? "on" : "off"}`);
+        return true;
+    }
+
+    /**
+     * How far the view sees under the pointer: to the first solid surface
+     * shown, a wall as much as a floor — not a helper, nor what X-ray or a
+     * room focus leaves out. Leaves `_ray` on the pointer.
+     */
+    sightUnder(pointer) {
+        _ray.setFromCamera(this.toNdc(pointer), this.camera);
+        const c = this.clipBox;
+        for (const hit of _ray.intersectObjects(this.pickTargets(), true)) {
+            const data = hit.object.userData || {};
+            if (!isShown(hit.object) || data.helper || data.xray) continue;
+            const material = hit.object.material;
+            if (material?.visible === false) continue;
+            // Seen through: a window's glass, a glass balustrade.
+            if (material && !Array.isArray(material) && material.transparent && material.opacity < 0.9) continue;
+            if (c && (hit.point.x < c.x0 || hit.point.x > c.x1 || hit.point.z < c.z0 || hit.point.z > c.z1)) continue;
+            return hit.distance;
+        }
+        return Infinity;
+    }
+
+    /** Day or night, in edit mode too: the sky, the lights' starting states, the garden's lights. */
+    async toggleDayNight() {
+        const world = this.world;
+        if (!world.lighting) return;
+        // Edit mode draws without the walkthrough's haze: it is put back while
+        // the variant recolours it (or the sky makes its own), and taken away
+        // again — after the switch, and after the sky's new haze, if any.
+        if (this.active && this.savedFog) this.scene.fog = this.savedFog;
+        try {
+            const pending = world.setLighting(world.lighting === "night" ? "day" : "night");
+            this.keepFogOut();
+            await pending;
+        } finally {
+            this.keepFogOut();
+            this.emit("settings");
+        }
+    }
+
+    /**
+     * In edit mode, the walkthrough's haze — a new one, if the sky or the
+     * dome has just made one — kept for when it is left; `always`, even
+     * none (the neighbourhood switched off).
+     */
+    keepFogOut(always = false) {
+        if (!this.active || (!this.scene.fog && !always)) return;
+        this.savedFog = this.scene.fog;
+        this.scene.fog = null;
+    }
+
     /** The Garden panel (GardenPanel.js), open or shut. */
     toggleGarden() {
         if (this.gardenPanel) {
@@ -1143,6 +1570,9 @@ export default class Editor extends EventEmitter {
             this.gardenPanel = null;
         } else {
             this.gardenPanel = new GardenPanel(this.world);
+            // Not over the lights panel, in a narrow window: that one shuts.
+            const lights = this.ui.dom.lightsPanel;
+            if (!lights.hidden && overlap(lights, this.gardenPanel.gui.domElement)) this.ui.toggleLightsPanel(false);
         }
         this.emit("settings");
     }
@@ -1162,7 +1592,8 @@ export default class Editor extends EventEmitter {
         }
 
         for (const editable of this.editables.values()) {
-            if (!editable.object3d || editable.type === "opening") continue;
+            // People are drawn or not by People itself, through the filter below.
+            if (!editable.object3d || editable.type === "opening" || editable.type === "person") continue;
             // A piece being placed is shown and hidden by its move.
             if (this.session?.editable === editable) continue;
             let show = Boolean(collections.shows(collections.membership(editable), focus, hidden));
@@ -1173,8 +1604,11 @@ export default class Editor extends EventEmitter {
             editable.object3d.visible = show;
         }
 
-        // People are not part of a floor plan: with a floor or room on its
-        // own they would stand in mid-air.
+        // The people round the property, by where they are, as the furniture.
+        this.world.people?.setFilter(this.active || this.hiddenPeople.size ? this.personFilter : null);
+
+        // The visitors are not part of a floor plan: with a floor or room on
+        // its own they would stand in mid-air.
         const people = focus === null;
         const player = this.world.player;
         if (player?.avatar) player.avatar.avatar.visible = this.showsVisitor();
@@ -1326,6 +1760,12 @@ export default class Editor extends EventEmitter {
             this.nav = { mode, x: event.clientX, y: event.clientY };
             this.canvas.setPointerCapture?.(event.pointerId);
             this.ui.setCursor(mode === "pan" ? "grabbing" : "move");
+            return;
+        }
+
+        // Ctrl or ⌘ with the left: the light, or its switch, under the pointer on or off.
+        if (event.button === 0 && (event.ctrlKey || event.metaKey) && this.toggleLightAt(pointer)) {
+            event.preventDefault();
             return;
         }
 
@@ -1545,6 +1985,8 @@ export default class Editor extends EventEmitter {
                 return;
             case "n":
                 return this.ui.toggleSidebar();
+            case "l":
+                return this.ui.toggleLightsPanel();
             case "t":
                 return this.ui.toggleToolbar();
             case "w":
@@ -1698,6 +2140,9 @@ export default class Editor extends EventEmitter {
 
     onResize(sizes) {
         this.outlinePass?.setSize(sizes.width * sizes.pixelRatio, sizes.height * sizes.pixelRatio);
+        // A narrower window can bring the Garden panel over the lights panel: that one shuts.
+        const lights = this.ui?.dom.lightsPanel;
+        if (this.gardenPanel && lights && !lights.hidden && overlap(lights, this.gardenPanel.gui.domElement)) this.ui.toggleLightsPanel(false);
     }
 
     dispose() {
@@ -1717,6 +2162,25 @@ export default class Editor extends EventEmitter {
         for (const material of this.xrayMaterials.values()) material.dispose();
         this.ui.dispose();
     }
+}
+
+/** A piece's name to say in a sentence: before its first comma, in lower case ("the linen corner sofa"). */
+export function shortName(label) {
+    return String(label ?? "").split(",")[0].trim().toLowerCase();
+}
+
+/** A person's bones as its picker tests them (made once a person, as built). */
+function pickBones(person) {
+    let bones = PICK_BONES.get(person);
+    if (bones) return bones;
+    bones = [];
+    person.model.traverse((node) => {
+        if (!node.isBone || !node.parent?.isBone) return;
+        const radius = BONE_RADII.find(([pattern]) => pattern.test(node.name))?.[1] ?? 0.07;
+        if (radius > 0) bones.push({ bone: node, parent: node.parent, radius });
+    });
+    PICK_BONES.set(person, bones);
+    return bones;
 }
 
 /** Visible all the way up — a focus hides whole groups. */

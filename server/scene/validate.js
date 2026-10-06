@@ -12,6 +12,8 @@ import {
 } from "../../shared/catalog.js";
 import { carId } from "../../shared/cars.js";
 import { sanitizeGarden } from "../../shared/garden.js";
+import { sanitizeLandscape } from "../../shared/landscape.js";
+import { sanitizePeople } from "../../shared/people.js";
 
 /**
  * Every scene that reaches the builders passes through here: hand-authored
@@ -144,6 +146,10 @@ export function validateScene(raw) {
     const garden = sanitizeGarden(raw.garden);
     if (garden) scene.garden = garden;
 
+    // --- a site's own landscape (shared/landscape.js) -------------------
+    const landscape = sanitizeLandscape(raw.landscape);
+    if (landscape) scene.landscape = landscape;
+
     // --- imported model (authored scenes only) ---------------------------
     if (raw.model && typeof raw.model === "object") {
         const url = typeof raw.model.url === "string" ? raw.model.url.trim() : "";
@@ -237,6 +243,8 @@ export function validateScene(raw) {
                         ? clamp(num(r.height, 0.05), 0.01, 20)
                         : clamp(num(r.height, 2.5), 1.9, 20),
                 elevation: clamp(num(r.elevation, 0), -20, 60),
+                // The ceiling light's kind, when the room's own design says.
+                ...(["pendant", "flush", "recessed"].includes(r.fitting) ? { fitting: r.fitting } : {}),
             },
         ];
     });
@@ -302,6 +310,9 @@ export function validateScene(raw) {
                     leaf: trim(o?.door?.leaf, "trim_white"),
                     frame: trim(o?.door?.frame, "trim_white"),
                     handle: trim(o?.door?.handle, "metal_brass"),
+                    // A glass door in a slim frame, not a panelled leaf.
+                    ...(o?.door?.glazed === true ? { glazed: true } : {}),
+                    ...(o?.door?.flush === true ? { flush: true } : {}),
                 };
             }
             if (type === "window") {
@@ -312,6 +323,13 @@ export function validateScene(raw) {
                     entry.panes = [0, 1].map((k) => Math.round(clamp(num(o.panes[k], 1), 1, 8)));
                 }
                 if (o?.cill === true) entry.cill = true;
+            }
+            if (type === "window" || type === "door") {
+                // A modern window: a slim aluminium frame rather than a
+                // moulded one; and an external venetian blind, lowered this
+                // far down it (0 up in its box, 1 right down).
+                if (o?.style === "slim") entry.style = "slim";
+                if (o?.blind != null) entry.blind = clamp(num(o.blind, 0), 0, 1);
             }
 
             return [entry];
@@ -408,6 +426,8 @@ export function validateScene(raw) {
                 ...(BALUSTRADE_SIDES.has(s?.balustrade) ? { balustrade: s.balustrade } : {}),
                 // A cupboard in the space under it, with a door.
                 ...(s?.closet ? { closet: closetSpec(s.closet, run) } : {}),
+                // "slab": cast concrete steps over a stepped soffit, open beneath.
+                ...(s?.style === "slab" ? { style: "slab" } : {}),
             },
         ];
     });
@@ -502,6 +522,12 @@ export function validateScene(raw) {
             },
         ];
     });
+
+    // --- people round the property (shared/people.js) --------------------
+    // Planned by scripts/place-people.mjs, then moved, added and removed
+    // in the editor. A scene without them keeps none.
+    const people = sanitizePeople(raw.people, notes, furnitureIds);
+    if (people) scene.people = people;
 
     // --- per-surface finish overrides ------------------------------------
     // Written by the in-world texture picker; keyed by surface id.

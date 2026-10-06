@@ -55,6 +55,12 @@ function speckle(ctx, random, count, colors, alpha = 0.06, max = 3) {
 const GENERATORS = {
     /** Straight plank flooring / panelling, with staggered end joints. */
     planks(ctx, p, random) {
+        // Boards standing on end — wall cladding — are the same tile turned.
+        if (p.vertical) {
+            ctx.translate(SIZE / 2, SIZE / 2);
+            ctx.rotate(Math.PI / 2);
+            ctx.translate(-SIZE / 2, -SIZE / 2);
+        }
         const rows = p.rows ?? 6;
         const h = SIZE / rows;
 
@@ -88,6 +94,26 @@ const GENERATORS = {
                         x + bw * 0.7, gy + (random() - 0.5) * 3,
                         x + bw - 2, gy
                     );
+                    ctx.stroke();
+                }
+                ctx.globalAlpha = 1;
+            }
+            // Staggered by more than a board, the row's start isn't covered by
+            // the boards above, and the gap colour shows there as a dark block
+            // (a stagger of 0.37). `cover` lays one more board there; opt-in,
+            // so the finishes other spaces use stay exactly as they were.
+            if (p.cover && offset > bw) {
+                const x = offset - 2 * bw;
+                ctx.fillStyle = shade(p.base, (random() - 0.5) * 0.05);
+                ctx.fillRect(x + 1, y + 1, bw - 2, h - 2);
+                ctx.strokeStyle = p.grain;
+                ctx.globalAlpha = 0.16;
+                ctx.lineWidth = 1;
+                for (let g = 0; g < 6; g++) {
+                    const gy = y + 3 + random() * (h - 6);
+                    ctx.beginPath();
+                    ctx.moveTo(x + 2, gy);
+                    ctx.bezierCurveTo(x + bw * 0.3, gy + (random() - 0.5) * 3, x + bw * 0.7, gy + (random() - 0.5) * 3, x + bw - 2, gy);
                     ctx.stroke();
                 }
                 ctx.globalAlpha = 1;
@@ -230,10 +256,15 @@ const GENERATORS = {
         speckle(ctx, random, 2200, [shade(p.base, -0.05), shade(p.base, 0.05)], 0.025, 2.2);
     },
 
-    /** Mottled plaster / limewash. */
+    /**
+     * Mottled plaster / limewash. `soft`: each patch fades out in its own
+     * colour rather than through transparent black, which leaves a dark
+     * ring round it — a smooth limewash, not a clouded one.
+     */
     plaster(ctx, p, random) {
         ctx.fillStyle = p.base;
         ctx.fillRect(0, 0, SIZE, SIZE);
+        const clear = p.soft ? `${p.mottle.slice(0, 7)}00` : "rgba(0,0,0,0)";
 
         for (let i = 0; i < 90; i++) {
             const x = random() * SIZE;
@@ -241,7 +272,7 @@ const GENERATORS = {
             const r = 20 + random() * 90;
             const g = ctx.createRadialGradient(x, y, 0, x, y, r);
             g.addColorStop(0, p.mottle);
-            g.addColorStop(1, "rgba(0,0,0,0)");
+            g.addColorStop(1, clear);
             ctx.globalAlpha = 0.14;
             ctx.fillStyle = g;
             ctx.beginPath();
@@ -308,6 +339,63 @@ const GENERATORS = {
             ctx.ellipse(x, y, r, r * (0.6 + random() * 0.5), random() * Math.PI, 0, Math.PI * 2);
             ctx.fill();
         }
+        ctx.globalAlpha = 1;
+    },
+
+    /**
+     * Terrazzo: a pale cement ground scattered with chips of marble —
+     * many fine, fewer coarse — of the colours given, irregular in shape,
+     * and a faint mottle under them.
+     */
+    terrazzo(ctx, p, random) {
+        ctx.fillStyle = p.base;
+        ctx.fillRect(0, 0, SIZE, SIZE);
+        // Anything within `reach` of an edge is drawn again across it, so the
+        // tile repeats without a seam.
+        const wraps = (x, y, reach) => {
+            const xs = [0, ...(x < reach ? [SIZE] : []), ...(x > SIZE - reach ? [-SIZE] : [])];
+            const ys = [0, ...(y < reach ? [SIZE] : []), ...(y > SIZE - reach ? [-SIZE] : [])];
+            return xs.flatMap((dx) => ys.map((dy) => [dx, dy]));
+        };
+        for (let i = 0; i < 900; i++) {
+            ctx.fillStyle = random() > 0.5 ? "#ffffff" : "#b9a98f";
+            ctx.globalAlpha = 0.04 + random() * 0.05;
+            const r = 8 + random() * 30;
+            const x = random() * SIZE;
+            const y = random() * SIZE;
+            for (const [dx, dy] of wraps(x, y, r)) {
+                ctx.beginPath();
+                ctx.arc(x + dx, y + dy, r, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+        const chip = (r) => {
+            const x = random() * SIZE;
+            const y = random() * SIZE;
+            const sides = 4 + Math.floor(random() * 4);
+            const turn = random() * Math.PI;
+            ctx.fillStyle = p.chips[Math.floor(random() * p.chips.length)];
+            ctx.globalAlpha = 0.75 + random() * 0.25;
+            const pts = [];
+            for (let k = 0; k < sides; k++) {
+                const a = turn + (k / sides) * Math.PI * 2;
+                const rr = r * (0.55 + random() * 0.6);
+                pts.push([Math.cos(a) * rr, Math.sin(a) * rr]);
+            }
+            for (const [dx, dy] of wraps(x, y, r * 1.15)) {
+                ctx.beginPath();
+                pts.forEach(([px, py], k) => ctx[k ? "lineTo" : "moveTo"](x + dx + px, y + dy + py));
+                ctx.closePath();
+                ctx.fill();
+            }
+        };
+        // `density` thins the chips out (a fine, sparse micro-terrazzo),
+        // `coarse` the big ones in particular.
+        const density = p.density ?? 1;
+        const coarse = p.coarse ?? 1;
+        for (let i = 0; i < 9000 * density; i++) chip(0.6 + random() * 1.4);
+        for (let i = 0; i < 1400 * density * coarse; i++) chip(1.6 + random() * 2.6);
+        for (let i = 0; i < 160 * density * coarse; i++) chip(3.5 + random() * 4.5);
         ctx.globalAlpha = 1;
     },
 
@@ -404,6 +492,29 @@ export default class TextureLibrary {
             texture.wrapT = THREE.RepeatWrapping;
         }
         this.cache.set(id, texture);
+        return texture;
+    }
+
+    /**
+     * A photographed finish's other maps — its normal map, and its ambient
+     * occlusion, roughness and metalness packed in one (`arm`) — as data,
+     * not colour, tiled like its colour. Null for a finish without them.
+     *
+     * @param {string} id  key in FINISHES
+     * @param {"normal" | "arm"} which
+     */
+    getData(id, which) {
+        const url = FINISHES[id]?.[which];
+        if (!url) return null;
+        const key = `${id}:${which}`;
+        if (this.cache.has(key)) return this.cache.get(key);
+        const texture = new THREE.TextureLoader().load(url);
+        texture.colorSpace = THREE.NoColorSpace;
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+        texture.anisotropy = 8;
+        texture.name = key;
+        this.cache.set(key, texture);
         return texture;
     }
 

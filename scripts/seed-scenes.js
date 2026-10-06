@@ -3,12 +3,14 @@
  *
  * These exist so the app is walkable straight after `npm install`, and as
  * worked examples of what a well-formed shell spec looks like. Run with
- * `npm run seed`.
+ * `npm run seed`, or `npm run seed -- <id> ...` for just those — which
+ * leaves every other space as it is, edits and all.
  */
 import { existsSync, readFileSync } from "node:fs";
 
 import { validateScene } from "../server/scene/validate.js";
 import { writeScene } from "../server/store/sceneStore.js";
+import { ladonia } from "./spaces/ladonia/index.js";
 
 // Wrenfield House's structure — rooms, walls and what is in them, roofs,
 // stairs and stairwells — written in app coordinates by blender/export_app.py
@@ -635,10 +637,15 @@ function modelPresent(raw) {
     return existsSync(new URL(`../public${raw.model.url}`, import.meta.url));
 }
 
+const only = process.argv.slice(2).filter((arg) => !arg.startsWith("--"));
+
 for (const [id, raw] of [
     ["ashgrove-house", house],
     ["wrenfield-house", wrenfield],
+    // The Kosinožići space: Ladonia Residence, as its listing shows it.
+    ["kosinozici-villas", ladonia],
 ]) {
+    if (only.length && !only.includes(id)) continue;
     if (!modelPresent(raw)) {
         console.log(`Skipped ${id}: ${raw.model.url} is missing — run \`npm run models\` to build it.`);
         continue;

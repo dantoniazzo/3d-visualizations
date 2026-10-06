@@ -259,6 +259,14 @@ export const FINISHES = {
         tile: 2.0,
         params: { base: "#7d8489", grain: "#6a7075", rows: 10, stagger: 0, gap: "#5b6165" },
     },
+    // A flat roof's membrane under pale gravel ballast.
+    roof_membrane: {
+        label: "Flat roof (gravel)",
+        kind: "roof",
+        generator: "gravel",
+        tile: 1.4,
+        params: { base: "#a9a59d", light: "#c7c2b8", dark: "#86827a" },
+    },
 
     // --- Ground (outdoor) -----------------------------------------------
     // The garden's ground, under its grass (World/Vegetation): Fluffy Tree's,
@@ -325,6 +333,23 @@ export const FINISHES = {
         tile: 2.6,
         params: { base: "#45464a", light: "#5b5c61", dark: "#313236" },
     },
+    // The neighbourhood's roads (shared/neighbourhood.js): finishes apart
+    // from the plot's own, so the bake can give their miles of surface
+    // coarser texels.
+    street_tarmac: {
+        label: "Street tarmac",
+        kind: "ground",
+        generator: "gravel",
+        tile: 2.6,
+        params: { base: "#3e3f43", light: "#55565b", dark: "#2c2d30" },
+    },
+    street_gravel: {
+        label: "Roadside gravel",
+        kind: "ground",
+        generator: "gravel",
+        tile: 1.2,
+        params: { base: "#8a847a", light: "#aca596", dark: "#625d55" },
+    },
     timber_decking: {
         label: "Timber decking",
         kind: "ground",
@@ -332,7 +357,200 @@ export const FINISHES = {
         tile: 2.2,
         params: { base: "#9a7d5c", grain: "#7b6144", rows: 11, stagger: 0, gap: "#5e4a33" },
     },
+
+    // --- Photographed (Poly Haven, CC0 — assets/THIRD_PARTY.md) ----------
+    // Each its colour (`image`), its normal map and its ambient occlusion,
+    // roughness and metalness packed in one (`arm`), as Poly Haven ships
+    // them, fetched by `npm run site-assets`; `color` tints the colour.
+    render_sand: {
+        label: "Sand render",
+        kind: "wall",
+        ...pbr("beige_wall_001"),
+        tile: 2.4,
+        tint: [1.3, 1.36, 1.38],
+    },
+    stone_cladding: {
+        label: "Stone cladding",
+        kind: "wall",
+        // Thin-coursed ledgestone: pale grey-cream limestone, deep joints.
+        ...pbr("rustic_stone_wall_02"),
+        tile: 2.6,
+        tint: [2.3, 2.5, 3.3],
+    },
+    dry_stone: {
+        label: "Dry stone",
+        kind: "wall",
+        ...pbr("castle_wall_slates"),
+        tile: 1.6,
+        tint: [1.65, 1.7, 1.85],
+    },
+    stone_paving: {
+        label: "Limestone paving",
+        kind: "ground",
+        // Large pale slabs, their joints all but invisible.
+        ...pbr("concrete_floor_01"),
+        tile: 3.0,
+        tint: [1.25, 1.22, 1.15],
+    },
+    stone_paving_floor: {
+        label: "Stone tiles",
+        kind: "floor",
+        ...pbr("rectangular_paving"),
+        tile: 2.4,
+        color: "#f7f1e8",
+    },
+    asphalt: {
+        label: "Asphalt",
+        kind: "ground",
+        ...pbr("asphalt_02"),
+        tile: 4,
+        color: "#c9c9c9",
+    },
+    concrete_pavers: {
+        label: "Concrete pavement",
+        kind: "ground",
+        ...pbr("concrete_pavement"),
+        tile: 2.4,
+    },
+    roof_pavers: {
+        label: "Roof pavers",
+        kind: "ground",
+        ...pbr("concrete_pavement"),
+        tile: 2.4,
+        color: "#f4f1ec",
+    },
+    hardwood_deck: {
+        label: "Hardwood deck",
+        kind: "ground",
+        ...pbr("wooden_planks"),
+        tile: 1.6,
+        tint: [1.3, 1.1, 0.88],
+    },
+    concrete_steps: {
+        label: "Concrete",
+        kind: "floor",
+        ...pbr("concrete_floor_01"),
+        tile: 2,
+        color: "#ece7df",
+    },
+    pool_mosaic: {
+        label: "Pool mosaic",
+        kind: "pool",
+        ...pbr("rounded_square_tiled_wall"),
+        tile: 1.2,
+        color: "#c3dcda",
+    },
+    corten: {
+        label: "Corten steel",
+        kind: "landscape",
+        ...pbr("rust_coarse_01"),
+        tile: 1.4,
+        color: "#d98b5e",
+    },
+    // Ladonia Residence (scripts/spaces/ladonia): its living rooms' and
+    // halls' terrazzo, its bathrooms' large stone-look tiles, the gravel on
+    // its roofs, building C's corten bands, its khaki and ochre renders.
+    terrazzo: {
+        label: "Terrazzo",
+        kind: "floor",
+        generator: "terrazzo",
+        tile: 1.6,
+        roughness: 0.35,
+        params: { base: "#efe5d4", chips: ["#e0d3be", "#f8f3ea", "#d6c8b2", "#cfc5b8", "#e8dcc8", "#c9b89e"], density: 0.4, coarse: 0.15 },
+    },
+    // Its walls: warm white limewash, a deeper sand one for accent walls,
+    // light oak cladding on end; its ceilings warm white.
+    limewash_warm: {
+        label: "Warm limewash",
+        kind: "wall",
+        generator: "plaster",
+        tile: 3.0,
+        params: { base: "#eee3d1", mottle: "#e6d8c2", soft: true },
+    },
+    limewash_sand: {
+        label: "Sand limewash",
+        kind: "wall",
+        generator: "plaster",
+        tile: 3.0,
+        params: { base: "#dcc6a6", mottle: "#d3bb97", soft: true },
+    },
+    oak_cladding: {
+        label: "Oak cladding",
+        kind: "wall",
+        generator: "planks",
+        tile: 2.4,
+        roughness: 0.55,
+        params: { base: "#b98450", grain: "#956335", rows: 150, stagger: 0.5, gap: "#a7743f", vertical: true },
+    },
+    oak_honey: {
+        label: "Honey oak boards",
+        kind: "floor",
+        generator: "planks",
+        tile: 3.6,
+        roughness: 0.5,
+        params: { base: "#b98452", grain: "#9a6a3d", rows: 22, stagger: 0.37, gap: "#87592f", cover: true },
+    },
+    // A loggia's or a porch's underside: the façade's render carried under.
+    ceiling_soffit: {
+        label: "Render soffit",
+        kind: "ceiling",
+        generator: "paint",
+        tile: 4.0,
+        params: { base: "#cdbfa9" },
+    },
+    ceiling_warm: {
+        label: "Warm white ceiling",
+        kind: "ceiling",
+        generator: "paint",
+        tile: 4.0,
+        params: { base: "#f6f0e6" },
+    },
+    bath_tile: {
+        label: "Stone-look tiles",
+        kind: "floor",
+        generator: "tiles",
+        tile: 1.2,
+        roughness: 0.3,
+        params: { base: "#d9cfc0", grout: "#bcb2a4", cols: 2, rows: 1, variation: 0.05 },
+    },
+    roof_gravel: {
+        label: "Roof gravel",
+        kind: "ground",
+        generator: "gravel",
+        tile: 1.2,
+        params: { base: "#dcd9d2", light: "#f1efea", dark: "#b8b4ab" },
+    },
+    corten_cladding: {
+        label: "Corten cladding",
+        kind: "wall",
+        // Weathered-steel panels as the renders show them: a dusky cocoa
+        // rust, mottled and streaked, darker than the render it bands.
+        ...pbr("rust_coarse_01"),
+        tile: 2.6,
+        tint: [2.7, 4.3, 7.6],
+        roughness: 0.95,
+    },
+    render_ochre: {
+        label: "Ochre render",
+        kind: "wall",
+        ...pbr("beige_wall_001"),
+        tile: 2.4,
+        tint: [2.0, 1.84, 1.56],
+    },
+    // The ground the site's terrain is painted with (World/Builders/
+    // LandscapeBuilder.js), blended by where it is.
+    terrain_lawn: { label: "Lawn", kind: "terrain", ...pbr("acg_grass001"), tile: 2.5 },
+    terrain_meadow: { label: "Meadow", kind: "terrain", ...pbr("acg_grass004"), tile: 4 },
+    terrain_hillside: { label: "Hillside", kind: "terrain", ...pbr("aerial_grass_rock"), tile: 9 },
+    terrain_forest: { label: "Forest floor", kind: "terrain", ...pbr("forest_leaves_02"), tile: 4 },
+    terrain_gravel: { label: "Gravel", kind: "terrain", ...pbr("gravel_floor_02"), tile: 2 },
 };
+
+/** A photographed finish's three maps, under public/textures/pbr/<id>/. */
+function pbr(id) {
+    const base = `/textures/pbr/${id}`;
+    return { image: `${base}/diff.webp`, normal: `${base}/nor.webp`, arm: `${base}/arm.webp` };
+}
 
 export const FINISH_NAMES = Object.keys(FINISHES);
 
@@ -366,10 +584,47 @@ export const TRIM_MATERIALS = {
     metal_black: { color: "#2a2b2e", roughness: 0.4, metalness: 0.85 },
     glass: { color: "#dfe5f5", roughness: 0.05, metalness: 0, transparent: true, opacity: 0.28 },
     frosted_glass: { color: "#e8ecf2", roughness: 0.5, metalness: 0, transparent: true, opacity: 0.55 },
+    // Ladonia's frameless balustrades: clear glass with a grey-green tint.
+    glass_balustrade: { color: "#b4c2c0", roughness: 0.03, metalness: 0, transparent: true, opacity: 0.16, transmission: 0 },
+    // Modern double glazing with a solar coating: grey-green, mirror-like
+    // against the sky, the room seen dimly behind it.
+    // No transmission: three redraws every opaque thing for it each frame,
+    // and Sky.js sets the glass's look inside and out (setGlassView).
+    glass_solar: { color: "#6a7f8a", roughness: 0.02, metalness: 0, transparent: true, opacity: 0.62, transmission: 0 },
     // The front garden's picket fence.
     fence_paint: { color: "#eeece6", roughness: 0.8, metalness: 0 },
+    // The neighbours' windows (World/Builders/NeighbourhoodBuilder.js): dark
+    // glass, seen from the street, nothing behind it.
+    window_dark: { color: "#27313b", roughness: 0.18, metalness: 0.3 },
+    // The roads' centre lines.
+    road_paint: { color: "#e9e6dc", roughness: 0.7, metalness: 0 },
     // A ceiling light's glass (World/Fittings.js): lit from within, live.
     opal_glass: { color: "#f6f2ea", roughness: 0.35, metalness: 0, glow: "#ffe3bf" },
+    // Modern joinery: powder-coated aluminium window and door frames,
+    // external blinds and pergola frames, in anthracite.
+    frame_anthracite: { color: "#34373a", roughness: 0.42, metalness: 0.55 },
+    // Ladonia's pergolas: bronze-taupe powder-coated aluminium.
+    alu_bronze: { color: "#6a5b48", roughness: 0.4, metalness: 0.55 },
+    // A cast stair's edges and soffit: light grey concrete.
+    concrete_grey: { color: "#a6a8a5", roughness: 0.85, metalness: 0 },
+    // Its windows' and doors' slim frames: dark bronze.
+    frame_bronze: { color: "#4a4234", roughness: 0.4, metalness: 0.5 },
+    // Ladonia's pergolas: anthracite frames, taupe louvres.
+    alu_anthracite: { color: "#55524e", roughness: 0.45, metalness: 0.4 },
+    alu_taupe: { color: "#7f6f5a", roughness: 0.5, metalness: 0.3 },
+    // Its render's own colour, for reveals and wall ends; a thin dark
+    // flashing on its parapets.
+    render_khaki: { color: "#b8a891", roughness: 0.9, metalness: 0 },
+    coping_dark: { color: "#3a3a38", roughness: 0.6, metalness: 0.3 },
+    // A rendered wall's own colour, untextured: slab edges and reveals.
+    render_trim: { color: "#d9bf9b", roughness: 0.9, metalness: 0 },
+    // A flat roof's coping and a parapet's cap.
+    coping_grey: { color: "#6b6a66", roughness: 0.7, metalness: 0.2 },
+    // The edges of building C's corten bands.
+    corten_trim: { color: "#a07a62", roughness: 0.7, metalness: 0.3 },
+    render_peach: { color: "#cdb293", roughness: 0.9, metalness: 0 },
+    // A stone wall's ends and reveals: its stone's average.
+    stone_trim: { color: "#a99d8b", roughness: 0.85, metalness: 0 },
 };
 
 export const TRIM_NAMES = Object.keys(TRIM_MATERIALS);
@@ -462,6 +717,19 @@ export const ENVIRONMENT_PRESETS = {
         sun: { color: "#fff6e2", intensity: 3.4, position: [14, 20, 9] },
         fog: { color: "#c2d8ea", near: 45, far: 190 },
         exposure: 0.85,
+    },
+    /**
+     * A site under its own sky (shared/landscape.js): the sky's picture is
+     * the background and its light the image-based light — these are what
+     * is drawn until it has loaded, and its fog.
+     */
+    exterior_mediterranean: {
+        background: "#9fc0e3",
+        ambient: { color: "#ffffff", intensity: 0 },
+        hemi: { sky: "#cfe2ff", ground: "#7a7258", intensity: 0.25 },
+        sun: { color: "#fff1dc", intensity: 3.2, position: [-30, 42, 25] },
+        fog: { color: "#c8d6e4", near: 90, far: 420 },
+        exposure: 0.9,
     },
     /** For untextured / single-material imported models. */
     interior_white_model: {

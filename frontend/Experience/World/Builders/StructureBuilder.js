@@ -337,7 +337,7 @@ export default class StructureBuilder {
 
         const faceA = this.materials.getSurface(finishA, "wall");
         const faceB = this.materials.getSurface(finishB, "wall");
-        const reveal = this.materials.getTrim(wall.reveal || "trim_white");
+        const reveal = this.materials.getTrimBehind(wall.reveal || "trim_white");
 
         const panelsA = [];
         const panelsB = [];
@@ -421,6 +421,7 @@ export default class StructureBuilder {
                 // on they collide through Door.resolveCapsule instead.
                 door.wallGroup = group;
                 doors.push(door);
+                if (opening.blind != null) this.addBlind(group, opening, wall, half, openingTag, this.materials.getTrim(opening.door?.frame || "frame_anthracite"));
             } else if (opening.type === "window") {
                 this.addWindow(group, opening, wall, half, openingTag);
             }
@@ -604,7 +605,7 @@ export default class StructureBuilder {
 
         const glass = new THREE.Mesh(
             this.track(new THREE.BoxGeometry(opening.width - 0.08, opening.height - 0.08, 0.015)),
-            this.materials.getTrim("glass", "glass")
+            this.materials.getTrim(opening.style === "slim" ? "glass_solar" : "glass", "glass")
         );
         glass.position.set(x, y, 0);
         glass.userData = { ...tag };
@@ -613,6 +614,27 @@ export default class StructureBuilder {
         const kit = this.kit;
         const [across, up] = opening.panes || [1, 1];
         const parts = [];
+
+        if (opening.style === "slim") {
+            // A modern window: slim aluminium sections set towards the
+            // outside of the reveal, mullions between its panes.
+            const s = 0.055;
+            const depth = 0.07;
+            const z = wall.thickness / 2 - depth / 2 - 0.05;
+            const { width: w, height: h } = opening;
+            parts.push(
+                boxAt(w, s, depth, x, y + h / 2 - s / 2, z),
+                boxAt(w, s, depth, x, y - h / 2 + s / 2, z),
+                boxAt(s, h - s * 2, depth, x - w / 2 + s / 2, y, z),
+                boxAt(s, h - s * 2, depth, x + w / 2 - s / 2, y, z)
+            );
+            for (let i = 1; i < across; i++) parts.push(boxAt(s * 0.9, h - s * 2, depth, x - w / 2 + (i * w) / across, y, z));
+            for (let j = 1; j < up; j++) parts.push(boxAt(w - s * 2, s * 0.9, depth, x, y - h / 2 + (j * h) / up, z));
+            glass.position.z = z;
+            if (opening.blind != null) this.addBlind(group, opening, wall, half, tag, frameMaterial);
+            group.add(this.mergedDecor(parts, frameMaterial, "window-frame", tag));
+            return;
+        }
 
         if (kit.has("window_frame") && kit.has("glazing_bar")) {
             const depth = THREE.MathUtils.clamp(wall.thickness * 0.7, 0.05, 0.1);
@@ -693,6 +715,33 @@ export default class StructureBuilder {
         if (parts.length) group.add(this.mergedDecor(parts, frameMaterial, "glazing-bars", tag));
     }
 
+    /**
+     * An external venetian blind over an opening, on its wall's side A: its
+     * box tucked under the head of the reveal, a guide rail down each side,
+     * and its slats, tilted half shut, lowered `opening.blind` of the way
+     * down — none at all when it is up in its box.
+     */
+    addBlind(group, opening, wall, half, tag, material) {
+        const x = opening.offset - half;
+        const top = opening.sill + opening.height;
+        const out = wall.thickness / 2;
+        const parts = [
+            // The box, in the head of the reveal, flush with the face.
+            boxAt(opening.width, 0.16, 0.14, x, top - 0.08, out - 0.07),
+        ];
+        const drop = opening.height * opening.blind;
+        if (drop > 0.02) {
+            for (const side of [-1, 1]) parts.push(boxAt(0.025, opening.height - 0.16, 0.04, x + side * (opening.width / 2 - 0.0125), opening.sill + (opening.height - 0.16) / 2, out - 0.03));
+            const pitch = 0.072;
+            const slat = new THREE.BoxGeometry(opening.width - 0.05, 0.075, 0.004).rotateX(-0.6);
+            for (let y = top - 0.16 - pitch / 2; y > top - 0.16 - drop; y -= pitch) {
+                parts.push(slat.clone().translate(x, y, out - 0.035));
+            }
+            slat.dispose();
+        }
+        group.add(this.mergedDecor(parts, material, "blind", tag));
+    }
+
     // ------------------------------------------------------------------
     // Roofs
     // ------------------------------------------------------------------
@@ -724,7 +773,7 @@ export default class StructureBuilder {
         const cz = (z0 + z1) / 2;
 
         const covering = this.materials.getSurface(roof.finish, "roof");
-        const soffit = this.materials.getTrim(roof.soffit || "trim_white");
+        const soffit = this.materials.getTrimBehind(roof.soffit || "trim_white");
         const thickness = roof.thickness ?? 0.18;
         const overhang = roof.overhang ?? 0.4;
         const slabs = [];
@@ -894,8 +943,11 @@ export default class StructureBuilder {
         const stepRise = rise / steps;
 
         const tread = this.materials.getSurface(stair.finish, "floor");
-        const riser = this.materials.getTrim(stair.riser || "trim_white");
-        const moulded = this.kit.has("stair_tread");
+        const riser = this.materials.getTrimBehind(stair.riser || "trim_white");
+        // A cast flight (`style: "slab"`): each step a block a riser and a
+        // waist deep, so its underside steps up with it and it is open beneath.
+        const slab = stair.style === "slab";
+        const moulded = this.kit.has("stair_tread") && !slab;
         const treads = moulded ? this.addTreads(group, stair, tread, riser) : [];
 
         // Without the kit, each step is one box, solid to the ground, so the
@@ -906,7 +958,7 @@ export default class StructureBuilder {
             if (stair.closet) group.add(this.hollowSteps(stair, board, riser));
             for (let i = 0; i < steps; i++) {
                 const top = (i + 1) * stepRise;
-                const depth = stair.closet ? board : top;
+                const depth = stair.closet ? board : slab ? Math.min(top, stepRise + 0.17) : top;
                 const geometry = this.track(new THREE.BoxGeometry(stair.width, depth, going));
                 this.tileFace(geometry, FACE.py, stair.width, going, stair.finish);
 

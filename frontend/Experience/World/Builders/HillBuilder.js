@@ -2,8 +2,9 @@ import * as THREE from "three";
 
 import { hillHeight } from "../../../../shared/vegetation.js";
 
-/** The ground under the hills is a grid this many metres a square. */
+/** The ground under the hills is a grid this many metres a square — or, over a band wider than CELLS of them, coarser. */
 const STEP = 1.0;
+const CELLS = 8000;
 
 /**
  * The small hills behind the house (shared/vegetation.js's planHills), as
@@ -18,8 +19,9 @@ const STEP = 1.0;
  * @returns {THREE.Mesh}
  */
 export function buildHills(hills, materials, finish = "hill_grass") {
-    const columns = Math.ceil((hills.right - hills.left) / STEP);
-    const rows = Math.ceil((hills.near - hills.far) / STEP);
+    const step = Math.max(STEP, Math.sqrt(((hills.right - hills.left) * (hills.near - hills.far)) / CELLS));
+    const columns = Math.ceil((hills.right - hills.left) / step);
+    const rows = Math.ceil((hills.near - hills.far) / step);
     const tile = materials.tileSize(finish);
     const positions = [];
     const uvs = [];

@@ -1,0 +1,138 @@
+{
+  "characters": [
+    {
+      "id": "standin-male",
+      "name": "Alex (stand-in)",
+      "file": "people/standin-male.glb",
+      "height": 1.856,
+      "hips": 1.032
+    },
+    {
+      "id": "standin-female",
+      "name": "Sam (stand-in)",
+      "file": "people/standin-female.glb",
+      "height": 1.782,
+      "hips": 1.057
+    }
+  ],
+  "clips": {
+    "file": "people/clips.standin.glb",
+    "hips": 1.028,
+    "list": [
+      {
+        "name": "Idle",
+        "pose": "stand",
+        "hand": true,
+        "pelvis": [
+          0.001,
+          1.014,
+          0.02
+        ],
+        "seat": null,
+        "head": [
+          -0.012,
+          1.607,
+          -0.058
+        ],
+        "duration": 5.8
+      },
+      {
+        "name": "Lying (stand-in)",
+        "pose": "lie",
+        "hand": false,
+        "pelvis": [
+          0.001,
+          0.16,
+          0.02
+        ],
+        "seat": [
+          0.001,
+          0.01,
+          0.02
+        ],
+        "head": [
+          0.013,
+          0.205,
+          0.619
+        ],
+        "duration": 5.8
+      },
+      {
+        "name": "Sitting (stand-in)",
+        "pose": "sit",
+        "hand": true,
+        "pelvis": [
+          0.001,
+          0.59,
+          0.02
+        ],
+        "seat": [
+          0.001,
+          0.44,
+          0.02
+        ],
+        "head": [
+          -0.012,
+          1.167,
+          -0.14
+        ],
+        "duration": 5.8
+      }
+    ]
+  },
+  "props": {
+    "file": "people/props.glb",
+    "list": [
+      {
+        "id": "wine-red",
+        "node": "propwine-red",
+        "grip": "right"
+      },
+      {
+        "id": "wine-white",
+        "node": "propwine-white",
+        "grip": "right"
+      },
+      {
+        "id": "flute",
+        "node": "propflute",
+        "grip": "right"
+      },
+      {
+        "id": "tumbler",
+        "node": "proptumbler",
+        "grip": "right"
+      },
+      {
+        "id": "beer",
+        "node": "propbeer",
+        "grip": "right"
+      },
+      {
+        "id": "coffee",
+        "node": "propcoffee",
+        "grip": "right"
+      },
+      {
+        "id": "towel",
+        "node": "proptowel",
+        "grip": null
+      },
+      {
+        "id": "book",
+        "node": "propbook",
+        "grip": "right"
+      },
+      {
+        "id": "book-open",
+        "node": "propbook-open",
+        "grip": null
+      },
+      {
+        "id": "sunglasses",
+        "node": "propsunglasses",
+        "grip": null
+      }
+    ]
+  }
+}

@@ -11,8 +11,12 @@ import Snapper, { STEP_UP } from "./Snapper.js";
  * Every pointer update goes through the same pipeline:
  *
  *   pointer -> raw pose (constraint, typed value)
- *           -> snapped pose (increment, surface, flush)   unless Shift
+ *           -> snapped pose (increment, surface, flush, seat)   unless Shift
  *           -> fit test (the piece and anything riding on it)
+ *
+ * A person sitting or lying is moved to a seat rather than snapped: the
+ * free one nearest the pointer (PersonEditable.seatFor), or none — a red
+ * ghost — when there is no free seat near.
  *
  * A pose that fits is applied. One that does not is shown as a red ghost
  * while the piece itself waits at the last place it did fit; confirming
@@ -101,6 +105,8 @@ export default class TransformSession {
             }));
             for (const { editable: rider } of this.riders) this.exclude.add(rider);
         }
+        // Riders that fit where they are put whatever is there — people sitting on the piece.
+        this.fitted = this.riders.filter((rider) => rider.editable.caps.fit);
 
         // Overlaps with other pieces that were there before the move are
         // carried through it. Walls excuse nothing: a piece that starts a few
@@ -114,7 +120,7 @@ export default class TransformSession {
         this.visitorAtStart = !this.isNew && editor.fit.hitsVisitor(editable.hulls(this.startPose));
         if (editable.caps.fit && !this.isNew) {
             this.ignore = editor.fit.touching(editable.hulls(this.startPose), this.exclude);
-            for (const rider of this.riders) {
+            for (const rider of this.fitted) {
                 for (const key of editor.fit.touching(rider.editable.hulls(rider.start), this.exclude)) this.ignore.add(key);
             }
             this.startBlocked = !this.check(this.startPose).ok;
@@ -390,6 +396,20 @@ export default class TransformSession {
         const editable = this.editable;
         const vertical = this.constraint.axis === "z" || ["x", "y"].includes(this.constraint.plane);
 
+        // Sitting or lying: onto the nearest free seat, unless placed freely (Shift, a typed or an upright move).
+        if (this.kind === "move" && editable.seatFor) {
+            if (snap && this.typedValue === null && !vertical) {
+                const seated = editable.seatFor(candidate, this.rayFor(this.pointer));
+                if (seated === null) {
+                    this.reject(candidate, { blocker: { key: "seat", label: "a seat", reason: "has no free seat near there" } });
+                    return;
+                }
+                if (seated) candidate = seated;
+            } else {
+                candidate.free = true;
+            }
+        }
+
         if (this.kind === "move" && snap && this.typedValue === null) {
             if (this.gravity && !vertical) {
                 this.rest(candidate);
@@ -429,7 +449,7 @@ export default class TransformSession {
         // A typed value is exact — except that a piece which started inside
         // a wall may still be pushed out of it, across the typed axis.
         const typed = this.typedValue !== null && !this.startBlocked;
-        if (!(this.kind === "move" && snap && !typed && this.editable.caps.fit)) {
+        if (!(this.kind === "move" && snap && !typed && this.editable.caps.fit && this.editable.caps.flush !== false)) {
             return [candidate];
         }
         if (vertical) return [candidate];
@@ -464,7 +484,7 @@ export default class TransformSession {
             return { ok: false, blocker: { key: "visitor", label: "You", reason: "would be where you're standing" } };
         }
 
-        for (const rider of this.riders) {
+        for (const rider of this.fitted) {
             const result = fit.test(rider.editable.hulls(this.riderPose(rider, pose)), {
                 exclude: this.exclude,
                 ignore: this.ignore,

@@ -4,8 +4,22 @@
         {
             "name": "walkthrough",
             "runtimeExecutable": "npm",
-            "runtimeArgs": ["start"],
+            "runtimeArgs": [
+                "start"
+            ],
             "port": 3000
+        },
+        {
+            "name": "house-people",
+            "runtimeExecutable": "env",
+            "runtimeArgs": [
+                "PORT=3114",
+                "PUBLISH_DIR=/private/tmp/claude-911894384/-Users-antonido-Code-per-3d-visualizations/b21f0e85-4473-429a-a7ab-8e09ce77cd35/scratchpad/pub-people",
+                "BAKE=off",
+                "node",
+                "server/index.js"
+            ],
+            "port": 3114
         }
     ]
 }

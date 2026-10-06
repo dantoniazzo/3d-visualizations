@@ -16,8 +16,14 @@
     "models": "node scripts/build-models.mjs",
     "upload-models": "node scripts/upload-models.mjs",
     "furniture": "node scripts/build-models.mjs --furniture",
+    "props": "node scripts/build-models.mjs --props",
     "avatars": "node scripts/optimize-avatars.mjs",
-    "bake": "node scripts/bake-public.mjs"
+    "people": "node scripts/optimize-people.mjs",
+    "site-assets": "node scripts/fetch-site-assets.mjs",
+    "trees": "node scripts/pack-trees.mjs",
+    "bake": "node scripts/bake-public.mjs",
+    "seats": "node scripts/measure-seats.mjs",
+    "people:place": "node scripts/place-people.mjs"
   },
   "devDependencies": {
     "@gltf-transform/core": "^4.5.0",
@@ -39,8 +45,10 @@
     "events": "^3.3.0",
     "express": "^4.19.2",
     "gsap": "^3.12.5",
+    "n8ao": "^1.10.1",
     "nanoid": "^5.0.7",
     "nipplejs": "^0.10.2",
+    "postprocessing": "^6.35.6",
     "socket.io": "^4.7.5",
     "socket.io-client": "^4.7.5",
     "three": "^0.163.0"

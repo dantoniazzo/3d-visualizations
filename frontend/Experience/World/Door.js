@@ -33,6 +33,8 @@ const KNUCKLE = LEAF_T / 2 + 0.002;
 const HANDLE_Y = 1.05;
 /** Handle spindle, in from the leaf's free edge. */
 const BACKSET = 0.065;
+/** A glass door's frame sections, wide. */
+const GLAZED_STILE = 0.065;
 
 export default class Door {
     /**
@@ -88,7 +90,7 @@ export default class Door {
 
     build() {
         const kit = this.kit;
-        const lining = this.materials.getTrim(this.spec.door?.frame || "trim_white");
+        const lining = this.materials.getTrimFront(this.spec.door?.frame || "trim_white");
         const leafMaterial = this.materials.getTrim(this.spec.door?.leaf || "trim_white");
         const handleMaterial = this.materials.getTrim(
             this.spec.door?.handle || "metal_brass",
@@ -131,7 +133,9 @@ export default class Door {
         // Leaves.
         const count = this.config.leaves;
         const leafWidth = this.width / count;
-        const hinges = swings && kit?.has("door_hinge");
+        // A flush leaf (`door.flush`): a plain slab on concealed hinges.
+        const flush = this.spec.door?.flush === true;
+        const hinges = swings && !flush && kit?.has("door_hinge");
         const handleName = swings ? "door_handle" : "door_pull";
 
         for (let i = 0; i < count; i++) {
@@ -150,8 +154,13 @@ export default class Door {
             hinge.userData.hingeSide = hingeSide;
 
             const size = new THREE.Vector3(leafWidth - 0.01, this.height - 0.02, LEAF_T);
+            const glazed = this.spec.door?.glazed === true;
             const leaf = addMesh(
-                kit ? kit.fit("door_leaf", size.x, size.y, size.z) : new THREE.BoxGeometry(size.x, size.y, size.z),
+                glazed
+                    ? this.glazedFrame(size)
+                    : kit && !flush
+                      ? kit.fit("door_leaf", size.x, size.y, size.z)
+                      : new THREE.BoxGeometry(size.x, size.y, size.z),
                 leafMaterial,
                 hinge
             );
@@ -161,6 +170,23 @@ export default class Door {
             // Leaves swing, so nothing static — the editor's fit test
             // included — may treat them as a fixed obstacle.
             leaf.userData.doorLeaf = true;
+            if (glazed) {
+                // A glass door: its pane in a slim frame, and a pull bar,
+                // not a lever, on its lock stile.
+                const pane = addMesh(
+                    new THREE.BoxGeometry(size.x - GLAZED_STILE * 2, size.y - GLAZED_STILE * 2, 0.012),
+                    this.materials.getTrim(this.spec.style === "slim" ? "glass_solar" : "glass", "glass"),
+                    leaf
+                );
+                pane.castShadow = false;
+                pane.userData.doorLeaf = true;
+                const pull = new THREE.BoxGeometry(0.025, 0.9, 0.03).translate(-hingeSide * (leafWidth / 2 - 0.04), HANDLE_Y - this.height / 2 + 0.1, 0);
+                const pulls = [pull.clone().translate(0, 0, LEAF_T / 2 + 0.03), pull.translate(0, 0, -LEAF_T / 2 - 0.03)];
+                addMesh(this.merged(pulls), handleMaterial, leaf).userData.doorLeaf = true;
+                this.group.add(hinge);
+                this.leaves.push({ hinge, leaf, hingeSide, leafWidth });
+                continue;
+            }
 
             // Handle on both faces, on the lock rail near the free edge, as
             // one mesh. It hangs off the leaf, so a sliding leaf takes it along.
@@ -200,6 +226,18 @@ export default class Door {
             this.group.add(hinge);
             this.leaves.push({ hinge, leaf, hingeSide, leafWidth });
         }
+    }
+
+    /** A glass door's frame: four slim aluminium sections round its pane. */
+    glazedFrame(size) {
+        const s = GLAZED_STILE;
+        const d = size.z * 1.2;
+        return this.merged([
+            new THREE.BoxGeometry(s, size.y, d).translate(-size.x / 2 + s / 2, 0, 0),
+            new THREE.BoxGeometry(s, size.y, d).translate(size.x / 2 - s / 2, 0, 0),
+            new THREE.BoxGeometry(size.x - s * 2, s, d).translate(0, size.y / 2 - s / 2, 0),
+            new THREE.BoxGeometry(size.x - s * 2, s * 1.4, d).translate(0, -size.y / 2 + s * 0.7, 0),
+        ]);
     }
 
     /** Several geometries as one, the originals freed. */

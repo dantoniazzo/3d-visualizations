@@ -13,10 +13,14 @@ import { buildOctree, isTransient } from "./Collision.js";
 import { GROUND_TYPES, FINISHES } from "../../../shared/catalog.js";
 import { DEFAULT_CAR } from "../../../shared/cars.js";
 import { pointInPolygon, rectCorners } from "../Utils/geometry.js";
-import { applyReflections } from "../Utils/reflections.js";
-import { CEILING_STYLES, GLASS, SWITCH_PLATE, ceilingFitting, wallSwitch } from "./Fittings.js";
+import { applyReflection, applyReflections, plainGlass } from "../Utils/reflections.js";
+import { CEILING_STYLES, GLASS, SWITCH_PLATE, ceilingFitting, doorSides, wallSwitch } from "./Fittings.js";
 import { buildFence } from "./Builders/FenceBuilder.js";
 import { buildHills } from "./Builders/HillBuilder.js";
+import { buildNeighbourhood, buildWorldEdge } from "./Builders/NeighbourhoodBuilder.js";
+import { planNeighbourhood } from "../../../shared/neighbourhood.js";
+import { buildLandscape, buildLandscapeLive, landscapeMaterial, paintTerrain } from "./Builders/LandscapeBuilder.js";
+import { hasLandscape } from "../../../shared/landscape.js";
 import { groundGradient, hillOutline, planFence, planHills } from "../../../shared/vegetation.js";
 import { LIGHTMAP_DECODE, LIGHTMAP_YCOCG } from "./lightmapGLSL.js";
 import { LIVE_LAMPS } from "../Utils/device.js";
@@ -38,8 +42,12 @@ import { LIVE_LAMPS } from "../Utils/device.js";
  * octrees the player walks against.
  */
 export default class SceneBuilder {
-    /** Below this many triangles a piece collides as its mesh, not a box. */
-    static MESH_COLLISION_BUDGET = 6000;
+    /**
+     * Below this many triangles a piece collides as its mesh, not a box: a
+     * modelled bed (10–11k) included, whose box — its headboard's width —
+     * would wall off the way along its sides in a small bedroom.
+     */
+    static MESH_COLLISION_BUDGET = 12000;
     /** Anything flatter than this is a rug: walked over, placed under. */
     static FLAT_HEIGHT = 0.035;
     /** How much brighter than white a lit lamp's bulb is drawn. */
@@ -82,6 +90,10 @@ export default class SceneBuilder {
         this.staticColliders = new THREE.Group();
         this.staticColliders.name = "static-colliders";
         this.staticColliders.visible = false;
+        // The wall round the neighbourhood's world (buildNeighbourhood): collided with, never drawn.
+        this.worldEdge = new THREE.Group();
+        this.worldEdge.name = "world-edge";
+        this.worldEdge.visible = false;
 
         /** surfaceId -> { id, kind, meshes, slot, finish, label } */
         this.surfaces = new Map();
@@ -120,6 +132,8 @@ export default class SceneBuilder {
         this.buildRoofs();
         this.buildFence();
         this.buildHills();
+        this.buildNeighbourhood();
+        this.buildLandscape();
         this.buildStairs();
         this.buildModel();
         this.buildFreeDoors();
@@ -130,6 +144,7 @@ export default class SceneBuilder {
         this.scene.add(this.root);
         this.scene.add(this.colliders);
         this.scene.add(this.staticColliders);
+        this.scene.add(this.worldEdge);
 
         this.buildStaticCollision();
         // Ramps only for now; rebuilt with the furniture once it has loaded.
@@ -158,7 +173,7 @@ export default class SceneBuilder {
 
     /** What the building collides as: shell, ground, and an imported model's own mesh. */
     staticCollisionRoots() {
-        const roots = [this.staticColliders];
+        const roots = [this.staticColliders, this.worldEdge];
         if (this.groundPlane) roots.push(this.groundPlane);
 
         if (this.isModelScene) {
@@ -243,7 +258,9 @@ export default class SceneBuilder {
      * saying what it is for the crosshair's label; the materials; the glass.
      * So no wall, slab, stair or piece of furniture is made, and no piece
      * of furniture downloaded. What moves is built as ever: the doors, in
-     * stand-ins for their walls, the car, and the room lights.
+     * stand-ins for their walls, the car, the room lights, and a site's
+     * pools' water (`landscapeLive`, as the editor has it: World/Flora
+     * ripples it and lights it at night).
      */
     buildFromRuntime() {
         this.shell = new THREE.Group();
@@ -286,6 +303,10 @@ export default class SceneBuilder {
         }
         this.buildFreeDoors();
         this.buildLights();
+        if (!this.isModelScene && hasLandscape(this.spec)) {
+            this.landscapeLive = buildLandscapeLive(this.spec.landscape);
+            this.root.add(this.landscapeLive);
+        }
 
         this.scene.add(this.root);
         this.scene.add(this.colliders);
@@ -311,6 +332,10 @@ export default class SceneBuilder {
         // drawn live as ever (Openables.js).
         this.openableGroup = this.runtime.scene.getObjectByName("openable") ?? null;
         if (this.openableGroup) {
+            this.openableGroup.traverse((node) => {
+                restoreShadows(node);
+                for (const material of node.isMesh ? [node.material].flat() : []) restoreRuntimeMaterial(material, this.materials);
+            });
             this.root.add(this.openableGroup);
             this.openableGroup.updateMatrixWorld(true);
             this.openables.add(this.openableGroup);
@@ -318,28 +343,45 @@ export default class SceneBuilder {
         this.furnitureReady = Promise.resolve();
     }
 
-    /** The runtime file's materials, by the key the snapshot names each by. */
+    /**
+     * The runtime file's materials, by the key the snapshot names each by:
+     * as the editor drew them (restoreRuntimeMaterial), and one drawn by a
+     * shader of its own — the terrain's — made again (LandscapeBuilder).
+     */
     runtimeMaterials() {
         const byKey = new Map();
         this.runtime.scene.traverse((node) => {
             const key = node.userData?.materialKey;
             if (!node.isMesh || key === undefined) return;
-            const material = node.material;
-            // A finish's texture is drawn here, as the editor draws it.
-            if (material.userData.finish) material.map = this.materials.getSurface(material.userData.finish).map;
-            if (material.userData.vertexColors) material.vertexColors = true;
-            material.needsUpdate = true;
-            byKey.set(key, material);
+            const rebuilt = landscapeMaterial(node.material, this.materials);
+            if (rebuilt) {
+                byKey.set(key, rebuilt);
+                return;
+            }
+            restoreRuntimeMaterial(node.material, this.materials);
+            byKey.set(key, node.material);
         });
         return byKey;
     }
 
-    /** The runtime file's glass, each pane saying which floor it is on. */
+    /**
+     * The runtime file's glass, each pane saying which floor it is on — but
+     * a pool's water, which is built live here (buildFromRuntime).
+     */
     addRuntimeGlass() {
         const group = this.runtime.scene.getObjectByName("see-through");
         if (!group) return;
+        const live = this.landscapeLive?.getObjectByName("pool-water");
+        for (const water of live ? group.children.filter((node) => node.name === "pool-water") : []) {
+            group.remove(water);
+            water.geometry.dispose();
+        }
         this.root.add(group);
         group.updateMatrixWorld(true);
+        group.traverse((node) => {
+            restoreShadows(node);
+            for (const material of node.isMesh ? [node.material].flat() : []) restoreRuntimeMaterial(material, this.materials);
+        });
         applyReflections(group);
     }
 
@@ -366,7 +408,10 @@ export default class SceneBuilder {
         const spec = GROUND_TYPES[ground];
         // The hills behind the plot rise out of it, where it is cut away.
         const hills = this.isModelScene ? null : planHills(this.spec);
-        const mesh = this.structure.buildGround({ ...spec, size }, hills ? [hillOutline(hills)] : []);
+        // Out past the neighbourhood's world on every side.
+        const plan = this.neighbourhoodPlan();
+        const reach = plan ? 2 * (Math.max(Math.abs(plan.centre[0]), Math.abs(plan.centre[1])) + plan.radius + 40) : 0;
+        const mesh = this.structure.buildGround({ ...spec, size: Math.max(size, reach) }, hills ? [hillOutline(hills)] : []);
         mesh.userData = { kind: "surface", surfaceKind: "ground", label: "Ground" };
         this.root.add(mesh);
         this.groundPlane = mesh;
@@ -562,9 +607,50 @@ export default class SceneBuilder {
     }
 
     /**
+     * The neighbourhood round the plot (shared/neighbourhood.js): its
+     * streets and its neighbours' houses, in the shell, so they are walked
+     * and driven on, published and baked — and the wall round its world,
+     * collided with alone.
+     */
+    buildNeighbourhood() {
+        if (this.isModelScene) return;
+        const plan = this.neighbourhoodPlan();
+        if (!plan) return;
+        this.neighbourhood = buildNeighbourhood(plan, this.materials);
+        this.shell.add(this.neighbourhood);
+        this.worldEdge.add(buildWorldEdge(plan));
+    }
+
+    /**
+     * A site's own landscape (shared/landscape.js): what of it stands still
+     * — its terrain, walls, pergolas, planters, railings, pool — in the
+     * shell, so it is walked on, published and baked; what moves — the
+     * pool's water, the garden lights — beside it.
+     */
+    buildLandscape() {
+        if (this.isModelScene || !hasLandscape(this.spec)) return;
+        const { group, live } = buildLandscape(this.spec.landscape, this.materials);
+        this.landscape = group;
+        this.shell.add(group);
+        this.landscapeLive = live;
+        this.root.add(live);
+    }
+
+    /** The neighbourhood's plan, as the spec has it now; null without one. */
+    neighbourhoodPlan() {
+        const key = JSON.stringify([this.spec.garden ?? null, this.spec.rooms?.length]);
+        if (this.plannedFor !== key) {
+            this.plannedFor = key;
+            this.planned = this.isModelScene ? null : planNeighbourhood(this.spec);
+        }
+        return this.planned;
+    }
+
+    /**
      * The hills again, once the garden's settings for them have changed
      * (the editor's Garden panel): them, the ground they are cut out of,
-     * and what is walked on. Not in a view drawn merged.
+     * the neighbourhood's roads over them, and what is walked on. Not in a
+     * view drawn merged.
      */
     rebuildHills() {
         if (this.runtime || this.batches || this.isModelScene) return;
@@ -572,6 +658,15 @@ export default class SceneBuilder {
             this.shell.remove(this.hills);
             this.hills.geometry.dispose();
             this.hills = null;
+        }
+        if (this.neighbourhood) {
+            this.shell.remove(this.neighbourhood);
+            this.neighbourhood.traverse((node) => node.geometry?.dispose());
+            this.neighbourhood = null;
+        }
+        for (const edge of [...this.worldEdge.children]) {
+            this.worldEdge.remove(edge);
+            edge.geometry.dispose();
         }
         if (this.groundPlane) {
             this.root.remove(this.groundPlane);
@@ -581,7 +676,8 @@ export default class SceneBuilder {
         }
         this.buildGround();
         this.buildHills();
-        for (const mesh of [this.groundPlane, this.hills]) if (mesh) applyReflections(mesh);
+        this.buildNeighbourhood();
+        for (const mesh of [this.groundPlane, this.hills, this.neighbourhood]) if (mesh) applyReflections(mesh);
         this.buildStaticCollision();
     }
 
@@ -842,6 +938,7 @@ export default class SceneBuilder {
         const white = this.materials.getTrim("trim_white");
         const cord = this.materials.getTrim("trim_charcoal");
         const roomAt = (x, y, z) => this.roomAt(x, y, z);
+        const sides = doorSides(this.spec, roomAt);
 
         for (const room of this.spec.rooms) {
             const fitting = ceilingFitting(room);
@@ -877,7 +974,7 @@ export default class SceneBuilder {
                 dome.scale.y = style.depth / style.radius;
             }
 
-            const plate = wallSwitch(room, this.spec, roomAt);
+            const plate = wallSwitch(room, this.spec, roomAt, sides);
             if (!plate) continue;
             const holder = new THREE.Group();
             holder.position.set(...plate.position);
@@ -896,6 +993,8 @@ export default class SceneBuilder {
 
         group.updateMatrixWorld(true);
         this.root.add(group);
+        // Lit as their switches are, again (World: the glass of a view lit live).
+        this.experience.world?.emit?.("fittings-rebuilt", group);
     }
 
     // ------------------------------------------------------------------
@@ -1512,6 +1611,8 @@ export default class SceneBuilder {
                     name: light.label,
                     label: part === "switch" ? `${light.label} switch` : light.label,
                     elevation: room?.elevation ?? y0,
+                    room: light.room ?? null,
+                    fixture: light.fixture ?? null,
                 };
                 group.add(mesh);
             }
@@ -1527,7 +1628,9 @@ export default class SceneBuilder {
      * @param {THREE.Ray} ray
      * @param {object} [options]
      * @param {number} [options.far]  how far it reaches
-     * @param {(target: object) => boolean} [options.accept]  which may be picked
+     * @param {(target: object) => boolean} [options.accept]  which may be
+     *        picked, by `{ elevation, room, point, fixture }`: its floor,
+     *        its room, where the ray meets it and, a lamp's, its piece
      * @returns {{ id, name, label, distance }|null}  the switch, the light's
      *          name, and what was pointed at
      */
@@ -1536,8 +1639,8 @@ export default class SceneBuilder {
         _pick.ray.copy(ray);
         _pick.far = far;
         for (const hit of _pick.intersectObjects(this.lightTargets.children, false)) {
-            const { lightSwitch, name, label, elevation } = hit.object.userData;
-            if (!accept({ elevation })) continue;
+            const { lightSwitch, name, label, elevation, room, fixture } = hit.object.userData;
+            if (!accept({ elevation, room, point: hit.point, fixture })) continue;
             return { id: lightSwitch, name, label, distance: hit.distance };
         }
         return null;
@@ -1571,29 +1674,9 @@ export default class SceneBuilder {
         return this.batchStatic();
     }
 
-    /**
-     * Swap refractive glass for plain see-through glass.
-     *
-     * A single transmissive material anywhere in view makes three render
-     * every opaque object a second time, into the texture the glass
-     * refracts — doubling the frame for a window pane. At the glass's own
-     * thinness the difference is hard to see; the reflection it carries
-     * from the environment map is what reads as glass, and that stays.
-     */
+    /** Swap refractive glass for plain see-through glass (Utils/reflections.js plainGlass). */
     simplifyGlass() {
-        const done = new Set();
-        this.root.traverse((object) => {
-            if (!object.isMesh) return;
-            for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
-                if (!material || done.has(material) || !(material.transmission > 0)) continue;
-                done.add(material);
-                material.transmission = 0;
-                material.transparent = true;
-                material.opacity = Math.min(material.opacity ?? 1, 0.3);
-                material.depthWrite = false;
-                material.needsUpdate = true;
-            }
-        });
+        plainGlass(this.root);
     }
 
     /**
@@ -1621,7 +1704,7 @@ export default class SceneBuilder {
         const walls = byId(this.spec.walls);
         const stairs = byId(this.spec.stairs);
         const holes = byId(this.spec.floor_openings);
-        const OWNERS = new Set(["room", "wall", "roof", "stairs", "rail", "furniture", "fitting"]);
+        const OWNERS = new Set(["room", "wall", "roof", "stairs", "rail", "furniture", "fitting", "scenery"]);
         const owner = (mesh) => {
             for (let node = mesh; node; node = node.parent) if (OWNERS.has(node.userData?.kind)) return node;
             return null;
@@ -1637,7 +1720,10 @@ export default class SceneBuilder {
                 object.userData?.helper ||
                 // A piece's doors and drawers move (Openables.js).
                 object.userData?.opens !== undefined ||
-                object.userData?.fixture !== undefined,
+                object.userData?.fixture !== undefined ||
+                // So do the people (World/People.js, outside this root —
+                // never merged, published or baked, wherever they are put).
+                object.userData?.kind === "person",
             levelOf: (mesh, box) => {
                 const node = owner(mesh);
                 const id = node?.userData.id;
@@ -1653,6 +1739,9 @@ export default class SceneBuilder {
                         return levelAt(holes.get(node.userData.holeId)?.elevation ?? box.min.y);
                     case "roof":
                         return levels.length - 1;
+                    // The neighbourhood, up its hill or not, is the ground floor's.
+                    case "scenery":
+                        return 0;
                     case "furniture":
                         return levelAt(node.getWorldPosition(_position).y);
                     default:
@@ -1661,7 +1750,8 @@ export default class SceneBuilder {
             },
             kindOf: (mesh) => {
                 if (mesh.userData?.surfaceKind === "ceiling") return "ceiling";
-                return owner(mesh)?.userData.kind === "roof" ? "roof" : null;
+                const kind = owner(mesh)?.userData.kind;
+                return kind === "roof" || kind === "scenery" ? kind : null;
             },
         };
     }
@@ -1772,24 +1862,41 @@ export default class SceneBuilder {
         // Lamps' bulbs, lit up while their switches are on.
         this.bulbs = [];
 
-        const materialFor = (key, lit, fallback, zone, kind) => {
-            // A room with switches or doors of its own draws with materials of its own.
-            const layers = lit === "lightmap" ? this.switchLayers.get(zone) : null;
-            const doors = lit === "lightmap" ? this.doorLayers.get(zone) : null;
+        const materialFor = (key, lit, fallback, zone, kind, twoSided = false) => {
+            const live = byKey.get(key) ?? fallback;
+            // A room with switches or doors of its own draws with materials of
+            // its own — but for one drawn by a shader of its own (the
+            // terrain: five grounds and a relief), which has no texture units
+            // to spare for them, and whatever of it is in a room lies under
+            // the floor.
+            const ownDrawn = this.baked && ownShader(live) && live.userData.attributes?.length > 0;
+            const layers = lit === "lightmap" && !ownDrawn ? this.switchLayers.get(zone) : null;
+            const doors = lit === "lightmap" && !ownDrawn ? this.doorLayers.get(zone) : null;
             const own = Boolean(layers || doors);
             // Lit live, so do ceilings (bakedAmbient's `lid`).
             const lid = this.liveLight && kind === "ceiling";
-            const cacheKey = `${key}|${this.baked ? lit : ""}${own ? `|${zone}` : ""}${lid ? "|lid" : ""}`;
+            const cacheKey = `${key}|${this.baked ? lit : ""}${own ? `|${zone}` : ""}${lid ? "|lid" : ""}${twoSided ? "|two" : ""}`;
             if (cache.has(cacheKey)) return cache.get(cacheKey);
-            const live = byKey.get(key) ?? fallback;
             // A metal has next to no diffuse colour, so its baked light is
             // next to nothing: it keeps its live material and reflections.
             const bakedLight = this.baked && lit && !(live.metalness >= 0.5);
-            const side = cull ? THREE.FrontSide : live.side;
+            // Culled, a face is drawn from the side it was seen from — but for
+            // what is seen through itself, kept whole and drawn two-sided.
+            const side = twoSided ? THREE.DoubleSide : cull ? THREE.FrontSide : live.side;
             let material;
             if (!bakedLight) {
                 material = live.clone();
                 material.side = side;
+                // A shader of its own, which a copy does not take with it.
+                if (ownShader(live)) {
+                    material.onBeforeCompile = live.onBeforeCompile;
+                    material.customProgramCacheKey = live.customProgramCacheKey;
+                }
+                // Its shadow as the editor casts it: a two-sided material's
+                // from both sides, though culling has made it one-sided. (A
+                // one-sided one's faces culled come back as shadow casters
+                // alone: addShadowCasters.)
+                if (cull && live.side === THREE.DoubleSide) material.shadowSide = THREE.DoubleSide;
             } else {
                 // Unlit, or — its light live — matt and lit, as it was baked.
                 const Material = this.liveLight ? THREE.MeshLambertMaterial : THREE.MeshBasicMaterial;
@@ -1800,7 +1907,23 @@ export default class SceneBuilder {
                     side,
                     vertexColors: lit === "vertex",
                 });
+                // Layered in depth as it is live (MaterialLibrary's layer()).
+                material.polygonOffset = live.polygonOffset;
+                material.polygonOffsetFactor = live.polygonOffsetFactor;
+                material.polygonOffsetUnits = live.polygonOffsetUnits;
                 if (lid) material.userData.lid = true;
+                // Drawn by a shader of its own — the terrain's grounds blended
+                // by its paint — under the bake's light as under the sun:
+                // its shader first, then the bake's (decodeLightmap,
+                // lightByVertices); lit live, its relief too.
+                if (ownShader(live) && live.userData.attributes?.length) {
+                    material.userData.attributes = [...live.userData.attributes];
+                    drawnByOwnShader(material, live);
+                    if (this.liveLight && live.normalMap) {
+                        material.normalMap = live.normalMap;
+                        material.normalScale.copy(live.normalScale);
+                    }
+                }
                 if (this.liveLight && lit === "vertex") lightByVertices(material);
                 if (layers) material.userData.switchLayers = layers;
                 if (doors) {
@@ -1823,18 +1946,29 @@ export default class SceneBuilder {
         gltf.scene.updateMatrixWorld(true);
         gltf.scene.traverse((node) => {
             if (!node.isMesh) return;
-            const { material: key, level = 0, kind = null, cast = true, receive = true, lighting: lit, zone = null, glow = null } = node.userData;
-            const mesh = new THREE.Mesh(node.geometry, materialFor(key, lit, node.material, zone, kind));
+            const { material: key, level = 0, kind = null, cast = true, receive = true, lighting: lit, zone = null, glow = null, twoSided = false } = node.userData;
+            const material = materialFor(key, lit, node.material, zone, kind, twoSided);
+            // What its shader reads of its own (the terrain's paint), under
+            // its own name again: glTF wrote it as `_PAINT`, read back
+            // `_paint` — or, four numbers a vertex, as two pairs (Snapshot.js).
+            for (const name of material.userData.attributes ?? []) restoreAttribute(node.geometry, name);
+            // A terrain published or baked before its paint went with it: painted here, as the editor paints it.
+            if (material.userData.attributes?.includes("paint") && !node.geometry.getAttribute("paint") && this.spec.landscape?.terrain) {
+                paintTerrain(node.geometry, this.spec.landscape.terrain, node.matrixWorld);
+            }
+            const mesh = new THREE.Mesh(node.geometry, material);
             mesh.applyMatrix4(node.matrixWorld);
             mesh.name = node.name;
             // Baked, the shadows are in the light already; lit live, they
-            // are drawn — but for a lamp's glass or bulb, which lets its
-            // light out, as the bake had it.
+            // are drawn — but, over a bake, for a lamp's glass or bulb,
+            // which lets its light out, as the bake had it. Unbaked, a
+            // lamp's casts as the editor's furniture does.
             const shadows = !this.baked || this.liveLight;
-            mesh.castShadow = shadows && cast && !glow;
+            mesh.castShadow = shadows && cast && !(glow && this.baked);
             mesh.receiveShadow = shadows && receive;
             // Which room it is lit as, once the bake is laid out by room.
-            mesh.userData = { batch: true, level, kind, lighting: lit, zone, material: key };
+            // A light's glass or bulb keeps its switch (Snapshot.js).
+            mesh.userData = { batch: true, level, kind, lighting: lit, zone, material: key, ...(glow && { glow }) };
             mesh.raycast = () => {};
             if (this.baked && lit === "vertex") {
                 this.vertexLit.push(mesh);
@@ -1849,6 +1983,17 @@ export default class SceneBuilder {
         });
 
         hideOriginals(meshes);
+        if (cull && (!this.baked || this.liveLight)) this.addShadowCasters(group);
+        // Reflecting what they reflect in the editor — before the sky, if
+        // there is one, sorts them (Sky.applyIndoor): a metal or clear glass
+        // the studio (Utils/reflections.js), which a runtime file's copy,
+        // through glTF, comes without; what the sky lit stays the sky's.
+        group.traverse((node) => {
+            for (const material of node.isMesh ? [node.material].flat() : []) if (!material.userData.skyMap) applyReflection(material);
+        });
+        // The cars' headlamps' beam: a spotlight where the view takes live
+        // light, a pool of light on the road where it is drawn from the bake.
+        for (const car of this.cars ?? []) car.lights?.setMode(this.baked && !this.liveLight ? "baked" : "lit");
         // Lit live, whatever is drawn live — the glass, the doors — takes the
         // lamps' shadows too, or a lamp next door would light it through the wall.
         if (this.liveLight) {
@@ -1859,6 +2004,45 @@ export default class SceneBuilder {
         this.batches = group;
         this.scene.add(group);
         return { meshes: group.children.length, triangles, hidden: meshes.length };
+    }
+
+    /**
+     * The faces culled from the snapshot that cast a shadow in the editor
+     * (Publish/Snapshot.js's shadowCasters, carried by the runtime file),
+     * drawn into the shadow maps alone: nothing of them is drawn in the
+     * view — a draw range of nothing, but while a shadow map is drawn — so
+     * a table's underside, gone, still shades the floor under it. By floor
+     * and kind, as the meshes beside them, for the bird's-eye view; and by
+     * a square of the site, which a shadow camera that does not take it in
+     * leaves out. Drawn as the editor draws them: from behind — a two-sided
+     * material's faces (`twoSided`) from either side.
+     */
+    addShadowCasters(group) {
+        const casters = this.runtime?.scene.getObjectByName("shadow-casters");
+        if (!casters) return;
+        const material = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false });
+        material.name = "shadow-caster";
+        const twoSided = material.clone();
+        twoSided.name = "shadow-caster-two-sided";
+        twoSided.shadowSide = THREE.DoubleSide;
+        const none = () => {};
+        casters.updateMatrixWorld(true);
+        for (const node of casters.children) {
+            if (!node.isMesh) continue;
+            const geometry = node.geometry;
+            geometry.computeBoundingSphere();
+            geometry.setDrawRange(0, 0);
+            const mesh = new THREE.Mesh(geometry, node.userData.twoSided ? twoSided : material);
+            mesh.applyMatrix4(node.matrixWorld);
+            mesh.name = node.name;
+            mesh.castShadow = true;
+            mesh.receiveShadow = false;
+            mesh.userData = { batch: true, shadowCaster: true, level: node.userData.level ?? 0, kind: node.userData.kind ?? null };
+            mesh.onBeforeShadow = () => geometry.setDrawRange(0, Infinity);
+            mesh.onAfterShadow = () => geometry.setDrawRange(0, 0);
+            mesh.raycast = none;
+            group.add(mesh);
+        }
     }
 
     /**
@@ -2239,6 +2423,8 @@ export default class SceneBuilder {
                 if (!leaf.userData.baseColor) {
                     leaf.userData.baseColor = leaf.material.color.clone();
                     leaf.material = leaf.material.clone();
+                    // Its light is the bake's (Sky.js leaves it be).
+                    leaf.material.userData.bakedTint = true;
                     litBySides(leaf.material, { live: this.liveLight });
                 }
                 const base = leaf.userData.baseColor;
@@ -2302,6 +2488,7 @@ export default class SceneBuilder {
                     if (!material.userData.baseColor) {
                         material = material.clone();
                         material.userData.baseColor = material.color.clone();
+                        material.userData.bakedTint = true;
                     }
                     material.color.copy(material.userData.baseColor).multiplyScalar(0.25);
                     material.emissive.copy(material.userData.baseColor).multiply(light).multiplyScalar(0.85);
@@ -2379,6 +2566,94 @@ function hideFixedParts(node) {
     if (node.userData?.doorLeaf || node.userData?.hingeSide !== undefined) return;
     if (node.isMesh) node.visible = false;
     for (const child of node.children) hideFixedParts(child);
+}
+
+/** A runtime file's material layered in depth again, as it was drawn (Runtime.js keeps it in userData). */
+function restoreLayer(material) {
+    const offset = material?.userData?.polygonOffset;
+    if (!offset) return;
+    material.polygonOffset = true;
+    [material.polygonOffsetFactor, material.polygonOffsetUnits] = offset;
+}
+
+/**
+ * A runtime file's material as the editor drew it, from what Runtime.js's
+ * `exportable` kept of it: a finish's textures drawn here, as the editor
+ * draws them — its colour, and its relief, occlusion, roughness and
+ * metalness, the right way up and at the editor's scale; any other relief
+ * at its own scale again (glTF reads a normal map loaded as an image upside
+ * down); its vertex colours, its depth layering, whether it writes depth
+ * (glTF's see-through stops it), and the side it is drawn from.
+ */
+function restoreRuntimeMaterial(material, library) {
+    const data = material?.userData;
+    if (!data) return;
+    if (data.finish) {
+        const surface = library.getSurface(data.finish);
+        material.map = surface.map;
+        for (const slot of ["normalMap", "aoMap", "roughnessMap", "metalnessMap"]) if (surface[slot]) material[slot] = surface[slot];
+        if (surface.normalMap && material.normalScale) material.normalScale.copy(surface.normalScale);
+    } else if (data.normalScale && material.normalMap && material.normalScale) {
+        material.normalScale.fromArray(data.normalScale);
+    }
+    if (data.vertexColors) material.vertexColors = true;
+    if (typeof data.depthWrite === "boolean") material.depthWrite = data.depthWrite;
+    if (data.side !== undefined) material.side = data.side;
+    restoreLayer(material);
+    material.needsUpdate = true;
+}
+
+/**
+ * A snapshot's attribute of a shader's own under its own name again: from
+ * `_<name>`, or from its two halves `_<name>0` and `_<name>1` (Snapshot.js).
+ */
+function restoreAttribute(geometry, name) {
+    if (geometry.getAttribute(name)) return;
+    const whole = geometry.getAttribute(`_${name}`);
+    if (whole) {
+        geometry.setAttribute(name, whole);
+        geometry.deleteAttribute(`_${name}`);
+        return;
+    }
+    const halves = [geometry.getAttribute(`_${name}0`), geometry.getAttribute(`_${name}1`)];
+    if (!halves[0] || !halves[1]) return;
+    const values = new Float32Array(halves[0].count * 4);
+    for (let v = 0; v < halves[0].count; v++) {
+        values[v * 4] = halves[0].getX(v);
+        values[v * 4 + 1] = halves[0].getY(v);
+        values[v * 4 + 2] = halves[1].getX(v);
+        values[v * 4 + 3] = halves[1].getY(v);
+    }
+    geometry.setAttribute(name, new THREE.BufferAttribute(values, 4));
+    geometry.deleteAttribute(`_${name}0`);
+    geometry.deleteAttribute(`_${name}1`);
+}
+
+/** A runtime file's mesh casting and taking shadows again as it did (Runtime.js keeps them in userData). */
+function restoreShadows(node) {
+    if (!node.isMesh || typeof node.userData?.cast !== "boolean") return;
+    node.castShadow = node.userData.cast;
+    node.receiveShadow = Boolean(node.userData.receive);
+}
+
+/** Whether a material is drawn by a shader of its own (the terrain's, the pool's water). */
+function ownShader(material) {
+    return material.onBeforeCompile !== THREE.Material.prototype.onBeforeCompile;
+}
+
+/**
+ * A baked material's shader of its own, taken from the live material it
+ * stands for (the terrain's paint): run before whatever the bake's light
+ * adds to it (decodeLightmap, lightByVertices). Kept here, not in userData,
+ * which a clone copies through JSON.
+ */
+const OWN_SHADER = new WeakMap();
+
+function drawnByOwnShader(material, live) {
+    const own = { compile: live.onBeforeCompile, key: live.customProgramCacheKey?.() ?? live.uuid };
+    OWN_SHADER.set(material, own);
+    material.onBeforeCompile = own.compile;
+    material.customProgramCacheKey = () => `own:${own.key}`;
 }
 
 const doubleSidedCache = new Map();
@@ -2484,12 +2759,15 @@ function decodeLightmap(material, encoding, chroma = null, layerEncoding = null,
     const doors = material.userData.doorUniforms ?? [];
     const lit = material.isMeshLambertMaterial;
     const lid = Boolean(material.userData.lid);
-    const key = `${LIGHTMAP_DECODE[encoding] ? encoding : ""}|${chroma ? "ycocg" : ""}|${switches.length}|${layerEncoding ?? ""}${lit ? "|lit" : ""}${lid ? "|lid" : ""}${shade ? "|shade" : ""}${doors.length ? `|${doors.length}doors` : ""}`;
+    const own = OWN_SHADER.get(material);
+    const key = `${LIGHTMAP_DECODE[encoding] ? encoding : ""}|${chroma ? "ycocg" : ""}|${switches.length}|${layerEncoding ?? ""}${lit ? "|lit" : ""}${lid ? "|lid" : ""}${shade ? "|shade" : ""}${doors.length ? `|${doors.length}doors` : ""}${own ? `|own:${own.key}` : ""}`;
     if ((material.userData.lightmapKey ?? "||0|") === key) return;
     material.userData.lightmapKey = key;
     const decode = LIGHTMAP_DECODE[encoding] ?? ((e) => e);
     const decodeLayer = LIGHTMAP_DECODE[layerEncoding] ?? ((e) => e);
-    material.onBeforeCompile = (shader) => {
+    material.onBeforeCompile = (shader, renderer) => {
+        // Its own shader first (the terrain's paint).
+        own?.compile(shader, renderer);
         // Lit live, its lightmap is all of its ambient light.
         if (lit) shader.fragmentShader = bakedAmbient(shader.fragmentShader, "", { lid });
         const plain = "lightMapTexel.rgb * lightMapIntensity";
@@ -2581,10 +2859,12 @@ function bakedAmbient(fragmentShader, extra = "", { lid = false } = {}) {
  * rather than multiplying its colour as vertex colours do.
  */
 function lightByVertices(material) {
-    material.onBeforeCompile = (shader) => {
+    const own = OWN_SHADER.get(material);
+    material.onBeforeCompile = (shader, renderer) => {
+        own?.compile(shader, renderer);
         shader.fragmentShader = bakedAmbient(shader.fragmentShader.replace("#include <color_fragment>", ""), "irradiance += vColor.rgb * PI;");
     };
-    material.customProgramCacheKey = () => "vertex-light";
+    material.customProgramCacheKey = () => `vertex-light${own ? `|own:${own.key}` : ""}`;
 }
 
 /**

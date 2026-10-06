@@ -6,6 +6,15 @@ import { gardenSettings } from "../../../shared/garden.js";
 import { applyReflections } from "../Utils/reflections.js";
 import { LOW_POWER, SHADOW_MAP_SIZE } from "../Utils/device.js";
 import { hillOutline, planHills } from "../../../shared/vegetation.js";
+import { planNeighbourhood } from "../../../shared/neighbourhood.js";
+import { SKY_VARIANTS } from "../../../shared/sky.js";
+
+/**
+ * The dark the neighbourhood's world fades into at its edge (applyDome), by
+ * day and by night, and over how many metres it fades.
+ */
+const EDGE = { day: "#0d1016", night: "#030407" };
+const FADE = 55;
 
 /**
  * Night, for a public view whose lighting has been baked: the house is lit
@@ -21,6 +30,9 @@ const NIGHT = {
     /** What metals and glass reflect is a lit studio; at night, far less of it. */
     reflections: 0.03,
 };
+
+/** The night sky's light on everything, lit live (setLiveVariant): faint, as it falls into the rooms too. */
+const LIVE_NIGHT_SKY = 0.12;
 
 /**
  * Ambient lighting, sky and fog, driven entirely by the scene spec's
@@ -98,6 +110,50 @@ export default class Environment {
         this.scene.add(this.sun.target);
 
         this.renderer.setExposure(preset.exposure ?? 1);
+        this.applyDome();
+    }
+
+    /**
+     * The neighbourhood's world (shared/neighbourhood.js), when there is one:
+     * everything fades into the dark over the last FADE metres of its radius,
+     * by how far it is from the world's middle along the ground — wherever it
+     * is seen from, the hill's top or the far end of the street (radialFog) —
+     * and the sky darkens down to the horizon to meet it: a dome the world
+     * sits in. Again whenever the garden's settings change.
+     */
+    applyDome() {
+        const plan = planNeighbourhood(this.spec);
+        if (!plan) {
+            if (this.sky) this.sky.visible = false;
+            // Switched off: the preset's own sky and haze again, not the dome's dark edge.
+            if (this.dome) {
+                const preset = this.variant === "night" ? NIGHT : this.preset;
+                const fog = this.preset.fog;
+                this.scene.background = new THREE.Color(preset.background);
+                this.scene.fog = fog ? new THREE.Fog(preset.fog?.color ?? fog.color, fog.near, fog.far) : null;
+            }
+            this.dome = null;
+            return;
+        }
+        radialFog(plan.centre);
+        this.dome = plan;
+        this.sky ??= skyDome();
+        if (!this.sky.parent) this.scene.add(this.sky);
+        this.sky.visible = true;
+        this.scene.fog = new THREE.Fog(EDGE.day, plan.radius - FADE, plan.radius);
+        this.colourDome(this.variant === "night" ? NIGHT : this.preset, this.variant === "night");
+    }
+
+    /** The dome's colours for a variant's sky: blue overhead, its haze at the horizon, dark below. */
+    colourDome(preset, night) {
+        if (!this.dome) return;
+        const edge = night ? EDGE.night : EDGE.day;
+        this.scene.fog?.color.set(edge);
+        this.scene.background = new THREE.Color(edge);
+        const { top, horizon, below } = this.sky.material.uniforms;
+        top.value.set(preset.background);
+        horizon.value.set(preset.fog?.color ?? preset.background).lerp(new THREE.Color(preset.background), night ? 0.6 : 0.25);
+        below.value.set(edge);
     }
 
     /**
@@ -197,7 +253,13 @@ export default class Environment {
         const shadows = !still && (live || this.shade || !LOW_POWER);
         this.sun.castShadow = shadows;
         this.renderer.renderer.shadowMap.enabled = shadows;
-        if (live) {
+        this.bakedBias();
+        if (live || this.shade) this.fitShadows();
+    }
+
+    /** The sun's shadow offsets for a baked view's shadow map, at its texels' size. */
+    bakedBias() {
+        if (this.live) {
             // Texels of a centimetre or so over the house: a small offset.
             this.sun.shadow.bias = -0.00015;
             this.sun.shadow.normalBias = 0.015;
@@ -206,7 +268,6 @@ export default class Environment {
             this.sun.shadow.bias = -0.0004;
             this.sun.shadow.normalBias = 0.04;
         }
-        if (live || this.shade) this.fitShadows();
     }
 
     /**
@@ -217,23 +278,47 @@ export default class Environment {
      */
     setVariant(variant, sun = null) {
         const preset = variant === "night" ? NIGHT : this.preset;
-        this.scene.background = new THREE.Color(preset.background);
-        if (this.scene.fog && this.preset.fog) this.scene.fog.color.set(preset.fog?.color ?? this.preset.fog.color);
-        this.hemisphere.color.set(preset.hemi.sky);
-        this.hemisphere.groundColor.set(preset.hemi.ground);
-        this.hemisphere.intensity = preset.hemi.intensity;
+        this.variant = variant;
+        // Under a site's own sky (World/Sky.js), the sky has set its
+        // picture, haze and light already, and the sun where it is — when
+        // it has this variant's: one that did not load leaves the preset's.
+        const world = this.experience.world;
+        const sky = world?.sky?.current && world.sky.variant === variant ? world.sky : null;
+        if (!sky) {
+            this.scene.background = new THREE.Color(preset.background);
+            if (this.scene.fog && this.preset.fog) this.scene.fog.color.set(preset.fog?.color ?? this.preset.fog.color);
+            this.colourDome(preset, variant === "night");
+            this.hemisphere.color.set(preset.hemi.sky);
+            this.hemisphere.groundColor.set(preset.hemi.ground);
+            this.hemisphere.intensity = preset.hemi.intensity;
+        }
         if ((this.live || this.shade) && sun) {
             this.sun.color.setRGB(...sun.color);
             this.sun.intensity = sun.strength * (this.sunScale ?? 1);
             // Far enough off that the whole house is in front of its shadow camera.
             this.sun.position.set(...sun.position).normalize().multiplyScalar(80);
+            this.sun.target.position.set(0, 0, 0);
+            this.sun.visible = sun.strength > 0;
+            // The sky's shadow settings (Sky.placeSun) are a live view's.
+            if (sky) {
+                this.bakedBias();
+                this.fitShadows();
+            }
             this.sun.shadow.needsUpdate = true;
+        } else if (sky) {
+            // The sky's sun, as unshadowed by the house as the preset's would be.
+            this.sun.intensity = (SKY_VARIANTS[variant] ?? SKY_VARIANTS.day).sun * (this.sunScale ?? 1);
         } else {
             this.sun.color.set(preset.sun.color);
             this.sun.intensity = preset.sun.intensity * (this.sunScale ?? 1);
             this.sun.position.set(...preset.sun.position);
         }
-        this.renderer.setExposure(this.baked ? this.bakedExposure : preset.exposure ?? 1);
+        // The bake's exposure; under a site's own sky, on top of the sky's
+        // own for the variant, as the live view is exposed.
+        const exposure = this.baked ? this.bakedExposure * (sky ? sky.exposure(variant) : 1) : preset.exposure ?? 1;
+        this.renderer.setExposure(exposure);
+        // The sky's light on what is drawn live is the sky's (Sky.applyIndoor).
+        if (sky) return;
 
         const reflections = preset.reflections ?? 1;
         this.scene.traverse((node) => {
@@ -249,7 +334,26 @@ export default class Environment {
         });
     }
 
+    /**
+     * Day or night lit live, for a space without a sky of its own
+     * (World.setLiveLighting): the preset's day, or the night — its dark
+     * sky and a little moonlight — with the rooms lit by their own lights
+     * (World/LampPool.js, World/RoomGlow.js). The night's sky light reaches
+     * into every room alike, walls or no walls, so it is kept faint.
+     */
+    setLiveVariant(variant) {
+        const night = variant === "night";
+        this.setVariant(variant);
+        this.ambient.intensity = night ? 0 : this.preset.ambient.intensity;
+        if (night) this.hemisphere.intensity = LIVE_NIGHT_SKY;
+    }
+
     dispose() {
+        if (this.sky) {
+            this.scene.remove(this.sky);
+            this.sky.geometry.dispose();
+            this.sky.material.dispose();
+        }
         this.scene.remove(this.ambient, this.hemisphere, this.sun, this.sun.target);
         this.ambient.dispose();
         this.hemisphere.dispose();
@@ -258,4 +362,85 @@ export default class Environment {
     }
 
     update() {}
+}
+
+/**
+ * Fog by how far a point is from the world's middle along the ground,
+ * rather than from the camera — three's own fog chunks, rewritten once,
+ * before anything is drawn, for every material that fogs: the world's
+ * position from the view's (the view matrix turns and moves it; its
+ * transpose turns it back), from the middle in x and z, handed on to each
+ * pixel, which measures its own distance — the ground is a few triangles
+ * a couple of hundred metres across, and a distance from each corner,
+ * blended, would fog it all.
+ */
+let fogCentre = null;
+function radialFog([x, z]) {
+    const key = `${x},${z}`;
+    if (fogCentre === key) return;
+    const chunks = THREE.ShaderChunk;
+    if (!fogCentre) {
+        chunks.fog_pars_vertex = chunks.fog_pars_vertex.replace("varying float vFogDepth;", "varying float vFogDepth;\n\tvarying vec2 vFogWorld;");
+        chunks.fog_pars_fragment = chunks.fog_pars_fragment.replace("varying float vFogDepth;", "varying float vFogDepth;\n\tvarying vec2 vFogWorld;");
+        chunks.fog_fragment = chunks.fog_fragment.replace("smoothstep( fogNear, fogFar, vFogDepth )", "smoothstep( fogNear, fogFar, length( vFogWorld ) )");
+        if (!chunks.fog_fragment.includes("vFogWorld")) console.warn("The world's edge not fogged by distance from its middle: three's fog chunk has changed");
+    }
+    fogCentre = key;
+    chunks.fog_vertex = /* glsl */ `
+#ifdef USE_FOG
+	vec3 fogWorld = transpose( mat3( viewMatrix ) ) * ( mvPosition.xyz - viewMatrix[ 3 ].xyz );
+	vFogWorld = fogWorld.xz - vec2( ${x.toFixed(3)}, ${z.toFixed(3)} );
+	vFogDepth = length( vFogWorld );
+#endif
+`;
+}
+
+/**
+ * The sky the world sits under: a sphere round the camera, drawn behind
+ * everything, blue overhead, its haze at the horizon and the dark below
+ * it — where the ground fades into the same dark (Environment.applyDome).
+ * Drawn as the flat background was: not tone mapped, not fogged.
+ */
+function skyDome() {
+    const material = new THREE.ShaderMaterial({
+        uniforms: {
+            top: { value: new THREE.Color() },
+            horizon: { value: new THREE.Color() },
+            below: { value: new THREE.Color() },
+        },
+        vertexShader: /* glsl */ `
+			varying vec3 vDirection;
+			void main() {
+				vDirection = position;
+				gl_Position = ( projectionMatrix * modelViewMatrix * vec4( position, 1.0 ) ).xyww;
+			}
+		`,
+        fragmentShader: /* glsl */ `
+			uniform vec3 top;
+			uniform vec3 horizon;
+			uniform vec3 below;
+			varying vec3 vDirection;
+			void main() {
+				float up = normalize( vDirection ).y;
+				vec3 sky = mix( horizon, top, smoothstep( 0.0, 0.55, up ) );
+				gl_FragColor = vec4( mix( below, sky, smoothstep( -0.04, 0.16, up ) ), 1.0 );
+				#include <colorspace_fragment>
+			}
+		`,
+        side: THREE.BackSide,
+        depthWrite: false,
+        fog: false,
+        toneMapped: false,
+    });
+    const sky = new THREE.Mesh(new THREE.SphereGeometry(400, 32, 16), material);
+    sky.name = "sky-dome";
+    sky.frustumCulled = false;
+    sky.renderOrder = -1;
+    sky.raycast = () => {};
+    // Round whichever camera draws it.
+    sky.onBeforeRender = (renderer, scene, camera) => {
+        sky.position.copy(camera.position);
+        sky.updateMatrixWorld();
+    };
+    return sky;
 }

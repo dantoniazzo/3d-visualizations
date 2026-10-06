@@ -1,6 +1,7 @@
 import { AXES, AXIS_CSS } from "./axes.js";
 import { blockedText } from "./Editor.js";
 import Collections from "./Collections.js";
+import { floorName } from "../World/Switches.js";
 
 /**
  * Edit mode's chrome, laid out the way Blender's default workspace is: a
@@ -30,6 +31,8 @@ const ICONS = {
     door: '<path d="M3 1h10v13h1.5v1.5h-13V14H3zm1.6 1.6V14h6.8V2.6zM9.5 8a.8.8 0 1 1 0 .01z"/>',
     window: '<path d="M2 2h12v12H2zm1.5 1.5v3.8h3.8V3.5zm5.2 0v3.8h3.8V3.5zM3.5 8.7v3.8h3.8V8.7zm5.2 0v3.8h3.8V8.7z"/>',
     car: '<path d="M3.2 5.2L4.6 2.5h6.8l1.4 2.7L14.5 6v5h-1.6v1.6h-2V11H5.1v1.6h-2V11H1.5V6zm2-1.1l-.8 1.6h7.2l-.8-1.6zM3.8 7.4a1 1 0 1 0 0 2 1 1 0 0 0 0-2zm8.4 0a1 1 0 1 0 0 2 1 1 0 0 0 0-2z"/>',
+    person: '<circle cx="8" cy="3" r="2"/><path d="M5.2 6h5.6a1 1 0 0 1 1 1.1l-.6 4.1H9.6V15H6.4v-3.8H4.8l-.6-4.1A1 1 0 0 1 5.2 6z"/>',
+    people: '<circle cx="5.4" cy="3.4" r="1.8"/><circle cx="11.2" cy="4.6" r="1.6"/><path d="M3 6.3h4.8a.9.9 0 0 1 .9 1l-.5 3.5H6.9V15H4V10.8H2.6l-.5-3.5a.9.9 0 0 1 .9-1zM9.6 8h3.3a.8.8 0 0 1 .8.9l-.4 2.8h-1V15H10v-3.3h-.8l-.2-1.6.4-2.1z"/>',
     lock: '<path d="M4.5 7V5a3.5 3.5 0 0 1 7 0v2H13v7.5H3V7zM6 7h4V5a2 2 0 0 0-4 0z"/>',
     chevron: '<path d="M5.2 3.5L9.7 8l-4.5 4.5-1.1-1.1L7.5 8 4.1 4.6z"/>',
     zoom: '<path d="M6.5 1a5.5 5.5 0 0 1 4.4 8.8l3.8 3.8-1.1 1.1-3.8-3.8A5.5 5.5 0 1 1 6.5 1zm0 1.6a3.9 3.9 0 1 0 0 7.8 3.9 3.9 0 0 0 0-7.8z"/>',
@@ -47,6 +50,9 @@ const ICONS = {
     outside: '<path d="M8 1l4 5h-2l3 4H9v5H7v-5H3l3-4H4z"/>',
     close: '<path d="M3.6 2.5L8 6.9l4.4-4.4 1.1 1.1L9.1 8l4.4 4.4-1.1 1.1L8 9.1l-4.4 4.4-1.1-1.1L6.9 8 2.5 3.6z"/>',
     publish: '<path d="M8 1l4.2 4.2-1.1 1.1-2.3-2.3V10H7.2V4L4.9 6.3 3.8 5.2zM2 9h1.6v4.4h8.8V9H14v6H2z"/>',
+    bulb: '<path d="M8 1a5 5 0 0 1 3 9v1.6H5V10a5 5 0 0 1 3-9zm0 1.6a3.4 3.4 0 0 0-2 6.2l.6.4V10h2.8v-.8l.6-.4A3.4 3.4 0 0 0 8 2.6zM5.5 12.6h5v1.2l-1 1.2h-3l-1-1.2z"/>',
+    sun: '<circle cx="8" cy="8" r="3"/><path d="M7.3 0h1.4v2.6H7.3zm0 13.4h1.4V16H7.3zM0 7.3h2.6v1.4H0zm13.4 0H16v1.4h-2.6zM2.1 3.1l1-1 1.8 1.8-1 1zm9 9l1-1 1.8 1.8-1 1zm-9 1.8l1.8-1.8 1 1-1.8 1.8zm9-9l1.8-1.8 1 1-1.8 1.8z"/>',
+    moon: '<path d="M10.5 1.2A6.6 6.6 0 1 0 14.8 11 5.4 5.4 0 0 1 10.5 1.2z"/>',
 };
 
 const icon = (name, size = 16) =>
@@ -132,6 +138,8 @@ export default class EditorUI {
                     </label>
                     <button class="ed-toggle" data-action="xray" title="X-ray: see through walls, ceilings and roof (Alt Z)">${icon("xray")}</button>
                     <button class="ed-toggle" data-action="garden" title="Garden: the grass, the trees, the hills, and how the view is coloured">${icon("garden")}</button>
+                    <button class="ed-toggle" data-action="lights" title="Lights: turn the light fittings on and off (L) — or Ctrl / ⌘-click a light or its switch in the view" aria-controls="ed-lights" aria-expanded="false" hidden>${icon("bulb")}</button>
+                    <button class="ed-toggle" data-action="daynight" title="Day or night" hidden>${icon("sun")}</button>
                     <button class="ed-btn ed-walk" data-action="walk-here" title="Stand where the view is pointing and start walking">${icon("walk")}<span>Walk from here</span></button>
                     <button class="ed-btn ed-walk" data-action="publish" title="Publish the public view: a link to send clients, drawn as cheaply as it can be">${icon("publish")}<span>Publish</span></button>
                     <span class="ed-save" data-save>Saved</span>
@@ -176,6 +184,14 @@ export default class EditorUI {
                     </div>
                 </div>
                 <div class="ed-toasts" data-toasts></div>
+                <section class="ed-lights" id="ed-lights" data-lights hidden>
+                    <header class="ed-lights-head">
+                        <span>Lights</span>
+                        <button data-lights-all="on">All on</button>
+                        <button data-lights-all="off">All off</button>
+                    </header>
+                    <div class="ed-lights-list" data-lights-list></div>
+                </section>
             </div>
             <div class="ed-popup" data-popup hidden></div>
         `;
@@ -200,6 +216,10 @@ export default class EditorUI {
             focus: $('[data-setting="focus"]'),
             xray: $('[data-action="xray"]'),
             garden: $('[data-action="garden"]'),
+            lights: $('[data-action="lights"]'),
+            dayNight: $('[data-action="daynight"]'),
+            lightsPanel: $("[data-lights]"),
+            lightsList: $("[data-lights-list]"),
             focusChip: $("[data-focus-chip]"),
             snap: $('[data-action="snap"]'),
             viewport: $(".ed-viewport"),
@@ -241,6 +261,8 @@ export default class EditorUI {
             const target = event.target.closest("button, [data-key], [data-collection]");
             if (!target || !root.contains(target)) return;
 
+            if (target.dataset.switch) return editor.world.switches?.toggle(target.dataset.switch);
+            if (target.dataset.lightsAll) return target.dataset.lightsAll === "on" ? editor.world.switches?.allOn?.() : editor.world.switches?.allOff();
             if (target.dataset.mode) return editor.setMode(target.dataset.mode);
             if (target.dataset.tool) return editor.setTool(target.dataset.tool);
             if (target.dataset.menu) return this.openMenu(target.dataset.menu, target);
@@ -262,6 +284,10 @@ export default class EditorUI {
                     return editor.setXray(!editor.xray);
                 case "garden":
                     return editor.toggleGarden();
+                case "lights":
+                    return this.toggleLightsPanel();
+                case "daynight":
+                    return editor.toggleDayNight();
                 case "walk-here":
                     return editor.walkFromHere();
                 case "publish":
@@ -468,6 +494,16 @@ export default class EditorUI {
         this.dom.snap.classList.toggle("is-on", editor.snapEnabled);
         this.dom.xray.classList.toggle("is-on", editor.xray);
         this.dom.garden.classList.toggle("is-on", Boolean(editor.gardenPanel));
+        // The lights, once the view has switches; day or night, once it has both.
+        const world = editor.world;
+        this.dom.lights.hidden = !world.switches?.list.length;
+        this.dom.lights.classList.toggle("is-on", !this.dom.lightsPanel.hidden);
+        this.dom.lights.setAttribute("aria-expanded", String(!this.dom.lightsPanel.hidden));
+        this.dom.dayNight.hidden = !world.lighting;
+        const night = world.lighting === "night";
+        this.dom.dayNight.innerHTML = icon(night ? "moon" : "sun");
+        this.dom.dayNight.title = night ? "Night — switch to day" : "Day — switch to night";
+        this.dom.dayNight.classList.toggle("is-on", night);
 
         // The chip says what is being worked on, and gets back out of it.
         const chip = this.dom.focusChip;
@@ -480,6 +516,49 @@ export default class EditorUI {
 
         this.dirtyHints = true;
         this.dirtyOutliner = true;
+    }
+
+    /** The lights panel, open or shut (L, or the header's bulb). */
+    toggleLightsPanel(force) {
+        const switches = this.editor.world.switches;
+        const show = switches?.list.length ? (force ?? this.dom.lightsPanel.hidden) : false;
+        this.dom.lightsPanel.hidden = !show;
+        if (show) this.renderLights(true);
+        // Not under the Garden panel, in a narrow window: that one shuts.
+        if (show && this.editor.gardenPanel && overlap(this.dom.lightsPanel, this.editor.gardenPanel.gui.domElement)) this.editor.toggleGarden();
+        this.syncSettings();
+    }
+
+    /**
+     * The switches, floor by floor (World/LiveSwitches.js), as they are —
+     * the list built again only when the fittings have changed (`rebuild`).
+     */
+    renderLights(rebuild = false) {
+        const switches = this.editor.world.switches;
+        const list = this.dom.lightsList;
+        if (!switches || this.dom.lightsPanel.hidden) return;
+        if (rebuild || !list.childElementCount) {
+            const floors = switches.floors;
+            list.innerHTML = floors
+                .map(
+                    ({ level, switches: items }) =>
+                        `${floors.length > 1 ? `<h5>${escape(switches.floorName?.(level) ?? floorName(level, switches.levels))}</h5>` : ""}` +
+                        items
+                            .map((item) => `<button class="ed-light" data-switch="${escape(item.id)}" aria-pressed="false"><span>${escape(item.label)}</span><i></i></button>`)
+                            .join("")
+                )
+                .join("");
+        }
+        let lit = 0;
+        for (const button of list.querySelectorAll("[data-switch]")) {
+            const on = switches.isOn(button.dataset.switch);
+            button.classList.toggle("is-on", on);
+            button.setAttribute("aria-pressed", String(on));
+            lit += on ? 1 : 0;
+        }
+        const all = this.dom.lightsPanel.querySelectorAll("[data-lights-all]");
+        all[0].disabled = lit === switches.list.length;
+        all[1].disabled = lit === 0;
     }
 
     renderFocusOptions() {
@@ -551,7 +630,9 @@ export default class EditorUI {
      * The outliner's tree: each floor, its rooms and the pieces in them,
      * then the site outside and the roof. Stairs and floor openings, and
      * doors and windows, get a group of their own on each floor — they
-     * belong to the floor more than to any one room.
+     * belong to the floor more than to any one room. The people have a
+     * collection of their own, after the site, a group for each room or
+     * terrace they are in.
      */
     outlinerTree() {
         const editor = this.editor;
@@ -576,11 +657,23 @@ export default class EditorUI {
             loose: { id: "outside:loose", kind: "group", title: "On the site", items: [] },
         };
 
+        const people = { id: "people", kind: "people", title: "People", groups: new Map() };
+
         const floorOf = (level) => floors[level] || floors[0];
         const roomIn = (holder, roomId) => holder.rooms.find((r) => r.id === `room:${roomId}`);
 
         for (const editable of editor.editables.values()) {
             const member = collections.membership(editable);
+            if (editable.type === "person") {
+                const room = member.rooms?.[0];
+                const id = `people:${room ?? (member.outside ? "site" : `level:${member.levels?.[0] ?? 0}`)}`;
+                if (!people.groups.has(id)) {
+                    const title = room ? collections.roomName(room) : member.outside ? "On the site" : `${floorOf(member.levels?.[0] ?? 0)?.title ?? "Indoors"}, not in a room`;
+                    people.groups.set(id, { id, kind: "group", title, items: [] });
+                }
+                people.groups.get(id).items.push(editable);
+                continue;
+            }
             if (member.outside) {
                 (roomIn(outside, member.rooms?.[0]) || outside.loose).items.push(editable);
                 continue;
@@ -602,6 +695,17 @@ export default class EditorUI {
         outside.children.forEach((c) => sort(c.items));
 
         const tree = [...floors, outside];
+        if (people.groups.size) {
+            // Two rooms of one name (two buildings of one design): told apart by their ids.
+            const titles = new Map();
+            for (const group of people.groups.values()) titles.set(group.title, (titles.get(group.title) ?? 0) + 1);
+            for (const group of people.groups.values()) {
+                if (titles.get(group.title) > 1) group.title = `${group.title} · ${group.id.replace(/^people:(room:)?/, "")}`;
+            }
+            people.children = [...people.groups.values()].sort((a, b) => a.title.localeCompare(b.title));
+            people.children.forEach((c) => sort(c.items));
+            tree.push(people);
+        }
         if (editor.builder.roofGroups?.length || editor.builder.model?.children.some((n) => /^roof/i.test(n.name))) {
             tree.push({ id: "roof", kind: "roof", title: "Roof", children: [] });
         }
@@ -611,8 +715,8 @@ export default class EditorUI {
     /** Open unless closed by hand; rooms and groups start closed on big scenes. */
     isOpen(node, depth) {
         if (this.openState.has(node.id)) return this.openState.get(node.id);
-        if (depth === 0) return true;
-        if (node.kind === "group") return node.id.endsWith(":stairs");
+        if (depth === 0) return node.kind !== "people" || this.editor.world.people?.count < 40;
+        if (node.kind === "group") return node.id.endsWith(":stairs") || (node.id.startsWith("people:") && this.editor.world.people?.count < 40);
         const focus = this.editor.focus;
         if (focus?.type === "room") return node.id === `room:${focus.room}`;
         return this.editor.editables.size < 60;
@@ -650,7 +754,7 @@ export default class EditorUI {
         const collectionRow = (node, depth, open) => {
             const hidden = editor.isHidden(node.id);
             const focused = focusKey === node.id;
-            const kindIcon = { floor: "floor", room: node.outdoor ? "outside" : "room", outside: "outside", roof: "roof", group: node.id.endsWith(":openings") ? "door" : node.id.endsWith(":stairs") ? "stairs" : "furniture" }[node.kind];
+            const kindIcon = { floor: "floor", room: node.outdoor ? "outside" : "room", outside: "outside", roof: "roof", people: "people", group: node.id.endsWith(":openings") ? "door" : node.id.endsWith(":stairs") ? "stairs" : node.id.startsWith("people:") ? "person" : "furniture" }[node.kind];
             const hasChildren = (node.children?.length || node.items?.length) > 0;
             const eye = node.kind === "group" ? "" : `<button class="ed-eye${hidden ? " is-off" : ""}" data-eye="${escape(node.id)}" title="${hidden ? "Show" : "Hide"} ${escape(node.title)}">${icon(hidden ? "eyeOff" : "eye", 14)}</button>`;
             const title = node.focusable ? `Work on ${node.title} alone — click again to show everything` : "";
@@ -724,7 +828,7 @@ export default class EditorUI {
                 : member.outside
                   ? { type: "outside" }
                   : { type: "level", level: member.levels?.[0] ?? 0 };
-            for (const id of [`room:${room}`, `level:${member.levels?.[0]}`, "outside"]) editor.hiddenCollections.delete(id);
+            for (const id of [`room:${room}`, `level:${member.levels?.[0]}`, "outside", ...(member.kind === "person" ? ["people"] : [])]) editor.hiddenCollections.delete(id);
             editor.setFocus(editor.focus ? focus : null, { frame: Boolean(editor.focus) });
         }
         editor.select(editable);
@@ -860,6 +964,8 @@ export default class EditorUI {
     onSession(session) {
         this.editor.field?.hud.invalidate();
         this.dom.modal.hidden = false;
+        // The readout where the lights panel is: the panel out of its way until the session ends.
+        this.root.classList.add("is-session");
         this.onSessionUpdate(session);
         this.dirtyHints = true;
     }
@@ -884,6 +990,7 @@ export default class EditorUI {
     onSessionEnd() {
         this.editor.field?.hud.invalidate();
         this.dom.modal.hidden = true;
+        this.root.classList.remove("is-session");
         this.dirtyProperties = true;
         this.dirtyOutliner = true;
         this.dirtyHints = true;
@@ -1050,6 +1157,8 @@ export default class EditorUI {
                 { label: "Delete", hint: "X", action: () => editor.deleteSelection(), disabled: !sel?.caps.remove },
                 { label: "Drop to surface", action: () => editor.dropSelection(), disabled: !sel?.caps.gravity },
                 { separator: true },
+                { label: "Re-roll people", action: () => editor.rerollPeople(), disabled: !editor.world.people },
+                { separator: true },
                 { label: "Undo", hint: "⌘ Z", action: () => editor.undo(), disabled: !editor.history.undo.length },
                 { label: "Redo", hint: "⇧ ⌘ Z", action: () => editor.redo(), disabled: !editor.history.redo.length },
             ],
@@ -1104,6 +1213,16 @@ export default class EditorUI {
         const structure = [{ kind: "stair", label: "Staircase", icon: "stairs" }];
         if (!editor.builder.isModelScene) structure.push({ kind: "hole", label: "Floor opening", icon: "hole" });
         sections.push({ title: "Structure", items: structure });
+        if (editor.world.people) {
+            sections.push({
+                title: "People",
+                items: [
+                    { kind: "person", id: "stand", label: "Person standing", icon: "person" },
+                    { kind: "person", id: "sit", label: "Person sitting — on the nearest free seat", icon: "person" },
+                    { kind: "person", id: "lie", label: "Person lying — on the nearest free lounger", icon: "person" },
+                ],
+            });
+        }
 
         const library = editor.builder.furnitureLibrary;
         for (const [category, items] of library.itemsByCategory()) {
@@ -1192,4 +1311,11 @@ function evaluate(raw) {
     } catch {
         return null;
     }
+}
+
+/** Whether two elements on the page overlap. */
+export function overlap(a, b) {
+    const r = a.getBoundingClientRect();
+    const q = b.getBoundingClientRect();
+    return r.right > q.left && r.left < q.right && r.bottom > q.top && r.top < q.bottom;
 }

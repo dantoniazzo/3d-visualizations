@@ -32,6 +32,10 @@
         {
             "id": "decor",
             "label": "Decor & plants"
+        },
+        {
+            "id": "outdoor",
+            "label": "Garden & terrace"
         }
     ],
     "items": [
@@ -164,6 +168,22 @@
             "enabled": true
         },
         {
+            "id": "vanity-small",
+            "name": "Hand-basin vanity",
+            "category": "bathroom",
+            "url": "/models/furniture/vanity-small.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.62,
+                1.68,
+                0.43
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
             "id": "wc",
             "name": "WC",
             "category": "bathroom",
@@ -208,6 +228,150 @@
                 0.9
             ],
             "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "shower-m",
+            "name": "Shower enclosure, mirrored",
+            "category": "bathroom",
+            "url": "/models/furniture/shower-m.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.98,
+                2.11,
+                0.9
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-shower-walkin",
+            "name": "Walk-in shower, 2.2 m, black-framed screen at its +X end (left as you face it)",
+            "category": "bathroom",
+            "url": "/models/furniture/ld-shower-walkin.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.18,
+                2.1,
+                1.1
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-shower-walkin-r",
+            "name": "Walk-in shower, 2.2 m, black-framed screen at its -X end (right as you face it)",
+            "category": "bathroom",
+            "url": "/models/furniture/ld-shower-walkin-r.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.18,
+                2.1,
+                1.1
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-shower-walkin-w",
+            "name": "Walk-in shower, 2.2 m, screen at +X, pre-wall open for a window (u 0.26-1.06)",
+            "category": "bathroom",
+            "url": "/models/furniture/ld-shower-walkin-w.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.18,
+                2.74,
+                1.1
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-shower-walkin-r-w",
+            "name": "Walk-in shower, 2.2 m, screen at -X, pre-wall open for a window (u -0.94--0.14)",
+            "category": "bathroom",
+            "url": "/models/furniture/ld-shower-walkin-r-w.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.18,
+                2.74,
+                1.1
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-shower-walkin-c2",
+            "name": "Walk-in shower, 1.54 m, glass at its -X end (right as you face it)",
+            "category": "bathroom",
+            "url": "/models/furniture/ld-shower-walkin-c2.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.54,
+                2.1,
+                0.8
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-shower-walkin-c2-r",
+            "name": "Walk-in shower, 1.54 m, glass at its +X end (left as you face it)",
+            "category": "bathroom",
+            "url": "/models/furniture/ld-shower-walkin-c2-r.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.54,
+                2.1,
+                0.8
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-shower-walkin-c1",
+            "name": "Walk-in shower, 1.6 m, glass at its -X end (right as you face it)",
+            "category": "bathroom",
+            "url": "/models/furniture/ld-shower-walkin-c1.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.6,
+                2.1,
+                0.7
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-vanity-double-145",
+            "name": "Floating oak double vanity, 1.45 m, mirror over (hang at y 0.40)",
+            "category": "bathroom",
+            "url": "/models/furniture/ld-vanity-double-145.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.45,
+                1.5,
+                0.45
+            ],
+            "anchor": "wall",
             "credit": "Built procedurally by blender/export_furniture.py",
             "enabled": true
         },
@@ -720,6 +884,2802 @@
                 0.05
             ],
             "anchor": "wall",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-sofa",
+            "name": "Slip-covered linen sofa, 3-seat",
+            "category": "seating",
+            "url": "/models/furniture/ld-sofa.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.33,
+                0.92,
+                1.03
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-sofa-2",
+            "name": "Slip-covered linen sofa, 2-seat",
+            "category": "seating",
+            "url": "/models/furniture/ld-sofa-2.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.83,
+                0.92,
+                1.02
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-sofa-chaise-r",
+            "name": "Slip-covered linen corner sofa, chaise right",
+            "category": "seating",
+            "url": "/models/furniture/ld-sofa-chaise-r.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.53,
+                0.92,
+                1.67
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true,
+            "collision": "mesh"
+        },
+        {
+            "id": "ld-sofa-chaise-l",
+            "name": "Slip-covered linen corner sofa, chaise left",
+            "category": "seating",
+            "url": "/models/furniture/ld-sofa-chaise-l.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.53,
+                0.92,
+                1.67
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true,
+            "collision": "mesh"
+        },
+        {
+            "id": "ld-sofa-boucle",
+            "name": "Ivory boucle sofa, 2.6 m",
+            "category": "seating",
+            "url": "/models/furniture/ld-sofa-boucle.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.61,
+                0.94,
+                1.13
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-sofa-boucle-chaise-r",
+            "name": "Ivory boucle corner sofa, chaise right",
+            "category": "seating",
+            "url": "/models/furniture/ld-sofa-boucle-chaise-r.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.61,
+                0.94,
+                1.71
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true,
+            "collision": "mesh"
+        },
+        {
+            "id": "ld-sofa-boucle-chaise-l",
+            "name": "Ivory boucle corner sofa, chaise left",
+            "category": "seating",
+            "url": "/models/furniture/ld-sofa-boucle-chaise-l.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.61,
+                0.94,
+                1.71
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true,
+            "collision": "mesh"
+        },
+        {
+            "id": "ld-sofa-c25-chaise-l",
+            "name": "Slip-covered linen sofa, 2.5 m, narrow chaise left",
+            "category": "seating",
+            "url": "/models/furniture/ld-sofa-c25-chaise-l.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.5,
+                0.92,
+                1.52
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true,
+            "collision": "mesh"
+        },
+        {
+            "id": "ld-sofa-c25-chaise-r",
+            "name": "Slip-covered linen sofa, 2.5 m, narrow chaise right",
+            "category": "seating",
+            "url": "/models/furniture/ld-sofa-c25-chaise-r.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.5,
+                0.92,
+                1.52
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true,
+            "collision": "mesh"
+        },
+        {
+            "id": "ld-sofa-c21-chaise-l",
+            "name": "Slip-covered linen sofa, 2.15 m, narrow chaise left",
+            "category": "seating",
+            "url": "/models/furniture/ld-sofa-c21-chaise-l.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.18,
+                0.92,
+                1.52
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true,
+            "collision": "mesh"
+        },
+        {
+            "id": "ld-sofa-c21-chaise-r",
+            "name": "Slip-covered linen sofa, 2.15 m, narrow chaise right",
+            "category": "seating",
+            "url": "/models/furniture/ld-sofa-c21-chaise-r.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.18,
+                0.92,
+                1.52
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true,
+            "collision": "mesh"
+        },
+        {
+            "id": "ld-sofa-corner-l",
+            "name": "Slip-covered linen corner sofa, backs on two walls, 2.36 x 2.30 m",
+            "category": "seating",
+            "url": "/models/furniture/ld-sofa-corner-l.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.36,
+                0.93,
+                2.31
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true,
+            "collision": "mesh"
+        },
+        {
+            "id": "ld-sofa-boucle-corner-l",
+            "name": "Ivory boucle corner sofa, backs on two walls, 2.36 x 2.30 m",
+            "category": "seating",
+            "url": "/models/furniture/ld-sofa-boucle-corner-l.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.36,
+                0.93,
+                2.3
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true,
+            "collision": "mesh"
+        },
+        {
+            "id": "ld-sofa-corner-s-l",
+            "name": "Slip-covered linen corner sofa, backs on two walls, 2.27 x 2.26 m",
+            "category": "seating",
+            "url": "/models/furniture/ld-sofa-corner-s-l.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.27,
+                0.93,
+                2.26
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true,
+            "collision": "mesh"
+        },
+        {
+            "id": "ld-sofa-boucle-corner-s-l",
+            "name": "Ivory boucle corner sofa, backs on two walls, 2.27 x 2.26 m",
+            "category": "seating",
+            "url": "/models/furniture/ld-sofa-boucle-corner-s-l.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.27,
+                0.93,
+                2.26
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true,
+            "collision": "mesh"
+        },
+        {
+            "id": "ld-coffee-slat",
+            "name": "Slatted oak coffee table",
+            "category": "tables",
+            "url": "/models/furniture/ld-coffee-slat.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.1,
+                0.4,
+                0.55
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-stump",
+            "name": "Teak drum side table, armillary sphere",
+            "category": "tables",
+            "url": "/models/furniture/ld-stump.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.66,
+                0.61,
+                0.65
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-pouf",
+            "name": "Square soft pouf, ecru linen",
+            "category": "seating",
+            "url": "/models/furniture/ld-pouf.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.38,
+                0.42,
+                0.38
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-coffee-round-60",
+            "name": "Round microcement drum coffee table, 0.6 m",
+            "category": "tables",
+            "url": "/models/furniture/ld-coffee-round-60.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.6,
+                0.4,
+                0.6
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-rug-round",
+            "name": "Round rug, rust, 2.0 m",
+            "category": "decor",
+            "url": "/models/furniture/ld-rug-round.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.0,
+                0.01,
+                2.0
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-rug-sage",
+            "name": "Rug, sage, rounded, 2.0 x 1.4 m",
+            "category": "decor",
+            "url": "/models/furniture/ld-rug-sage.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.0,
+                0.01,
+                1.4
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-art-dracaena",
+            "name": "Framed print, dracaena on yellow",
+            "category": "decor",
+            "url": "/models/furniture/ld-art-dracaena.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.45,
+                0.9,
+                0.05
+            ],
+            "anchor": "wall",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-table-decor",
+            "name": "Dining table candles",
+            "category": "decor",
+            "url": "/models/furniture/ld-table-decor.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.36,
+                0.42,
+                0.17
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-sideboard-decor",
+            "name": "Lantern and plaster bust on books",
+            "category": "decor",
+            "url": "/models/furniture/ld-sideboard-decor.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.92,
+                0.41,
+                0.21
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-alocasia",
+            "name": "Alocasia, 1.3 m, in a pot",
+            "category": "decor",
+            "url": "/models/furniture/ld-alocasia.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.88,
+                1.35,
+                0.83
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-ficus",
+            "name": "Ficus in a terracotta pot",
+            "category": "decor",
+            "url": "/models/furniture/ld-ficus.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.63,
+                1.37,
+                0.63
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-coffee-maker",
+            "name": "Pour-over coffee maker",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-coffee-maker.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.18,
+                0.37,
+                0.2
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-media-ochre",
+            "name": "TV wall, oak niche and cream",
+            "category": "storage",
+            "url": "/models/furniture/ld-media-ochre.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.32,
+                2.74,
+                0.5
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-media-oak",
+            "name": "TV wall, rift oak block, 2.0 m",
+            "category": "storage",
+            "url": "/models/furniture/ld-media-oak.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.0,
+                2.72,
+                0.42
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-tv-volume",
+            "name": "TV wall, rift oak block to the ceiling, 2.6 m",
+            "category": "storage",
+            "url": "/models/furniture/ld-tv-volume.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.6,
+                2.72,
+                0.42
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-tv-volume-30",
+            "name": "TV wall, rift oak block to the ceiling, 3.0 m, TV off centre",
+            "category": "storage",
+            "url": "/models/furniture/ld-tv-volume-30.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                3.0,
+                2.72,
+                0.62
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-tv-wall",
+            "name": "Wall-hung 55-inch television",
+            "category": "decor",
+            "url": "/models/furniture/ld-tv-wall.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.23,
+                0.72,
+                0.05
+            ],
+            "anchor": "wall",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-dining-oak",
+            "name": "Pale oak dining table, 6-seat",
+            "category": "tables",
+            "url": "/models/furniture/ld-dining-oak.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.0,
+                0.75,
+                0.95
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-dining-oak-4",
+            "name": "Pale oak dining table, 4-seat",
+            "category": "tables",
+            "url": "/models/furniture/ld-dining-oak-4.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.5,
+                0.75,
+                0.85
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-table-round",
+            "name": "Round microcement table",
+            "category": "tables",
+            "url": "/models/furniture/ld-table-round.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.05,
+                0.75,
+                1.05
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-table-round-90",
+            "name": "Round microcement table, 0.9 m",
+            "category": "tables",
+            "url": "/models/furniture/ld-table-round-90.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.9,
+                0.75,
+                0.9
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-dining-oak-4s",
+            "name": "Pale oak dining table, 4-seat, 1.4 m",
+            "category": "tables",
+            "url": "/models/furniture/ld-dining-oak-4s.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.4,
+                0.75,
+                0.75
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-vase-zigzag",
+            "name": "Bottle vase, zig-zag bands",
+            "category": "decor",
+            "url": "/models/furniture/ld-vase-zigzag.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.16,
+                0.25,
+                0.16
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-chair-shell",
+            "name": "Upholstered dining chair",
+            "category": "seating",
+            "url": "/models/furniture/ld-chair-shell.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.47,
+                0.83,
+                0.53
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-chair-oak",
+            "name": "Oak dining chair",
+            "category": "seating",
+            "url": "/models/furniture/ld-chair-oak.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.54,
+                0.78,
+                0.54
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-pendant-felt",
+            "name": "Olive felt dome pendant",
+            "category": "lighting",
+            "url": "/models/furniture/ld-pendant-felt.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.85,
+                1.25,
+                0.85
+            ],
+            "anchor": "ceiling",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-pendant-pleat",
+            "name": "Pleated fabric pendant",
+            "category": "lighting",
+            "url": "/models/furniture/ld-pendant-pleat.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.55,
+                1.23,
+                0.51
+            ],
+            "anchor": "ceiling",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-pendant-woven",
+            "name": "Black cone pendant, woven band",
+            "category": "lighting",
+            "url": "/models/furniture/ld-pendant-woven.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.71,
+                0.95,
+                0.71
+            ],
+            "anchor": "ceiling",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-track-20",
+            "name": "Ceiling track, 2 m, 3 spots",
+            "category": "lighting",
+            "url": "/models/furniture/ld-track-20.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.0,
+                0.19,
+                0.15
+            ],
+            "anchor": "ceiling",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-track-30",
+            "name": "Ceiling track, 3 m, 4 spots",
+            "category": "lighting",
+            "url": "/models/furniture/ld-track-30.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                3.0,
+                0.19,
+                0.15
+            ],
+            "anchor": "ceiling",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-track-40",
+            "name": "Ceiling track, 4 m, 5 spots",
+            "category": "lighting",
+            "url": "/models/furniture/ld-track-40.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                4.0,
+                0.19,
+                0.15
+            ],
+            "anchor": "ceiling",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-track-50",
+            "name": "Ceiling track, 5 m, 6 spots",
+            "category": "lighting",
+            "url": "/models/furniture/ld-track-50.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                5.0,
+                0.19,
+                0.15
+            ],
+            "anchor": "ceiling",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-track-40-led",
+            "name": "Ceiling track, 4 m, 2 LED modules, 3 spots",
+            "category": "lighting",
+            "url": "/models/furniture/ld-track-40-led.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                4.0,
+                0.19,
+                0.15
+            ],
+            "anchor": "ceiling",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-wall-light",
+            "name": "Wall light, oak-capped tube",
+            "category": "lighting",
+            "url": "/models/furniture/ld-wall-light.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.8,
+                0.03,
+                0.04
+            ],
+            "anchor": "wall",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-shelf-cubes",
+            "name": "Oak wall boxes",
+            "category": "storage",
+            "url": "/models/furniture/ld-shelf-cubes.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.75,
+                0.78,
+                0.22
+            ],
+            "anchor": "wall",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-sideboard",
+            "name": "Low handleless oak sideboard, 2.4 m",
+            "category": "storage",
+            "url": "/models/furniture/ld-sideboard.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.4,
+                0.75,
+                0.45
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-sideboard-30",
+            "name": "Handleless oak sideboard, 3.0 m",
+            "category": "storage",
+            "url": "/models/furniture/ld-sideboard-30.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                3.0,
+                0.8,
+                0.45
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-sideboard-18",
+            "name": "Low handleless oak sideboard, 1.8 m",
+            "category": "storage",
+            "url": "/models/furniture/ld-sideboard-18.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.8,
+                0.75,
+                0.45
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-cabinet",
+            "name": "Low oak cabinet with lamp and sculptures",
+            "category": "storage",
+            "url": "/models/furniture/ld-cabinet.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.8,
+                1.1,
+                0.45
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-table-lamp",
+            "name": "Table lamp",
+            "category": "lighting",
+            "url": "/models/furniture/ld-table-lamp.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.3,
+                0.5,
+                0.3
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-curtain",
+            "name": "Sheer linen curtain, 1.6 m",
+            "category": "decor",
+            "url": "/models/furniture/ld-curtain.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.64,
+                2.73,
+                0.13
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-curtain-wide",
+            "name": "Sheer linen curtain, 2.6 m",
+            "category": "decor",
+            "url": "/models/furniture/ld-curtain-wide.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.64,
+                2.73,
+                0.13
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-sheer-05",
+            "name": "Sheer linen curtain, drawn open (0.5 m stack)",
+            "category": "decor",
+            "url": "/models/furniture/ld-sheer-05.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.54,
+                2.73,
+                0.15
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-sheer-12",
+            "name": "Sheer linen curtain, 1.2 m",
+            "category": "decor",
+            "url": "/models/furniture/ld-sheer-12.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.24,
+                2.73,
+                0.13
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-sheer-18",
+            "name": "Sheer linen curtain, 1.8 m",
+            "category": "decor",
+            "url": "/models/furniture/ld-sheer-18.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.84,
+                2.73,
+                0.13
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-sheer-24",
+            "name": "Sheer linen curtain, 2.4 m",
+            "category": "decor",
+            "url": "/models/furniture/ld-sheer-24.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.44,
+                2.73,
+                0.13
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-sheer-30",
+            "name": "Sheer linen curtain, 3.0 m",
+            "category": "decor",
+            "url": "/models/furniture/ld-sheer-30.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                3.04,
+                2.73,
+                0.13
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-sheer-36",
+            "name": "Sheer linen curtain, 3.6 m",
+            "category": "decor",
+            "url": "/models/furniture/ld-sheer-36.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                3.64,
+                2.73,
+                0.13
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-sheer-45",
+            "name": "Sheer linen curtain, 4.5 m",
+            "category": "decor",
+            "url": "/models/furniture/ld-sheer-45.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                4.54,
+                2.73,
+                0.13
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-curtain-ochre",
+            "name": "Caramel linen curtain, 1.2 m",
+            "category": "decor",
+            "url": "/models/furniture/ld-curtain-ochre.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.24,
+                2.73,
+                0.1
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-curtain-caramel-06",
+            "name": "Caramel linen curtain, drawn open (0.6 m stack)",
+            "category": "decor",
+            "url": "/models/furniture/ld-curtain-caramel-06.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.64,
+                2.73,
+                0.13
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-curtain-caramel-18",
+            "name": "Caramel linen curtain, 1.8 m",
+            "category": "decor",
+            "url": "/models/furniture/ld-curtain-caramel-18.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.84,
+                2.73,
+                0.1
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-curtain-caramel-24",
+            "name": "Caramel linen curtain, 2.4 m",
+            "category": "decor",
+            "url": "/models/furniture/ld-curtain-caramel-24.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.44,
+                2.73,
+                0.1
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-bed",
+            "name": "Double bed 1.8 x 2.0, olive runner (headboard is ld-headboard-210)",
+            "category": "bedroom",
+            "url": "/models/furniture/ld-bed.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.96,
+                0.96,
+                2.09
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-bed-sage",
+            "name": "Double bed 1.8 x 2.0, sage rooms (headboard is ld-headboard-210-sage)",
+            "category": "bedroom",
+            "url": "/models/furniture/ld-bed-sage.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.96,
+                0.96,
+                2.09
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-bed-single",
+            "name": "Single bed 0.9 x 2.0 (headboard is ld-headboard-110)",
+            "category": "bedroom",
+            "url": "/models/furniture/ld-bed-single.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.06,
+                0.96,
+                2.09
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-nightstand",
+            "name": "Floating walnut drawer, 1.0 m (hang at y 0.28)",
+            "category": "bedroom",
+            "url": "/models/furniture/ld-nightstand.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.0,
+                0.15,
+                0.42
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-nightstand-60",
+            "name": "Floating walnut drawer, 0.6 m (hang at y 0.28)",
+            "category": "bedroom",
+            "url": "/models/furniture/ld-nightstand-60.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.6,
+                0.15,
+                0.42
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-rug-taupe",
+            "name": "Rug, taupe loop pile, rounded, 1.7 x 2.4 m",
+            "category": "decor",
+            "url": "/models/furniture/ld-rug-taupe.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.7,
+                0.01,
+                2.4
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-wardrobe-12",
+            "name": "Linen wardrobe, 1.2 m",
+            "category": "bedroom",
+            "url": "/models/furniture/ld-wardrobe-12.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.2,
+                2.74,
+                0.62
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-wardrobe-15",
+            "name": "Linen wardrobe, 1.5 m",
+            "category": "bedroom",
+            "url": "/models/furniture/ld-wardrobe-15.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.5,
+                2.74,
+                0.62
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-wardrobe-18",
+            "name": "Linen wardrobe, 1.8 m",
+            "category": "bedroom",
+            "url": "/models/furniture/ld-wardrobe-18.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.8,
+                2.74,
+                0.62
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-wardrobe-21",
+            "name": "Linen wardrobe, 2.1 m",
+            "category": "bedroom",
+            "url": "/models/furniture/ld-wardrobe-21.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.1,
+                2.74,
+                0.62
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-wardrobe-24",
+            "name": "Linen wardrobe, 2.4 m",
+            "category": "bedroom",
+            "url": "/models/furniture/ld-wardrobe-24.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.4,
+                2.74,
+                0.62
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-wardrobe-06s",
+            "name": "Linen wardrobe, 0.6 m, one door, 0.50 deep",
+            "category": "bedroom",
+            "url": "/models/furniture/ld-wardrobe-06s.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.6,
+                2.74,
+                0.54
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-wardrobe-08",
+            "name": "Linen wardrobe, 0.8 m, 0.55 deep",
+            "category": "bedroom",
+            "url": "/models/furniture/ld-wardrobe-08.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.8,
+                2.74,
+                0.59
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-wardrobe-10",
+            "name": "Linen wardrobe, 1.0 m",
+            "category": "bedroom",
+            "url": "/models/furniture/ld-wardrobe-10.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.0,
+                2.74,
+                0.62
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-wardrobe-12s",
+            "name": "Linen wardrobe, 1.2 m, 0.45 deep",
+            "category": "bedroom",
+            "url": "/models/furniture/ld-wardrobe-12s.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.2,
+                2.74,
+                0.49
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-wardrobe-13s",
+            "name": "Linen wardrobe, 1.3 m, 0.50 deep",
+            "category": "bedroom",
+            "url": "/models/furniture/ld-wardrobe-13s.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.3,
+                2.74,
+                0.54
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-wardrobe-27",
+            "name": "Linen wardrobe, 2.7 m, 0.56 deep",
+            "category": "bedroom",
+            "url": "/models/furniture/ld-wardrobe-27.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.7,
+                2.74,
+                0.6
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-wardrobe-30",
+            "name": "Linen wardrobe, 3.0 m",
+            "category": "bedroom",
+            "url": "/models/furniture/ld-wardrobe-30.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                3.0,
+                2.74,
+                0.62
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-wardrobe-30s",
+            "name": "Linen wardrobe, 3.0 m, 0.45 deep",
+            "category": "bedroom",
+            "url": "/models/furniture/ld-wardrobe-30s.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                3.0,
+                2.74,
+                0.49
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-bed-sage-160",
+            "name": "Double bed 1.6 x 2.0, sage rooms (headboard is ld-headboard-180-sage)",
+            "category": "bedroom",
+            "url": "/models/furniture/ld-bed-sage-160.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.76,
+                0.93,
+                2.09
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-bed-sage-140",
+            "name": "Double bed 1.4 x 1.9, building C (headboard is ld-headboard-160-sage)",
+            "category": "bedroom",
+            "url": "/models/furniture/ld-bed-sage-140.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.56,
+                0.9,
+                1.99
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-bed-single-80",
+            "name": "Single bed 0.8 x 1.9, C's twin rooms (headboard is ld-headboard-90-sage)",
+            "category": "bedroom",
+            "url": "/models/furniture/ld-bed-single-80.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.96,
+                0.93,
+                1.99
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-headboard-210",
+            "name": "Felt headboard, two panels, 2.1 m (hang at y 0.55)",
+            "category": "bedroom",
+            "url": "/models/furniture/ld-headboard-210.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.1,
+                0.5,
+                0.04
+            ],
+            "anchor": "wall",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-headboard-210-sage",
+            "name": "Felt headboard, sage, two panels, 2.1 m (hang at y 0.55)",
+            "category": "bedroom",
+            "url": "/models/furniture/ld-headboard-210-sage.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.1,
+                0.5,
+                0.04
+            ],
+            "anchor": "wall",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-headboard-180-sage",
+            "name": "Felt headboard, sage, two panels, 1.8 m (hang at y 0.55)",
+            "category": "bedroom",
+            "url": "/models/furniture/ld-headboard-180-sage.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.8,
+                0.5,
+                0.04
+            ],
+            "anchor": "wall",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-headboard-160-sage",
+            "name": "Felt headboard, sage, two panels, 1.6 m (hang at y 0.55)",
+            "category": "bedroom",
+            "url": "/models/furniture/ld-headboard-160-sage.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.6,
+                0.5,
+                0.04
+            ],
+            "anchor": "wall",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-headboard-110",
+            "name": "Felt headboard, one panel, 1.1 m (hang at y 0.55)",
+            "category": "bedroom",
+            "url": "/models/furniture/ld-headboard-110.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.1,
+                0.5,
+                0.04
+            ],
+            "anchor": "wall",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-headboard-110-sage",
+            "name": "Felt headboard, sage, one panel, 1.1 m (hang at y 0.55)",
+            "category": "bedroom",
+            "url": "/models/furniture/ld-headboard-110-sage.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.1,
+                0.5,
+                0.04
+            ],
+            "anchor": "wall",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-headboard-90-sage",
+            "name": "Felt headboard, sage, one panel, 0.9 m (hang at y 0.55)",
+            "category": "bedroom",
+            "url": "/models/furniture/ld-headboard-90-sage.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.9,
+                0.5,
+                0.04
+            ],
+            "anchor": "wall",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-nightstand-45",
+            "name": "Floating walnut drawer, 0.45 m (hang at y 0.28)",
+            "category": "bedroom",
+            "url": "/models/furniture/ld-nightstand-45.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.45,
+                0.15,
+                0.42
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-nightstand-40",
+            "name": "Floating walnut drawer, 0.4 m (hang at y 0.28)",
+            "category": "bedroom",
+            "url": "/models/furniture/ld-nightstand-40.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.4,
+                0.15,
+                0.42
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-rug-taupe-26",
+            "name": "Rug, taupe loop pile, rounded, 2.6 x 2.0 m",
+            "category": "decor",
+            "url": "/models/furniture/ld-rug-taupe-26.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.6,
+                0.01,
+                2.0
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-kitchen-ochre-a1",
+            "name": "Kitchen, ochre, flat A1 (3.0 m)",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-kitchen-ochre-a1.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                3.0,
+                2.74,
+                0.63
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-kitchen-sage-a2",
+            "name": "Kitchen, sage, flat B2 (5.05 m)",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-kitchen-sage-a2.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                5.05,
+                2.74,
+                0.62
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-kitchen-ochre-a2",
+            "name": "Kitchen, ochre, flat A2 (5.05 m)",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-kitchen-ochre-a2.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                5.05,
+                2.74,
+                0.63
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-kitchen-sage-a1",
+            "name": "Kitchen, sage, flat B1 (3.0 m)",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-kitchen-sage-a1.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                3.0,
+                2.74,
+                0.62
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-kitchen-sage-42s",
+            "name": "Kitchen, sage, 4.2 m, sink by the columns",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-kitchen-sage-42s.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                4.2,
+                2.74,
+                0.62
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-kitchen-ochre-40n",
+            "name": "Kitchen, ochre, 3.95 m, upper north flat",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-kitchen-ochre-40n.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                3.95,
+                2.74,
+                0.63
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-kitchen-sage-40n",
+            "name": "Kitchen, sage, 3.95 m, upper north flat",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-kitchen-sage-40n.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                3.95,
+                2.74,
+                0.62
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-kitchen-sage-c2",
+            "name": "Kitchen, sage, flat C2 (2.8 m)",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-kitchen-sage-c2.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.8,
+                2.74,
+                0.62
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-kitchen-sage-c2-r",
+            "name": "Kitchen, sage, flat C3 (2.8 m, columns right)",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-kitchen-sage-c2-r.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.8,
+                2.74,
+                0.62
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-kitchen-sage-c1",
+            "name": "Kitchen, sage, flat C1 (3.9 m)",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-kitchen-sage-c1.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                3.9,
+                2.74,
+                0.62
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-peninsula-ochre",
+            "name": "Kitchen peninsula, ochre",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-peninsula-ochre.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.12,
+                0.92,
+                0.92
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-peninsula-sage",
+            "name": "Kitchen peninsula, sage",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-peninsula-sage.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.12,
+                0.92,
+                0.92
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-kitchen-ochre-24",
+            "name": "Kitchen, ochre, 2.4 m",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-kitchen-ochre-24.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.4,
+                2.74,
+                0.63
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-kitchen-ochre-24-r",
+            "name": "Kitchen, ochre, 2.4 m, tall units right",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-kitchen-ochre-24-r.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.4,
+                2.74,
+                0.63
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-kitchen-ochre-30",
+            "name": "Kitchen, ochre, 3.0 m",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-kitchen-ochre-30.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                3.0,
+                2.74,
+                0.63
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-kitchen-ochre-30-r",
+            "name": "Kitchen, ochre, 3.0 m, tall units right",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-kitchen-ochre-30-r.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                3.0,
+                2.74,
+                0.63
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-kitchen-ochre-36",
+            "name": "Kitchen, ochre, 3.6 m",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-kitchen-ochre-36.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                3.6,
+                2.74,
+                0.63
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-kitchen-ochre-36-r",
+            "name": "Kitchen, ochre, 3.6 m, tall units right",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-kitchen-ochre-36-r.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                3.6,
+                2.74,
+                0.63
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-kitchen-ochre-42",
+            "name": "Kitchen, ochre, 4.2 m",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-kitchen-ochre-42.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                4.2,
+                2.74,
+                0.63
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-kitchen-ochre-42-r",
+            "name": "Kitchen, ochre, 4.2 m, tall units right",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-kitchen-ochre-42-r.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                4.2,
+                2.74,
+                0.63
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-kitchen-ochre-48",
+            "name": "Kitchen, ochre, 4.8 m",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-kitchen-ochre-48.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                4.8,
+                2.74,
+                0.63
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-kitchen-ochre-48-r",
+            "name": "Kitchen, ochre, 4.8 m, tall units right",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-kitchen-ochre-48-r.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                4.8,
+                2.74,
+                0.63
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-kitchen-sage-24",
+            "name": "Kitchen, sage, 2.4 m",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-kitchen-sage-24.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.4,
+                2.74,
+                0.62
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-kitchen-sage-24-r",
+            "name": "Kitchen, sage, 2.4 m, tall units right",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-kitchen-sage-24-r.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.4,
+                2.74,
+                0.62
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-kitchen-sage-30",
+            "name": "Kitchen, sage, 3.0 m",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-kitchen-sage-30.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                3.0,
+                2.74,
+                0.62
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-kitchen-sage-30-r",
+            "name": "Kitchen, sage, 3.0 m, tall units right",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-kitchen-sage-30-r.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                3.0,
+                2.74,
+                0.62
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-kitchen-sage-36",
+            "name": "Kitchen, sage, 3.6 m",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-kitchen-sage-36.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                3.6,
+                2.74,
+                0.62
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-kitchen-sage-36-r",
+            "name": "Kitchen, sage, 3.6 m, tall units right",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-kitchen-sage-36-r.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                3.6,
+                2.74,
+                0.62
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-kitchen-sage-42",
+            "name": "Kitchen, sage, 4.2 m",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-kitchen-sage-42.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                4.2,
+                2.74,
+                0.62
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-kitchen-sage-42-r",
+            "name": "Kitchen, sage, 4.2 m, tall units right",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-kitchen-sage-42-r.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                4.2,
+                2.74,
+                0.62
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-kitchen-sage-48",
+            "name": "Kitchen, sage, 4.8 m",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-kitchen-sage-48.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                4.8,
+                2.74,
+                0.62
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-kitchen-sage-48-r",
+            "name": "Kitchen, sage, 4.8 m, tall units right",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-kitchen-sage-48-r.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                4.8,
+                2.74,
+                0.62
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-counter-ochre-18",
+            "name": "Kitchen counter, ochre, 1.8 m",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-counter-ochre-18.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.8,
+                1.52,
+                0.63
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-counter-ochre-24",
+            "name": "Kitchen counter, ochre, 2.4 m",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-counter-ochre-24.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.4,
+                1.52,
+                0.63
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-counter-sage-18",
+            "name": "Kitchen counter, sage, 1.8 m",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-counter-sage-18.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.8,
+                1.52,
+                0.62
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-counter-sage-24",
+            "name": "Kitchen counter, sage, 2.4 m",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-counter-sage-24.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.4,
+                1.52,
+                0.62
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-counter-ochre-hob-24",
+            "name": "Kitchen counter, ochre, hob, 2.4 m",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-counter-ochre-hob-24.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.4,
+                1.52,
+                0.63
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-counter-ochre-sink-18",
+            "name": "Kitchen counter, ochre, sink, 1.8 m",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-counter-ochre-sink-18.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.8,
+                1.52,
+                0.62
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-counter-sage-hob-24",
+            "name": "Kitchen counter, sage, hob, 2.4 m",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-counter-sage-hob-24.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.4,
+                1.52,
+                0.62
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-counter-sage-sink-18",
+            "name": "Kitchen counter, sage, sink, 1.8 m",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-counter-sage-sink-18.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.8,
+                1.52,
+                0.62
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-counter-ochre-plain-22",
+            "name": "Kitchen counter, ochre, plain, 2.2 m",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-counter-ochre-plain-22.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.2,
+                0.92,
+                0.62
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-counter-sage-plain-22",
+            "name": "Kitchen counter, sage, plain, 2.2 m",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-counter-sage-plain-22.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.2,
+                0.92,
+                0.62
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-counter-sage-low-24",
+            "name": "Kitchen counter, sage, 2.4 m, no back panel",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-counter-sage-low-24.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.4,
+                1.2,
+                0.62
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-counter-sage-low-24-r",
+            "name": "Kitchen counter, sage, 2.4 m, no back panel, sink left",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-counter-sage-low-24-r.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.4,
+                1.2,
+                0.62
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-counter-ochre-sink-20",
+            "name": "Kitchen counter, ochre, sink, 2.0 m, low upstand",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-counter-ochre-sink-20.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.0,
+                1.25,
+                0.62
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-counter-sage-sink-20",
+            "name": "Kitchen counter, sage, sink, 2.0 m, low upstand",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-counter-sage-sink-20.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.0,
+                1.2,
+                0.62
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-kitchen-ochre-l",
+            "name": "Kitchen, ochre, L-shaped corner (2.49 x 2.20 m)",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-kitchen-ochre-l.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.49,
+                2.74,
+                2.2
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-kitchen-sage-l",
+            "name": "Kitchen, sage, L-shaped corner (2.49 x 2.20 m)",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-kitchen-sage-l.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.49,
+                2.74,
+                2.2
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-kitchen-ochre-u",
+            "name": "Kitchen, ochre, U-shaped, upper south flat (place facing W)",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-kitchen-ochre-u.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.93,
+                2.74,
+                2.42
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-kitchen-sage-u",
+            "name": "Kitchen, sage, U-shaped, upper south flat (place facing W)",
+            "category": "kitchen",
+            "url": "/models/furniture/ld-kitchen-sage-u.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.93,
+                2.74,
+                2.42
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-out-table",
+            "name": "Garden table, round, green on a sage drum",
+            "category": "outdoor",
+            "url": "/models/furniture/ld-out-table.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.0,
+                0.75,
+                1.0
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-out-chair",
+            "name": "Garden armchair, sage",
+            "category": "outdoor",
+            "url": "/models/furniture/ld-out-chair.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.6,
+                0.86,
+                0.61
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-out-lounge",
+            "name": "Lounge chair, terracotta slats",
+            "category": "outdoor",
+            "url": "/models/furniture/ld-out-lounge.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.76,
+                0.79,
+                0.77
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-out-side",
+            "name": "Side table, white cone, marble top",
+            "category": "outdoor",
+            "url": "/models/furniture/ld-out-side.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.45,
+                0.82,
+                0.45
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-out-candles",
+            "name": "Candle tray, three black candlesticks",
+            "category": "outdoor",
+            "url": "/models/furniture/ld-out-candles.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.36,
+                0.53,
+                0.36
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-out-sofa",
+            "name": "Garden sofa",
+            "category": "outdoor",
+            "url": "/models/furniture/ld-out-sofa.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.0,
+                0.79,
+                0.85
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-out-coffee",
+            "name": "Garden coffee table",
+            "category": "outdoor",
+            "url": "/models/furniture/ld-out-coffee.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.0,
+                0.36,
+                0.6
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-out-dining",
+            "name": "Garden dining table",
+            "category": "outdoor",
+            "url": "/models/furniture/ld-out-dining.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.0,
+                0.76,
+                0.95
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-parasol",
+            "name": "Parasol, tan",
+            "category": "outdoor",
+            "url": "/models/furniture/ld-parasol.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.6,
+                2.5,
+                2.6
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-parasol-closed",
+            "name": "Parasol, tan, closed",
+            "category": "outdoor",
+            "url": "/models/furniture/ld-parasol-closed.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.5,
+                2.57,
+                0.5
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-jacuzzi",
+            "name": "Jacuzzi",
+            "category": "outdoor",
+            "url": "/models/furniture/ld-jacuzzi.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.04,
+                0.96,
+                2.04
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-out-kitchen",
+            "name": "Outdoor kitchen, 2.4 m, sink and grill",
+            "category": "outdoor",
+            "url": "/models/furniture/ld-out-kitchen.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.4,
+                1.25,
+                0.7
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-out-kitchen-32",
+            "name": "Outdoor kitchen, 3.2 m, sink and grill",
+            "category": "outdoor",
+            "url": "/models/furniture/ld-out-kitchen-32.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                3.2,
+                1.25,
+                0.7
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-out-island-16",
+            "name": "Outdoor kitchen island, 1.6 m, sink",
+            "category": "outdoor",
+            "url": "/models/furniture/ld-out-island-16.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                1.6,
+                1.25,
+                0.7
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-lounger",
+            "name": "Sun lounger",
+            "category": "outdoor",
+            "url": "/models/furniture/ld-lounger.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.68,
+                0.83,
+                1.98
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-bar-stool",
+            "name": "Garden bar stool",
+            "category": "outdoor",
+            "url": "/models/furniture/ld-bar-stool.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.38,
+                0.76,
+                0.38
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-olive-pot",
+            "name": "Olive in a planter",
+            "category": "outdoor",
+            "url": "/models/furniture/ld-olive-pot.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.86,
+                1.67,
+                0.76
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-wisteria-pot",
+            "name": "Flowering lilac in a bronze planter (as ld-lilac-pot)",
+            "category": "outdoor",
+            "url": "/models/furniture/ld-wisteria-pot.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.03,
+                2.97,
+                2.03
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-lilac-pot",
+            "name": "Multi-stem lilac, 3 m, in a bronze planter",
+            "category": "outdoor",
+            "url": "/models/furniture/ld-lilac-pot.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.03,
+                2.97,
+                2.03
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-out-coffee-round",
+            "name": "Garden coffee table, round, white marble on a white drum",
+            "category": "outdoor",
+            "url": "/models/furniture/ld-out-coffee-round.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.75,
+                0.36,
+                0.75
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-out-shower",
+            "name": "Outdoor shower, brushed stainless gooseneck, teak plate",
+            "category": "outdoor",
+            "url": "/models/furniture/ld-out-shower.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.35,
+                2.25,
+                0.55
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-out-sofa-green",
+            "name": "Garden sofa, bottle green",
+            "category": "outdoor",
+            "url": "/models/furniture/ld-out-sofa-green.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.0,
+                0.79,
+                0.85
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-grill-kamado",
+            "name": "Kamado grill on a stand",
+            "category": "outdoor",
+            "url": "/models/furniture/ld-grill-kamado.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                0.65,
+                1.05,
+                0.65
+            ],
+            "anchor": "floor",
+            "credit": "Built procedurally by blender/export_furniture.py",
+            "enabled": true
+        },
+        {
+            "id": "ld-out-kitchen-r",
+            "name": "Outdoor kitchen, 2.4 m, sink and grill, mirrored",
+            "category": "outdoor",
+            "url": "/models/furniture/ld-out-kitchen-r.glb",
+            "scale": 1,
+            "yaw": 0,
+            "size": [
+                2.4,
+                1.25,
+                0.7
+            ],
+            "anchor": "floor",
             "credit": "Built procedurally by blender/export_furniture.py",
             "enabled": true
         }

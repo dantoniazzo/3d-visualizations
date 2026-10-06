@@ -1,5 +1,6 @@
 import { FINISHES } from "./catalog.js";
 import { gardenSettings } from "./garden.js";
+import { planStreets, roadAt, roadProfile } from "./neighbourhood.js";
 
 /**
  * A space's garden, worked out from its spec alone: which of its outdoor
@@ -271,7 +272,7 @@ export function planTrees(spec) {
  * A tree's size: Fluffy Tree's, at `scale`, a tenth either way at random,
  * and which way it is turned.
  */
-function treeSize(random, scale) {
+export function treeSize(random, scale) {
     const s = scale * (0.9 + random() * 0.2);
     const tree = FLUFFY_TREE;
     return {
@@ -321,7 +322,10 @@ export function groundGradient(spec) {
 export function planHills(spec) {
     const settings = gardenSettings(spec).hills;
     const facing = frontOf(spec);
-    if (!facing || !settings.enabled || !settings.count) return null;
+    // The neighbourhood's road over the hill behind the plot, when there is one.
+    const streets = facing && settings.enabled ? planStreets(spec) : null;
+    const hill = streets ? gardenSettings(spec).neighbourhood.hill : 0;
+    if (!facing || !settings.enabled || (!settings.count && !hill)) return null;
     const rooms = spec.rooms || [];
     const plot = rooms.filter((room) => !isRoad(room)).flatMap((room) => room.polygon);
     const ground = rooms.filter((room) => FINISHES[room.floor_finish]?.kind === "ground");
@@ -329,9 +333,23 @@ export function planHills(spec) {
     const across = [-dir[1], dir[0]];
     const reach = plot.map((point) => along(point, across));
     const near = Math.min(...plot.map((point) => along(point, dir))) - HILLS.gap;
-    const far = near - settings.depth;
-    const left = Math.min(...reach) - HILLS.margin;
-    const right = Math.max(...reach) + HILLS.margin;
+    let far = near - settings.depth;
+    let left = Math.min(...reach) - HILLS.margin;
+    let right = Math.max(...reach) + HILLS.margin;
+    // Wide and deep enough for the road over them, as far as its far side.
+    if (streets) {
+        const climb = streets.pieces.find((piece) => piece.climb).points;
+        // As far along it as the hill's far side, and a little on.
+        const [ex, ez] = streets.hillEnd;
+        const last = climb.reduce((best, [x, z], i) => (Math.hypot(x - ex, z - ez) < Math.hypot(climb[best][0] - ex, climb[best][1] - ez) ? i : best), 0);
+        for (const point of climb.slice(0, last + 10)) {
+            const v = along(point, dir);
+            if (v > near) continue;
+            far = Math.min(far, v - 36);
+            left = Math.min(left, along(point, across) - 36);
+            right = Math.max(right, along(point, across) + 36);
+        }
+    }
     const random = mulberry32(seedOf(rooms) ^ 0x68e31da4);
     const reachBack = Math.max(0, settings.depth - 22);
     const bumps = Array.from({ length: settings.count }, (_, i) => ({
@@ -340,13 +358,19 @@ export function planHills(spec) {
         radius: 9 + random() * 8,
         height: settings.height * (0.45 + random() * 0.55),
     }));
+    // The hill the road goes over: its top where the road is to cross it.
+    if (hill) bumps.push({ across: along(streets.top, across), along: along(streets.top, dir), radius: 34, height: hill });
     // A gentle roll under them all.
     const waves = Array.from({ length: 3 }, (_, i) => ({
         scale: [0.19, 0.43, 0.83][i] * (0.8 + random() * 0.4),
         phase: [random() * 6.28, random() * 6.28],
         height: [0.35, 0.18, 0.07][i],
     }));
-    return { dir, across, near, far, left, right, y: ground.length ? Math.min(...ground.map((room) => room.elevation)) : 0, bumps, waves };
+    const hills = { dir, across, near, far, left, right, y: ground.length ? Math.min(...ground.map((room) => room.elevation)) : 0, bumps, waves };
+    // The road over them, its height all along from the hills as they
+    // stand; the ground is then graded to it (hillHeight).
+    if (streets) hills.road = roadProfile(streets.pieces.find((piece) => piece.climb).points, (x, z) => hillHeight(hills, x, z));
+    return hills;
 }
 
 /**
@@ -367,7 +391,13 @@ export function hillHeight(hills, x, z) {
     for (const wave of hills.waves) {
         height += wave.height * Math.sin(u * wave.scale + wave.phase[0]) * Math.sin(v * wave.scale * 0.9 + wave.phase[1]);
     }
-    return hills.y - GROUND_DROP + rise * (height + GROUND_DROP);
+    const ground = hills.y - GROUND_DROP + rise * (height + GROUND_DROP);
+    // By the road, graded to it: a little under it beside its gravel, then
+    // rising or falling to the hills' own ground.
+    const road = hills.road ? roadAt(hills.road, x, z) : null;
+    if (!road) return ground;
+    const bed = hills.y + road.y - 0.08;
+    return bed + (ground - bed) * smoothstep(hills.road.reach, hills.road.reach + hills.road.blend, road.distance);
 }
 
 /** The band the hills fill, as its four corners (x, z): the hole in the ground round them. */
@@ -400,6 +430,8 @@ export function planHillTrees(spec, hills = planHills(spec)) {
     for (const [x, z] of places) {
         if (trees.length >= settings.hillTrees) break;
         if (trees.some((tree) => Math.hypot(tree.x - x, tree.z - z) < 8)) continue;
+        // Not on the road over them, nor overhanging it.
+        if (hills.road && (roadAt(hills.road, x, z)?.distance ?? Infinity) < hills.road.reach + 4) continue;
         const size = treeSize(random, settings.scale);
         // Its foot a little into the slope, so no side of it floats.
         trees.push({ id: `hill-tree-${trees.length}`, x: round(x), z: round(z), y: round(hillHeight(hills, x, z) - 0.08), ...size, seed: Math.floor(random() * 2 ** 31) });
@@ -407,7 +439,7 @@ export function planHillTrees(spec, hills = planHills(spec)) {
     return trees;
 }
 
-function smoothstep(from, to, value) {
+export function smoothstep(from, to, value) {
     const t = Math.max(0, Math.min(1, (value - from) / (to - from)));
     return t * t * (3 - 2 * t);
 }
@@ -417,7 +449,7 @@ function smoothstep(from, to, value) {
  * point of the road — and how far along that the house's front and back
  * walls are. Null with no road.
  */
-function frontOf(spec) {
+export function frontOf(spec) {
     const rooms = spec.rooms || [];
     const roads = rooms.filter(isRoad);
     const house = rooms.filter((room) => FINISHES[room.floor_finish]?.kind !== "ground");
@@ -455,7 +487,7 @@ function splitAtFront(run, facing) {
     ];
 }
 
-function along([x, z], [dx, dz]) {
+export function along([x, z], [dx, dz]) {
     return x * dx + z * dz;
 }
 
@@ -463,7 +495,7 @@ function midpoint({ start, end }) {
     return [(start[0] + end[0]) / 2, (start[1] + end[1]) / 2];
 }
 
-function centroid(points) {
+export function centroid(points) {
     const n = points.length || 1;
     return [points.reduce((sum, [x]) => sum + x, 0) / n, points.reduce((sum, [, z]) => sum + z, 0) / n];
 }
@@ -485,7 +517,7 @@ export function mulberry32(seed) {
 }
 
 /** A seed from the rooms, so the same plot always grows the same garden. */
-function seedOf(rooms) {
+export function seedOf(rooms) {
     let hash = 2166136261;
     for (const room of rooms) {
         for (const char of room.id) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
@@ -494,7 +526,7 @@ function seedOf(rooms) {
     return hash >>> 0;
 }
 
-function bounds(rooms) {
+export function bounds(rooms) {
     const box = { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity };
     for (const room of rooms) {
         for (const [x, z] of room.polygon) {
@@ -525,7 +557,7 @@ function distanceToSegment(x, z, a, b) {
     return Math.hypot(px - x, pz - z);
 }
 
-function closestOnSegment(x, z, [ax, az], [bx, bz]) {
+export function closestOnSegment(x, z, [ax, az], [bx, bz]) {
     const dx = bx - ax;
     const dz = bz - az;
     const length = dx * dx + dz * dz;
@@ -551,6 +583,6 @@ export function polygonArea(polygon) {
     return Math.abs(area) / 2;
 }
 
-function round(value) {
+export function round(value) {
     return Math.round(value * 1000) / 1000;
 }

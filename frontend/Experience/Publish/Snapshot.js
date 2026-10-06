@@ -37,6 +37,23 @@ import { SCENERY_IDS, leaveOut } from "../../../shared/scenery.js";
  *
  * The result is merged into one mesh per material, floor and kind (ceiling,
  * roof or neither) and returned as a GLB, carrying the spec it was made from.
+ * Each vertex keeps what its material's shader reads of its own besides
+ * (`userData.attributes`: the terrain's paint), and a light's glass or bulb
+ * (`userData.glow`, its switch) stays a mesh of its own, saying so.
+ *
+ * What culling throws away still cast its shadow in the editor: a table's
+ * underside, the far face of a box nobody walks behind. So the faces thrown
+ * away that cast one come back as shadow casters alone (`shadow`; positions
+ * only), for the runtime file to carry (Runtime.js): the public view draws
+ * them into the shadow maps and nowhere else (SceneBuilder.usePublishedView).
+ * Every one of them, whatever the time of day the space is published at:
+ * which of a face's sides a shadow map takes depends on the light — the
+ * day's sun, the moon, a lamp across the room — and the public view draws
+ * each as the editor does, a one-sided face from behind and a two-sided one
+ * from either side (`twoSided`, a mesh of its own). They go by floor, kind
+ * and a square of the site CASTER_CELL across, so that a lamp's shadow, or
+ * the sun's fitted round the view, leaves out the pieces beyond it; the
+ * server simplifies them (server/publish/compress.js).
  *
  * Both halves can be switched off, to see what each is worth
  * (shared/publishOptions.js): without `cull` nothing is rendered, every
@@ -72,7 +89,9 @@ const _color = new THREE.Color();
  * @param {boolean} [options.merge]  merge by material and floor (default true)
  * @param {string[]} [options.scenery]  what of the scenery the version has
  *        (shared/scenery.js): its spec says the rest is left out
- * @returns {Promise<{ glb: ArrayBuffer, stats: object }>}
+ * @returns {Promise<{ glb: ArrayBuffer, stats: object, shadow: THREE.Group|null }>}
+ *          `shadow`: the faces culled that cast the editor's shadows (dispose
+ *          of its geometries once sent)
  */
 export async function buildSnapshot(experience, { onProgress = () => {}, cull = true, merge = true, scenery = SCENERY_IDS } = {}) {
     const started = performance.now();
@@ -95,13 +114,17 @@ export async function buildSnapshot(experience, { onProgress = () => {}, cull = 
         ({ keep, restored } = await findVisible(experience, parts, table, seen, samples, timing, onProgress));
         // Kept whole, front out, whatever the samples saw: ground a visitor
         // can walk round to the far side of — the hills behind the plot,
-        // which nothing sampled sees the back of.
+        // which nothing sampled sees the back of; and from both sides
+        // (`keepWhole: "both"`), what is seen through itself — a woven
+        // shade's strands, too fine for the samples to find.
         parts.forEach((part, p) => {
-            if (!part.mesh.userData.keepWhole) return;
+            const whole = part.mesh.userData.keepWhole;
+            if (!whole) return;
+            const sides = whole === "both" ? 3 : 1;
             const first = table.offsets[p];
             for (let t = first; t < first + part.geometry.index.count / 3; t++) {
                 keep[t] = 1;
-                seen[t] |= 1;
+                seen[t] |= sides;
             }
         });
     }
@@ -109,6 +132,8 @@ export async function buildSnapshot(experience, { onProgress = () => {}, cull = 
     onProgress(0.96, "Assembling");
     await yieldToBrowser();
     const { scene, stats } = assemble(parts, table, seen, keep, keys, { visibility: cull, merge });
+    const shadow = cull ? shadowCasters(parts, table, keep) : null;
+    stats.shadowCasters = shadow ? shadow.children.reduce((sum, mesh) => sum + mesh.geometry.index.count / 3, 0) : 0;
     for (const part of parts) part.geometry.dispose();
 
     Object.assign(stats, {
@@ -119,7 +144,11 @@ export async function buildSnapshot(experience, { onProgress = () => {}, cull = 
     });
     // With its light fittings and their switches, for the bake to light
     // switch by switch and the public view to switch; and without the
-    // scenery left out of it, which neither grows nor is baked.
+    // scenery left out of it, which neither grows nor is baked. The people
+    // round the property go only as the spec's list of them (`people`):
+    // they move, so none of them is in the triangles here, nor in what
+    // the samples see by, nor in the bake — the public view makes them
+    // again from the list (World/People.js), unless they were left out.
     const spec = leaveOut(builder.spec, scenery);
     spec.lights = gatherLights(builder);
     scene.userData = {
@@ -138,7 +167,79 @@ export async function buildSnapshot(experience, { onProgress = () => {}, cull = 
         }
     });
     onProgress(1, "Done");
-    return { glb, stats };
+    return { glb, stats, shadow };
+}
+
+/**
+ * Metres across a square of the site whose shadow casters are one mesh
+ * (shadowCasters): wide, since each piece is a draw call in every shadow
+ * map and in the view (8 m squares made Ladonia's 133 pieces, ~125 more
+ * calls a sun's map, and saved no time), but not the whole site, so a
+ * lamp's shadow leaves out what is far off.
+ */
+const CASTER_CELL = 16;
+
+/**
+ * The faces culled that cast a shadow in the editor, as meshes of
+ * positions: of a mesh that casts, with a material drawn whole — not cut
+ * out by its texture (alphaTest), whose shadow needs its texture — every
+ * face, by floor, kind and a CASTER_CELL square of the site (by the face's
+ * middle), with a two-sided material's apart (`twoSided`): the public view
+ * draws those into a shadow map from either side, and the rest from behind,
+ * as three draws a one-sided material (a back-sided one's faces turned
+ * round here, to be so drawn too).
+ *
+ * @returns {THREE.Group}
+ */
+function shadowCasters(parts, table, keep) {
+    const buckets = new Map();
+    parts.forEach((part, p) => {
+        const material = part.material;
+        if (!part.cast || material.alphaTest > 0 || material.alphaMap || part.glow) return;
+        const position = part.geometry.attributes.position.array;
+        const index = part.geometry.index.array;
+        const twoSided = material.side === THREE.DoubleSide;
+        const back = material.side === THREE.BackSide;
+        for (let i = 0, t = table.offsets[p]; i < index.length; i += 3, t++) {
+            if (keep[t]) continue;
+            let [i0, i1, i2] = [index[i], index[i + 1], index[i + 2]];
+            if (back) [i1, i2] = [i2, i1];
+            const x = (position[i0 * 3] + position[i1 * 3] + position[i2 * 3]) / 3;
+            const z = (position[i0 * 3 + 2] + position[i1 * 3 + 2] + position[i2 * 3 + 2]) / 3;
+            const cell = `${Math.floor(x / CASTER_CELL)},${Math.floor(z / CASTER_CELL)}`;
+            const key = `${part.level}|${part.kind ?? ""}|${cell}|${twoSided ? 2 : 1}`;
+            let bucket = buckets.get(key);
+            if (!bucket) {
+                bucket = { level: part.level, kind: part.kind ?? null, cell, twoSided, position: [], index: [], part: -1, remap: null };
+                buckets.set(key, bucket);
+            }
+            if (bucket.part !== p) {
+                bucket.part = p;
+                bucket.remap = new Map();
+            }
+            for (const vertex of [i0, i1, i2]) {
+                let mapped = bucket.remap.get(vertex);
+                if (mapped === undefined) {
+                    mapped = bucket.position.length / 3;
+                    bucket.remap.set(vertex, mapped);
+                    bucket.position.push(position[vertex * 3], position[vertex * 3 + 1], position[vertex * 3 + 2]);
+                }
+                bucket.index.push(mapped);
+            }
+        }
+    });
+    const group = new THREE.Group();
+    group.name = "shadow-casters";
+    for (const bucket of buckets.values()) {
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute("position", new THREE.Float32BufferAttribute(bucket.position, 3));
+        geometry.setIndex(bucket.index);
+        const mesh = new THREE.Mesh(geometry);
+        mesh.name = `shadow:${bucket.level}${bucket.kind ? `:${bucket.kind}` : ""}:${bucket.cell}${bucket.twoSided ? ":two" : ""}`;
+        mesh.userData = { shadowCaster: true, level: bucket.level, kind: bucket.kind, ...(bucket.twoSided && { twoSided: true }) };
+        group.add(mesh);
+    }
+    return group;
 }
 
 /**
@@ -495,7 +596,13 @@ function assemble(parts, table, seen, keep, keys, { visibility = true, merge = t
         const geometry = part.geometry;
         const index = geometry.index.array;
         const colors = part.names.includes("color");
+        // What else its shader reads (StaticBatcher's attributesFor).
+        const declared = part.material.userData?.attributes ?? [];
+        const extra = part.names.filter((name) => declared.includes(name));
         const side = part.material.side;
+        // Seen through itself (a woven shade, kept whole from both sides):
+        // one copy, drawn two-sided, not a copy for each side.
+        const twoSided = visibility && side === THREE.DoubleSide && part.mesh.userData.keepWhole === "both";
         const front = [];
         const back = [];
 
@@ -508,7 +615,7 @@ function assemble(parts, table, seen, keep, keys, { visibility = true, merge = t
             const s = seen[t];
             let showFront;
             let showBack;
-            if (!visibility) {
+            if (!visibility || twoSided) {
                 showFront = true;
                 showBack = false;
             } else if (side === THREE.DoubleSide) {
@@ -530,7 +637,9 @@ function assemble(parts, table, seen, keep, keys, { visibility = true, merge = t
         if (!front.length && !back.length) return;
 
         const key = keys.get(part.material);
-        const bucketKey = [key, part.level, part.kind ?? "", part.cast, part.receive, colors, merge ? "" : p].join("|");
+        // Unmerged, and a bulb always: one mesh each.
+        const own = !merge || part.glow ? p : "";
+        const bucketKey = [key, part.level, part.kind ?? "", part.cast, part.receive, colors, extra.join(","), own, twoSided ? "two" : ""].join("|");
         let bucket = buckets.get(bucketKey);
         if (!bucket) {
             bucket = {
@@ -541,6 +650,9 @@ function assemble(parts, table, seen, keep, keys, { visibility = true, merge = t
                 cast: part.cast,
                 receive: part.receive,
                 colors,
+                glow: part.glow ?? null,
+                twoSided,
+                extra: extra.map((name) => ({ name, itemSize: geometry.attributes[name].itemSize, values: [] })),
                 position: [],
                 normal: [],
                 uv: [],
@@ -560,18 +672,39 @@ function assemble(parts, table, seen, keep, keys, { visibility = true, merge = t
         geometry.setAttribute("normal", new THREE.Float32BufferAttribute(bucket.normal, 3));
         geometry.setAttribute("uv", new THREE.Float32BufferAttribute(bucket.uv, 2));
         if (bucket.colors) geometry.setAttribute("color", new THREE.Float32BufferAttribute(bucket.color, 3));
+        // glTF calls it `_<NAME>` and three reads it back as `_<name>`: the
+        // public view gives it its own name again (SceneBuilder.usePublishedView).
+        // Four numbers a vertex go as two pairs, `<name>0` and `<name>1`:
+        // Blender, which bakes this file, would take four for a colour.
+        for (const { name, itemSize, values } of bucket.extra) {
+            if (itemSize !== 4) {
+                geometry.setAttribute(name, new THREE.Float32BufferAttribute(values, itemSize));
+                continue;
+            }
+            const halves = [new Float32Array(values.length / 2), new Float32Array(values.length / 2)];
+            for (let v = 0; v < values.length / 4; v++) {
+                halves[0][v * 2] = values[v * 4];
+                halves[0][v * 2 + 1] = values[v * 4 + 1];
+                halves[1][v * 2] = values[v * 4 + 2];
+                halves[1][v * 2 + 1] = values[v * 4 + 3];
+            }
+            halves.forEach((half, k) => geometry.setAttribute(`${name}${k}`, new THREE.BufferAttribute(half, 2)));
+        }
         geometry.setIndex(bucket.index);
         stats.output += bucket.index.length / 3;
 
         const mesh = new THREE.Mesh(geometry, placeholder(bucket));
-        mesh.name = `${bucket.key}:${bucket.level}${bucket.kind ? `:${bucket.kind}` : ""}${merge ? "" : `:${scene.children.length}`}`;
+        mesh.name = `${bucket.key}:${bucket.level}${bucket.kind ? `:${bucket.kind}` : ""}${merge && !bucket.glow ? "" : `:${scene.children.length}`}`;
         mesh.userData = {
             material: bucket.key,
             level: bucket.level,
             kind: bucket.kind,
             cast: bucket.cast,
             receive: bucket.receive,
+            ...(bucket.glow && { glow: bucket.glow }),
+            ...(bucket.twoSided && { twoSided: true }),
         };
+        if (bucket.twoSided) mesh.material.side = THREE.DoubleSide;
         scene.add(mesh);
     }
     stats.meshes = scene.children.length;
@@ -601,6 +734,10 @@ function append(bucket, geometry, triangles, facing) {
             bucket.uv.push(uv.array[vertex * 2], uv.array[vertex * 2 + 1]);
             if (bucket.colors) {
                 bucket.color.push(color.array[vertex * color.itemSize], color.array[vertex * color.itemSize + 1], color.array[vertex * color.itemSize + 2]);
+            }
+            for (const { name, itemSize, values } of bucket.extra) {
+                const array = geometry.attributes[name].array;
+                for (let c = 0; c < itemSize; c++) values.push(array[vertex * itemSize + c]);
             }
         }
         bucket.index.push(mapped);

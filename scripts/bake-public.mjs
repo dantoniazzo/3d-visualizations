@@ -28,12 +28,18 @@
  */
 import { execFileSync } from "node:child_process";
 import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import * as THREE from "three";
+import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
+
 import { ENVIRONMENT_PRESETS, FINISHES, TRIM_MATERIALS } from "../shared/catalog.js";
+import { DUSK_KEEP, DUSK_TINT, SKY_VARIANTS, SUN_ANGLE, findSun, sunDirection } from "../shared/sky.js";
 import { planBushes, planFence, planHillTrees, planTrees } from "../shared/vegetation.js";
+import { planRoadTrees, publishedSpec } from "../shared/neighbourhood.js";
+import { roomLinks } from "../shared/roomGraph.js";
 import { rectCorners } from "../frontend/Experience/Utils/geometry.js";
 import { compressView } from "../server/publish/compress.js";
 import { PUBLISH_DIR, latestManifest, updateVersion, versionManifest } from "../server/publish/store.js";
@@ -86,8 +92,15 @@ const versionDir = join(sceneDir, version);
 const bakeName = `bake-${Date.now().toString(36)}`;
 const bakeDir = join(versionDir, bakeName);
 await mkdir(bakeDir, { recursive: true });
-const spec = JSON.parse(await readFile(join(sceneDir, manifest.spec), "utf8"));
+// A bake that stops part-way leaves nothing behind: its half-written
+// folder would sit beside the version for ever.
+let finished = false;
+process.on("exit", () => {
+    if (!finished && !args.includes("--debug")) rmSync(bakeDir, { recursive: true, force: true });
+});
+const spec = publishedSpec(JSON.parse(await readFile(join(sceneDir, manifest.spec), "utf8")));
 const preset = ENVIRONMENT_PRESETS[spec.environment?.preset] || ENVIRONMENT_PRESETS.interior_day;
+const sky = landscapeSky(spec.landscape?.sky);
 
 const outdoor = (room) => FINISHES[room.floor_finish]?.kind === "ground";
 const area = (polygon) => {
@@ -245,41 +258,7 @@ for (const room of indoor) {
 // switch — each switch's light is baked on its own, into the rooms it
 // reaches: its own, and every room a door, doorway or stairwell opens into
 // from it. What it throws further is too little to see.
-const roomAt = (x, y, z) =>
-    indoor.find((room) => y >= room.elevation - 0.05 && y < room.elevation + room.height + 0.3 && insidePolygon(x, z, room.polygon)) ?? null;
-const neighbours = new Map(indoor.map((room) => [room.id, new Set()]));
-// What joins each two rooms: the doors with leaves by their ids, and
-// anything always open — a doorway, a stairwell — as null.
-const links = new Map();
-const linkKey = (a, b) => [a, b].sort().join("|");
-const connect = (a, b, door = null) => {
-    if (!a || !b || a === b) return;
-    neighbours.get(a.id)?.add(b.id);
-    neighbours.get(b.id)?.add(a.id);
-    const key = linkKey(a.id, b.id);
-    if (!links.has(key)) links.set(key, []);
-    links.get(key).push(door);
-};
-for (const wall of spec.walls || []) {
-    const [x1, z1] = wall.start;
-    const [x2, z2] = wall.end;
-    const length = Math.hypot(x2 - x1, z2 - z1);
-    if (!length) continue;
-    const dx = (x2 - x1) / length;
-    const dz = (z2 - z1) / length;
-    const side = wall.thickness / 2 + 0.3;
-    for (const opening of wall.openings || []) {
-        if (opening.type !== "door" && opening.type !== "doorway") continue;
-        const x = x1 + dx * opening.offset;
-        const z = z1 + dz * opening.offset;
-        const y = wall.base_height + 1.0;
-        connect(roomAt(x - dz * side, y, z + dx * side), roomAt(x + dz * side, y, z - dx * side), opening.type === "door" ? opening.id : null);
-    }
-}
-for (const hole of spec.floor_openings || []) {
-    const [x, z] = hole.position;
-    connect(roomAt(x, hole.elevation + 0.1, z), roomAt(x, hole.elevation - 0.6, z));
-}
+const { neighbours, links, linkKey, roomAt } = roomLinks(spec, indoor);
 const switches = new Map();
 for (const light of spec.lights || []) {
     if (!light.room || !neighbours.has(light.room)) continue;
@@ -348,7 +327,10 @@ for (const wall of spec.walls || []) {
 }
 
 const settings = {
-    preset,
+    // A site with a sky of its own is lit by it (landscapeSky); the preset's
+    // sun is then the sky's, where the live view has it.
+    preset: sky ? { ...preset, sun: sky.sun } : preset,
+    ...(sky && { sky: sky.world }),
     rooms,
     probes,
     doors,
@@ -356,7 +338,7 @@ const settings = {
     switches: [...switches.values()],
     // The garden's trees and bushes, and the hills', as the view grows them
     // (shared/vegetation.js): not baked themselves, but casting their shade.
-    trees: [...planTrees(spec), ...planHillTrees(spec)],
+    trees: [...planTrees(spec), ...planHillTrees(spec), ...planRoadTrees(spec)],
     bushes: planBushes(spec, planFence(spec), planTrees(spec)),
     // Surfaces with coarser texels than the house's own, by how much: the
     // fence (FenceBuilder), a couple of hundred metres of it round the plot;
@@ -367,8 +349,8 @@ const settings = {
     // Sun and sky in W/m², matched to the app's own lights. Light fittings
     // are baked apart from them, switch by switch (switches), so the day
     // and night are the sun, the sky and the moon alone.
-    day: { sun: preset.sun.intensity, sky: 1.0 },
-    night: { sky: 0.05, moon: 0.08 },
+    day: sky ? sky.day : { sun: preset.sun.intensity, sky: 1.0 },
+    night: sky ? sky.night : { sky: 0.05, moon: 0.08 },
 };
 const settingsPath = join(bakeDir, "settings.json");
 await writeFile(settingsPath, JSON.stringify(settings, null, 2));
@@ -379,6 +361,10 @@ execFileSync(
     blender.path,
     [
         "--background",
+        // A Python error stops the bake there, with its traceback, rather
+        // than Blender quitting as if all went well and the bake failing
+        // later on a file it never wrote.
+        "--python-exit-code", "1",
         "--python",
         join(ROOT, "blender", "bake_public.py"),
         "--",
@@ -391,6 +377,13 @@ execFileSync(
     ],
     { stdio: "inherit", cwd: join(ROOT, "blender") }
 );
+
+// Stopped at the unwrap's checkpoint (BAKE_CHECKPOINT_UNWRAP with
+// BAKE_STOP, blender/bake_public.py): nothing baked, nothing to publish.
+if (process.env.BAKE_STOP && process.env.BAKE_CHECKPOINT_UNWRAP) {
+    console.log(`[bake] stopped at the checkpoint, ${process.env.BAKE_CHECKPOINT_UNWRAP}: nothing published`);
+    process.exit(0);
+}
 
 console.log("[bake] compressing the view");
 const bake = JSON.parse(await readFile(join(bakeDir, "bake.json"), "utf8"));
@@ -452,6 +445,8 @@ await updateVersion(sceneId, version, {
     },
 });
 
+finished = true;
+
 // Earlier bakes of this version are no longer referenced.
 for (const entry of await readdir(versionDir)) {
     if (entry.startsWith("bake") && entry !== bakeName) await rm(join(versionDir, entry), { recursive: true, force: true });
@@ -463,3 +458,58 @@ console.log(
         Object.entries(lightmaps).map(([name, bytes]) => `${name} lightmap ${mb(bytes)}`).join(", ") +
         `.\n/view/${sceneId}?version=${version} now draws the baked light.`
 );
+
+/**
+ * A site's own sky (shared/landscape.js's `sky`), as the bake is to be lit
+ * by it — the same light as the live view's (World/Sky.js, shared/sky.js):
+ * its sun where the live view puts it, as strong and as coloured, as big
+ * in the sky; by day the sky's HDR, the sun clipped out of it, at the
+ * strength the live view lights with it; at dusk the dusk's HDR, cooled
+ * as the live view's night has it on the walls, and no moon. Its HDRs are
+ * turned with the sky (Blender's `turn`, as three's) in bake_public.py's
+ * sky_world. Null for a space without one, lit by its preset as before.
+ */
+function landscapeSky(names) {
+    if (!names?.day) return null;
+    const file = (key) => {
+        const name = names[key] || names.day;
+        // A plain name, of a sky fetched into public/textures/sky/ (scripts/fetch-site-assets.mjs).
+        const path = /^[\w-]+$/.test(name) ? join(ROOT, "public", "textures", "sky", `${name}_1k.hdr`) : null;
+        return path && existsSync(path) ? path : null;
+    };
+    const missing = ["day", "dusk"].filter((key) => !file(key));
+    if (missing.length) {
+        console.warn(`[bake] the space's ${missing.join(" and ")} sky is not in public/textures/sky/: lit by its preset instead`);
+        return null;
+    }
+    const read = (path) => {
+        const buffer = readFileSync(path);
+        return new RGBELoader().setDataType(THREE.FloatType).parse(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength));
+    };
+    const day = SKY_VARIANTS.day;
+    const night = SKY_VARIANTS.night;
+    const dayFile = file(day.sky);
+    const duskFile = file(night.sky);
+    const dayHdr = findSun(read(dayFile), { clip: false });
+    const duskHdr = findSun(read(duskFile), { clip: false });
+    const way = sunDirection(dayHdr.direction, names, "day");
+    return {
+        sun: { color: day.sunColour, intensity: day.sun, position: way.map((c) => c * 60), angle: SUN_ANGLE },
+        world: {
+            turn: names.turn ?? 0,
+            day: { file: dayFile, ceiling: dayHdr.ceiling },
+            night: { file: duskFile, ceiling: duskHdr.ceiling, keep: DUSK_KEEP, tint: DUSK_TINT },
+        },
+        // The sky's light at the live view's strength for it (its
+        // envIntensity): by day all of it — Cycles shades it where the
+        // live view, which cannot, takes a share; against the renders,
+        // Ladonia's shaded façades come out as light as theirs, the live
+        // view's darker — and at dusk the share
+        // the live view lights the outside with, over the share of the
+        // dusk's light that comes from above the horizon (findSun's
+        // `above`, two thirds), which is all that reaches the walls past
+        // the ground and the houses.
+        day: { sun: day.sun, sky: day.envIntensity },
+        night: { sky: +((night.envIntensity * night.outdoor) / duskHdr.above).toFixed(3), moon: 0 },
+    };
+}
