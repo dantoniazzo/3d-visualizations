@@ -14,6 +14,14 @@
  * or failing both the visitor's two avatars. Where they can sit or lie is
  * the catalogue's seats.json (`npm run seats`).
  *
+ * It prints the plan in the spec's order, which is their priority (a
+ * phone draws only the first few): who each is, the clip they play, what
+ * they hold and in which hand, where — and for someone sitting, how far
+ * their feet are off the floor (+ hanging, − under it), how far their
+ * seat gives under them, and how far forward of its point they sit for
+ * their legs to hang before it (a seat with a solid base is marked) —
+ * then who the first four and the first eight drawn are.
+ *
  * Without --dry-run or --out it writes the scene, as an editor save does:
  * the people put in its spec, the spec validated, the record written — so
  * reload every open editor tab of the space first, or one autosaves its
@@ -61,29 +69,65 @@ const indexFile = ["index.json", "index.standin.json"].map((name) => join(ROOT, 
 const index = indexFile ? readJson(indexFile) : null;
 console.log(`Cast from ${indexFile ? indexFile.slice(ROOT.length + 1) : "the stand-in avatars (no people index yet)"}`);
 
+// The whole of the index's `clips`: its `hips` scales each clip to each character.
 const people = planPeople(spec, catalog, seats, {
     seed,
     ...(count !== undefined ? { count } : {}),
     characters: index?.characters,
-    clips: index?.clips?.list,
+    clips: index?.clips,
     props: index?.props?.list,
 });
 
-// What the plan is, and where.
+// What the plan is, and where — in the spec's order, which is their priority.
 const site = siteOf(spec, catalog);
 const furniture = new Map(spec.furniture.map((f) => [f.id, f]));
 const items = new Map(catalog.items.map((item) => [item.id, item]));
+const characters = new Map((index?.characters ?? []).map((c) => [c.id, c]));
+const clips = new Map((index?.clips?.list ?? []).map((c) => [c.name, c]));
 const poses = { stand: 0, sit: 0, lie: 0 };
 for (const p of people) poses[p.pose] += 1;
 console.log(`\n${people.length} people (seed ${seed}): ${poses.stand} standing, ${poses.sit} sitting, ${poses.lie} lying`);
 for (const p of people) {
     const room = site.roomAt(p.position[0], p.position[1] - (p.pose === "stand" ? 0 : 0.4), p.position[2]) ?? site.roomAt(p.position[0], p.position[1], p.position[2]);
     const on = p.seat ? `on ${p.seat.furniture} (${items.get(furniture.get(p.seat.furniture)?.catalog_id)?.name ?? "?"}) #${p.seat.index}` : "";
+    const character = characters.get(p.character);
+    const clip = clips.get(p.clip);
+    // What is held, and in which hand; a sitter's feet off the floor (+ hanging, − under it), after any give.
+    const held = p.prop ? `${p.prop}${p.pose !== "lie" && typeof clip?.hand === "string" ? ` (${clip.hand})` : ""}` : "-";
+    let feet = "";
+    const placed = p.pose === "sit" && p.seat ? seatsOf(furniture.get(p.seat.furniture), seats)?.seats[p.seat.index] : null;
+    if (placed && clip?.seat && character?.hips && index?.clips?.hips) {
+        const floor = placed.at[1] - placed.height;
+        // The seat the clip sits this character's soles on the floor from: the index's own measure of the two together, or the clip's scaled.
+        const made = character.sits?.[clip.name]?.[0] ?? (clip.seat[1] - (clip.feet?.[1] ?? 0)) * (character.hips / index.clips.hips);
+        const soles = p.position[1] - made;
+        const give = placed.at[1] - p.position[1];
+        const forward = Math.hypot(p.position[0] - placed.at[0], p.position[2] - placed.at[2]);
+        feet =
+            ` feet ${soles - floor >= 0 ? "+" : "−"}${Math.abs((soles - floor) * 100).toFixed(1)} cm` +
+            (give > 0.0005 ? `, seat gives ${(give * 100).toFixed(1)} cm` : "") +
+            (forward > 0.0005 ? `, ${(forward * 100).toFixed(1)} cm forward` : "") +
+            (placed.base === "solid" ? " (solid base)" : "");
+    }
     console.log(
-        `  ${p.id.padEnd(10)} ${p.pose.padEnd(5)} ${(p.group ?? "").padEnd(8)} ${p.character.padEnd(10)} ${String(p.clip).padEnd(18)} ${String(p.prop).padEnd(10)} ` +
-            `[${p.position.map((v) => v.toFixed(2)).join(", ")}] ${String(p.rotation).padStart(6)}°  ${room?.name ?? "outside"}${room && !isOutdoor(room) ? " (indoors)" : ""} ${on}`
+        `  ${p.id.padEnd(10)} ${p.pose.padEnd(5)} ${(p.group ?? "").padEnd(8)} ${`${p.character}${character?.sex ? ` (${character.sex})` : ""}`.padEnd(14)} ${String(p.clip).padEnd(24)} ${held.padEnd(18)} ` +
+            `[${p.position.map((v) => v.toFixed(2)).join(", ")}] ${String(p.rotation).padStart(6)}°  ${room?.name ?? "outside"}${room && !isOutdoor(room) ? " (indoors)" : ""} ${on}${feet}`
     );
 }
+// Who a device that draws only some of them draws: the first whole groups that fit.
+const drawn = (most) => {
+    const out = [];
+    const units = [];
+    for (const p of people) {
+        const unit = p.group ? units.find((u) => u.group === p.group) : null;
+        if (unit) unit.ids.push(p.id);
+        else units.push({ group: p.group, ids: [p.id] });
+    }
+    for (const unit of units) if (out.length + unit.ids.length <= most) out.push(...unit.ids);
+    const shown = people.filter((p) => out.includes(p.id));
+    return `${shown.filter((p) => p.pose === "stand").length} standing, ${shown.filter((p) => p.pose === "lie").length} lying, ${shown.filter((p) => p.pose === "sit").length} sitting`;
+};
+console.log(`\nThe first 4 drawn: ${drawn(4)}; the first 8: ${drawn(8)}.`);
 
 // It survives the validator as planned.
 const notes = [];

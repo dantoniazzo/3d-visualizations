@@ -21,8 +21,12 @@
  *     over the seat, so an arm is not a back — and down the back's face
  *     to its foot, where it rises 0.1 m over the seat;
  *   - the seat's height on that line: what is within 0.25 m before the
- *     foot. The commonest of the lines' heights is the piece's seat (an
- *     arm's top, or a back cushion standing proud of a low back, is not);
+ *     foot. A loose pillow lying on the seat against the back is not the
+ *     seat: where what is before the back stands 0.1 m or more over the
+ *     front of the line, the front is the seat and the pillow part of the
+ *     back — one sits before it, leant a little into it (PILLOW_GIVE).
+ *     The commonest of the lines' heights is the piece's seat (an arm's
+ *     top, or a back cushion standing proud of a low back, is not);
  *     lines at another height are let go;
  *   - each seat cell then goes to the way whose back is nearest, so the
  *     arms of a corner sofa face out of its corner, and the corner itself,
@@ -38,6 +42,13 @@
  *     `rotation` turns (0 north, 90 west, −90 east); `height` the seat's.
  *     A piece with no back at all (a stool, a pouf, a bench) seats one
  *     per ~0.6 m of its length, facing 0;
+ *   - under each seat's front edge, from below (a second field, of the
+ *     lowest surface over each point): a sofa's box or plinth, down to the
+ *     floor or near it, is a `solid` base, which feet can't be tucked back
+ *     under; a chair's seat on its legs is `open`. And before its front
+ *     edge: a seat with more of the piece there than floor — in the
+ *     corner of a corner sofa, behind another's cushions — has no room
+ *     for legs, and is no seat;
  *   - a lounger's lying surface, along its longer side, from the profile
  *     of its middle third: the flat at its commonest height, the head at
  *     the end that rises above it, where the rise begins and how steeply.
@@ -47,13 +58,18 @@
  *
  *   { "<catalog id>": {
  *       kind: "sofa" | "chair" | "stool" | "lounger" | "bench",
- *       seats: [{ at: [x, z], height, depth, facing }],
- *       lie: { at: [x, z], height, head: [x, z], length, incline } | null } }
+ *       seats: [{ at: [x, z], height, depth, facing, base: "solid" | "open", room? }],
+ *       lie: { at: [x, z], height, head: [x, z], length, width, incline } | null } }
  *
- * `lie.at` is the point under a lying person's pelvis: 0.1 m footwards of
- * where the raised back begins (or 0.9 m from the head end of a flat
- * one); `head` the middle of the head end; `length` the lying surface's,
- * end to end; `incline` the raised back's angle off the flat, in degrees.
+ * A seat's `room`, only where a loose pillow lies on it, is how far its
+ * front edge is from the back proper, behind the pillow: `depth` is what
+ * is left to sit on before the pillow. `lie.at` is the point under a
+ * lying person's pelvis: 0.1 m footwards of where the raised back begins
+ * (or 0.9 m from the head end of a flat one); `head` the middle of the
+ * head end; `length` the lying surface's, end to end; `width` its width
+ * across, there under the pelvis — the cushion's, which the frame under
+ * it may stand out past; `incline` the raised back's angle off the flat,
+ * in degrees.
  *
  *   npm run seats                       # every piece one can sit on
  *   npm run seats -- ld-out ld-lounger  # only ids starting so (merged in)
@@ -84,6 +100,14 @@ const CHAISE_DEPTH = 0.78;
 const PITCH = 0.6;
 /** Where a seated person's buttocks rest, out from the foot of the back. */
 const SIT_BACK = 0.15;
+/** How far a loose pillow lying against the back gives under someone leant on it: they sit that much further back than its front. */
+const PILLOW_GIVE = 0.06;
+/** Under the first of a seat this far in from its front edge, something this near the floor (or half the seat's height, if that is less) is a base no foot goes under. */
+const BASE_UNDER = 0.2;
+const BASE_LOW = 0.2;
+/** Before a seat's front edge, this far out: more than this share of it the piece itself, rather than floor, and there is no room for legs. */
+const LEG_ROOM = 0.3;
+const LEG_ROOM_TAKEN = 0.25;
 
 const args = process.argv.slice(2);
 const pngAt = args.includes("--png") ? args[args.indexOf("--png") + 1] : null;
@@ -124,8 +148,8 @@ async function main() {
             continue;
         }
         out[item.id] = entry;
-        const seats = entry.seats.map((s) => `${fmt(s.at)} h${s.height} d${s.depth} ${s.facing}°`).join("; ");
-        const lie = entry.lie ? ` lie ${fmt(entry.lie.at)} h${entry.lie.height} head ${fmt(entry.lie.head)} ${entry.lie.length} m ${entry.lie.incline}°` : "";
+        const seats = entry.seats.map((s) => `${fmt(s.at)} h${s.height} d${s.depth}${s.room ? ` (back at ${s.room})` : ""} ${s.facing}° ${s.base}`).join("; ");
+        const lie = entry.lie ? ` lie ${fmt(entry.lie.at)} h${entry.lie.height} head ${fmt(entry.lie.head)} ${entry.lie.length} × ${entry.lie.width} m ${entry.lie.incline}°` : "";
         console.log(`${item.id.padEnd(28)} ${entry.kind.padEnd(7)} ${seats}${lie}`);
         if (pngAt) await drawTopView(join(pngAt, `${item.id}.png`), field, entry);
     }
@@ -204,6 +228,7 @@ async function readTriangles(file, item) {
 /**
  * The highest surface over each cell's middle, from above: `h[i + j * nx]`
  * at x = x0 + (i + ½)·CELL, z = z0 + (j + ½)·CELL; −Infinity over nothing.
+ * And the lowest, from below: `low`, Infinity under nothing.
  */
 function heightField(tris) {
     let [x0, z0, x1, z1] = [Infinity, Infinity, -Infinity, -Infinity];
@@ -220,10 +245,13 @@ function heightField(tris) {
     const nx = Math.ceil((x1 + CELL - x0) / CELL);
     const nz = Math.ceil((z1 + CELL - z0) / CELL);
     const h = new Float32Array(nx * nz).fill(-Infinity);
+    const low = new Float32Array(nx * nz).fill(Infinity);
     const mark = (x, y, z) => {
         const i = Math.floor((x - x0) / CELL);
         const j = Math.floor((z - z0) / CELL);
-        if (i >= 0 && j >= 0 && i < nx && j < nz && y > h[i + j * nx]) h[i + j * nx] = y;
+        if (i < 0 || j < 0 || i >= nx || j >= nz) return;
+        if (y > h[i + j * nx]) h[i + j * nx] = y;
+        if (y < low[i + j * nx]) low[i + j * nx] = y;
     };
     for (const [[ax, ay, az], [bx, by, bz], [cx, cy, cz]] of tris) {
         // Its edges, point by point: a rail thinner than a cell is seen too.
@@ -254,10 +282,11 @@ function heightField(tris) {
                 if (u < -1e-6 || v < -1e-6 || w < -1e-6) continue;
                 const y = u * ay + v * by + w * cy;
                 if (y > h[i + j * nx]) h[i + j * nx] = y;
+                if (y < low[i + j * nx]) low[i + j * nx] = y;
             }
         }
     }
-    return { h, nx, nz, x0, z0 };
+    return { h, low, nx, nz, x0, z0 };
 }
 
 // ---------------------------------------------------------------------
@@ -362,8 +391,22 @@ function measure(item, field) {
             let foot = back;
             while (foot - 1 > front && y(foot - 1) > level + FOOT) foot--;
             level = near(foot) ?? level;
+            // Where the back proper begins, whatever lies before it.
+            const wall = foot;
+            // A loose pillow lying on the seat against the back: what is
+            // before the back stands well over the front of the line. The
+            // front is the seat, and its back's foot the pillow's front.
+            const ahead = near(Math.min(foot, front + Math.round(0.25 / CELL)));
+            if (ahead !== null && level - ahead > FOOT) {
+                level = ahead;
+                foot = back;
+                while (foot - 1 > front && y(foot - 1) > level + FOOT) foot--;
+                level = near(foot) ?? level;
+                // Leant on, it gives.
+                foot = Math.min(wall, foot + Math.round(PILLOW_GIVE / CELL));
+            }
             if ((foot - front) * CELL < 0.2) continue;
-            lines[index][line] = { front, foot, level };
+            lines[index][line] = { front, foot, wall, level };
         }
     });
 
@@ -377,10 +420,11 @@ function measure(item, field) {
                 delete lines[index][line];
                 continue;
             }
+            // By how near the back proper is: a pillow lying in a corner draws no cells its way.
             for (let k = l.front; k < l.foot; k++) {
                 const cell = f.cell(field, Number(line), k);
-                if (l.foot - k < best[cell]) {
-                    best[cell] = l.foot - k;
+                if (l.wall - k < best[cell]) {
+                    best[cell] = l.wall - k;
                     owner[cell] = index;
                 }
             }
@@ -399,7 +443,7 @@ function measure(item, field) {
             const t = (k + 0.5) / n;
             const x = alongX ? box.x0 + t * (box.x1 - box.x0) : (box.x0 + box.x1) / 2;
             const z = alongX ? (box.z0 + box.z1) / 2 : box.z0 + t * (box.z1 - box.z0);
-            seats.push({ at: [round(x), round(z)], height: round(guess), depth: round(alongX ? box.z1 - box.z0 : box.x1 - box.x0), facing: 0 });
+            seats.push({ at: [round(x), round(z)], height: round(guess), depth: round(alongX ? box.z1 - box.z0 : box.x1 - box.x0), facing: 0, base: baseOf(field, box, guess) });
         }
         return { kind: n > 1 ? "bench" : "stool", seats, lie: null };
     }
@@ -414,6 +458,8 @@ function measure(item, field) {
  * begin or end; a run seats one per PITCH of its width, a chaise one.
  * A seat's back, front and height are its own lines' middling ones, so a
  * cushion propped against the back moves the one seat it is on forward.
+ * Each seat with its `base` — what is under its front edge (baseUnder) —
+ * and none at all where there is no room for legs before it (legRoom).
  */
 function seatsFacing(field, f, index, lines, owner) {
     const kept = [];
@@ -433,18 +479,19 @@ function seatsFacing(field, f, index, lines, owner) {
         }
         // A line mostly another facing's (through a corner sofa's corner) is none of this one's.
         const depth = (l.foot - front) * CELL;
-        kept.push(depth >= 0.12 && depth >= 0.6 * (l.foot - l.front) * CELL ? { ...l, line, front, depth } : null);
+        kept.push(depth >= 0.12 && depth >= 0.6 * (l.foot - l.front) * CELL ? { ...l, line, front, depth, room: (l.wall - front) * CELL } : null);
     }
     // Runs: lines side by side, over gaps no wider than GAP (a slatted
-    // seat's), whose backs' feet are within 0.15 m of each other.
+    // seat's), whose backs' feet are within 0.15 m of each other — or
+    // whose backs proper are: a pillow lying against one is part of its seat.
     const runs = [];
     let run = null;
     for (let line = 0; line < kept.length; line++) {
         const l = kept[line];
         if (!l) continue;
-        const chaise = l.depth > CHAISE_DEPTH;
-        const joins =
-            run && run.chaise === chaise && (line - run.to - 1) * CELL <= GAP && Math.abs(l.foot - run.lines.at(-1).foot) * CELL <= 0.15;
+        const chaise = l.room > CHAISE_DEPTH;
+        const last = run?.lines.at(-1);
+        const joins = run && run.chaise === chaise && (line - run.to - 1) * CELL <= GAP && Math.min(Math.abs(l.foot - last.foot), Math.abs(l.wall - last.wall)) * CELL <= 0.15;
         if (joins) {
             run.lines.push(l);
             run.to = line;
@@ -467,11 +514,70 @@ function seatsFacing(field, f, index, lines, owner) {
             const foot = median(own.map((l) => l.foot));
             const front = median(own.map((l) => l.front));
             const depth = (foot - front) * CELL;
+            if (!legRoom(field, f, own)) continue;
+            const height = median(own.map((l) => l.level));
             const [x, z] = f.at(field, (span[0] + span[1]) / 2, foot - Math.min(SIT_BACK, depth / 2) / CELL);
-            seats.push({ at: [round(x), round(z)], height: round(median(own.map((l) => l.level))), depth: round(depth), facing: f.deg });
+            const seat = { at: [round(x), round(z)], height: round(height), depth: round(depth), facing: f.deg, base: baseUnder(field, f, own, height) };
+            // A pillow lying on it: how far back the back proper is.
+            const room = (median(own.map((l) => l.wall)) - front) * CELL;
+            if (room > depth + 0.001) seat.room = round(room);
+            seats.push(seat);
         }
     }
     return seats;
+}
+
+/**
+ * Whether there is room for a sitter's legs before a seat: the first
+ * LEG_ROOM of what is before its lines' front edges is floor, not the
+ * piece itself (another's cushions, in the corner of a corner sofa) — all
+ * but LEG_ROOM_TAKEN of it.
+ */
+function legRoom(field, f, lines) {
+    let taken = 0;
+    let all = 0;
+    for (const l of lines) {
+        for (let k = l.front - 1; k >= 0 && (l.front - k) * CELL <= LEG_ROOM; k--) {
+            all++;
+            if (field.h[f.cell(field, l.line, k)] >= FLOOR) taken++;
+        }
+    }
+    return !all || taken / all <= LEG_ROOM_TAKEN;
+}
+
+/**
+ * What is under a seat's front edge, from below: "solid", a base that
+ * comes down to the floor or near it under the first BASE_UNDER of the
+ * seat (a sofa's box, a plinth, short feet) — feet can't be tucked back
+ * under it — or "open", a seat on legs with the floor clear under it.
+ * By the middling of its lines' lowest there: a leg is one line or two.
+ */
+function baseUnder(field, f, lines, height) {
+    const lowest = [];
+    for (const l of lines) {
+        let low = Infinity;
+        for (let k = l.front; k < l.foot && (k - l.front) * CELL < BASE_UNDER; k++) low = Math.min(low, field.low[f.cell(field, l.line, k)]);
+        if (low < Infinity) lowest.push(low);
+    }
+    if (!lowest.length) return "open";
+    return median(lowest) < Math.min(BASE_LOW, height / 2) ? "solid" : "open";
+}
+
+/**
+ * What is under a piece with no back (a stool, a pouf, a bench), whose
+ * seat is `box`: "solid" where most of it comes down to the floor or near
+ * it, "open" on legs (baseUnder's, for a seat sat on from any side).
+ */
+function baseOf({ low, nx, x0, z0 }, box, height) {
+    const lowest = [];
+    for (let z = box.z0 + CELL / 2; z < box.z1; z += CELL) {
+        for (let x = box.x0 + CELL / 2; x < box.x1; x += CELL) {
+            const value = low[Math.floor((x - x0) / CELL) + Math.floor((z - z0) / CELL) * nx];
+            if (value < Infinity) lowest.push(value);
+        }
+    }
+    if (!lowest.length) return "open";
+    return median(lowest) < Math.min(BASE_LOW, height / 2) ? "solid" : "open";
 }
 
 /** The commonest height (1 cm bins) between 0.25 m and `max`, of what can be seen from above. */
@@ -560,11 +666,20 @@ function measureLie(field, flat) {
     const flatValues = profile.filter((y, a) => (a - foot) * step >= 0 && (bend - a) * step > 0 && Math.abs(y - flat) < 0.06);
     flatValues.sort((p, q) => p - q);
     const height = flatValues.length ? flatValues[Math.floor(flatValues.length / 2)] : flat;
+    // How wide the lying surface is under the pelvis: the cells across it there at its height (the widest of five lines).
+    let width = 0;
+    for (let a = pelvis - 2; a <= pelvis + 2; a++) {
+        if (a < 0 || a >= n) continue;
+        let across = 0;
+        for (let b = 0; b < m; b++) if (Math.abs((alongZ ? h[b + a * nx] : h[a + b * nx]) - height) < 0.04) across++;
+        width = Math.max(width, across * CELL);
+    }
     return {
         at: point(pelvis).map(round),
         height: round(height),
         head: point(head).map(round),
         length: round((Math.abs(head - foot) + 1) * CELL),
+        width: round(width),
         incline: Math.round(incline),
     };
 }

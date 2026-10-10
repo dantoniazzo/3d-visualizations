@@ -1228,9 +1228,13 @@ export default class Editor extends EventEmitter {
         return `person-${most + 1}`;
     }
 
-    /** The cast, clips and props the planner chooses from: the people index's. */
+    /**
+     * The cast, clips and props the planner chooses from: the people
+     * index's — the whole of its `clips`, whose `hips` fits each clip to
+     * each character, as scripts/place-people.mjs passes it.
+     */
     castOf(index = this.peopleIndex) {
-        return index ? { characters: index.characters, clips: index.clips.list, props: index.props.list } : {};
+        return index ? { characters: index.characters, clips: index.clips, props: index.props.list } : {};
     }
 
     /**

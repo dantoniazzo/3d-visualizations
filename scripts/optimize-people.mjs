@@ -17,19 +17,63 @@
  *
  * The index, with every path from /models/:
  *
- *   characters: [{ id, name, file: "people/<id>.glb", height, hips }]
- *   clips: { file: "people/clips.glb", hips, list: [{ name, pose, hand,
- *            pelvis, seat, head, duration }] }
+ *   characters: [{ id, name, file: "people/<id>.glb", height, hips, legs, sits, sex, eyes, mouth }]
+ *   clips: { file: "people/clips.glb", hips, legs, list: [{ name, pose, hand,
+ *            tilt, curl, pelvis, seat, head, duration, feet?, tuck?, knee?, far?, reach?, sex?, still? }] }
  *   props: { file: "people/props.glb", list: [{ id, node, grip }] }   (once props.glb is there;
  *          node as three.js names it, grip "right" | "left" | null)
  *
  * `hips` is how high the pelvis stands, in metres: a clip moves the Hips
  * as for a skeleton of the clips' `hips`, so on a character its Hips
- * track, and the clip's pelvis and seat, are scaled by character.hips /
- * clips.hips. `pelvis` is the Hips at the clip's first frame from the
- * character's root (its feet when standing), Y up, facing +Z; `seat`,
- * for a clip that sits or lies, the point under the pelvis that rests on
- * the seat; `head`, the head's place, which way a lying clip's head lies.
+ * track, and the clip's pelvis, seat and feet, are scaled by
+ * character.hips / clips.hips. `pelvis` is the Hips at the clip's first
+ * frame from the character's root (its feet when standing), Y up, facing
+ * +Z; `seat`, for a clip that sits or lies, the point under the pelvis
+ * that rests on the seat; `head`, the head's place, which way a lying
+ * clip's head lies. `feet`, for a clip that sits, is where its feet rest
+ * at its first frame, at the height of its soles: seat[1] − feet[1] is
+ * the height of the seat it was made for, on which its feet are on the
+ * floor (0.33–0.44 m for Mixamo's; on a higher seat they hang, on a
+ * lower one they are under the floor). `tuck` and `knee`, for a clip
+ * that sits, are how far forward of its seat its rearmost ankle and its
+ * rearmost knee ever are, over all its frames (of the legs whose feet are
+ * down): a seat whose front edge is further forward than its knees has
+ * its shins in the cushion, and one with a solid base, further forward
+ * than its ankles, its feet in the base. `far` is how far forward its
+ * foremost ankle ever is: what stands that near before the seat (a
+ * coffee table) has its feet in it. All three are the clips' own
+ * skeleton's, whose thighs and shins are `clips.legs` long ([thigh,
+ * shin], in metres): on a character they come as its own `legs` are to
+ * those — its knees by its thighs, its ankles from its knees by its
+ * shins (shared/people.js) — since a clip only turns the bones. Better,
+ * a character's `sits` says how each sitting clip sits on that very
+ * body, measured in Blender with the body posed as the clip:
+ * { "<clip>": [seat, knee, tuck, far] }, in metres — the height of the
+ * seat that puts its soles on the floor, and its rearmost knee, rearmost
+ * ankle and foremost ankle forward of its seat. No two bodies rest
+ * alike, so these differ by centimetres from any scaling of the clip's.
+ * `reach`, for a clip that lies, is how far from its midline its hands
+ * lie at its first frame: on a lounger narrower than twice that they
+ * rest on the air — the app brings its arms in (World/People.js).
+ *
+ * A character's `eyes` is where its eyes are on its head, at rest: [x,
+ * up, forward] from its head's joint, in metres — midway between them,
+ * as high as they are, as far forward as the front of its face round
+ * them, where the lenses of a pair of glasses hang. Null for a
+ * character it could not be found on, who is given no sunglasses. Its
+ * `mouth` is its lips likewise, on its midline: what a bottle is tipped
+ * at (a guess for everybody, where it is null).
+ *
+ * `hand` is the hand that can hold a glass all through the clip —
+ * "right", "left", or false for neither — measured in Blender over every
+ * frame (blender/import_people.py's hand_now, TILT_MOST, CURL_LEAST, and
+ * its HANDS for the drinking clips): `tilt` is, for each hand, the
+ * furthest off upright a glass in its fist ever points, and `curl` the
+ * least its fingers are ever curled, both in degrees. What is held goes
+ * in that hand, whichever the prop's own `grip` says. `sex` is "f" or
+ * "m" for a character (null for one the pipeline's SEXES doesn't list)
+ * and for a clip made for one ("Laying Propped Female"); `still` marks a
+ * clip of one pose, which doesn't move.
  *
  * With nothing downloaded (or --standin), it makes the stand-ins instead,
  * from the app's own avatars — index.standin.json, standin-*.glb and
@@ -260,12 +304,40 @@ console.log(
 );
 
 const index = {
-    characters: meta.characters.map(({ id, name, file, height, hips }) => ({ id, name, file: `people/${file}`, height, hips })),
+    characters: meta.characters.map(({ id, name, file, height, hips, legs, sits, sex, eyes, mouth }) => ({
+        id,
+        name,
+        file: `people/${file}`,
+        height,
+        hips,
+        legs: legs ?? null,
+        sex: sex ?? null,
+        eyes: eyes ?? null,
+        mouth: mouth ?? null,
+        ...(sits && Object.keys(sits).length ? { sits } : {}),
+    })),
     clips: {
         file: `people/${meta.clips.file}`,
         hips: meta.clips.hips,
+        legs: meta.clips.legs ?? null,
         list: meta.clips.list
-            .map(({ name, pose, hand, pelvis, seat, head, duration }) => ({ name, pose, hand, pelvis, seat, head, duration }))
+            .map(({ name, pose, hand, tilt, curl, pelvis, seat, head, duration, feet, tuck, knee, far, reach, sex, still }) => ({
+                name,
+                pose,
+                hand,
+                tilt: tilt ?? null,
+                curl: curl ?? null,
+                pelvis,
+                seat,
+                head,
+                duration,
+                // only where they apply: a sitting clip's feet and how far back its legs come, a lying one's reach, a clip for women or men, a single pose
+                ...(feet ? { feet } : {}),
+                ...(tuck !== undefined ? { tuck, knee, far } : {}),
+                ...(reach !== undefined ? { reach } : {}),
+                ...(sex ? { sex } : {}),
+                ...(still ? { still: true } : {}),
+            }))
             .sort((a, b) => a.name.localeCompare(b.name)),
     },
 };

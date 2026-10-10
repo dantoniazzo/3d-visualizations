@@ -143,7 +143,11 @@ export default class PublishPanel {
     getOptions() {
         const data = new FormData(this.dom.form);
         const value = (option) => (option.pieces ? data.getAll(option.id) : option.choices ? data.get(option.id) : data.has(option.id));
-        return publishOptions(Object.fromEntries(PUBLISH_OPTIONS.map((option) => [option.id, value(option)])));
+        const options = Object.fromEntries(PUBLISH_OPTIONS.map((option) => [option.id, value(option)]));
+        // The form has a box for every piece there is: one not ticked was
+        // left out, and is said to be known so that it stays out.
+        for (const option of PUBLISH_OPTIONS) if (option.pieces) options[option.known] = option.pieces.map((piece) => piece.value);
+        return publishOptions(options);
     }
 
     /** Baking is offered only where this server can run it. */
@@ -497,6 +501,12 @@ function optionField(option) {
         </label>`;
 }
 
+/**
+ * The options last published with, from this browser. They carry the
+ * scenery there was to choose from then (`sceneryKnown`), so a piece
+ * added since — the people — comes back ticked, not left out unasked,
+ * and one unticked on purpose stays so (shared/publishOptions.js).
+ */
 function remembered() {
     try {
         return publishOptions(JSON.parse(localStorage.getItem(REMEMBERED) || "{}"));

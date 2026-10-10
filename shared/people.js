@@ -17,7 +17,11 @@
  *   pose       "stand" | "sit" | "lie"
  *   clip       a clip's name, or null for the pose's own
  *   position   [x, y, z]: standing, the feet; sitting, the seat's surface
- *              under the pelvis; lying, the lounger's under the pelvis
+ *              under the pelvis (less what a sofa's cushion gives under
+ *              someone whose feet would otherwise hang, GIVE at most; and
+ *              as far forward of the seat's own point as their legs need
+ *              to hang before its front edge, FORWARD_MOST at most);
+ *              lying, the lounger's under the pelvis
  *   rotation   degrees about the upright, turned as a piece of furniture
  *              is: the way they face — 0 north (−z), 90 west (−x), −90
  *              east, 180 south (facingOf) — and lying, the way their head
@@ -25,9 +29,30 @@
  *              is turned by rotation + 180° to face it.
  *   seat       { furniture: <placement id>, index: <its seat in seats.json;
  *              lying, 0> } | null
- *   prop       what they hold ("wine-red", "flute", ...) | null
+ *   prop       what they hold ("wine-red", "flute", ...), wear
+ *              ("sunglasses") or have laid by them ("towel") | null
  *   group      the people they are with, "group-<n>" | null
  *   seed       an integer: where in its clip they start
+ *
+ * The order of the spec's `people` is their priority: a device that draws
+ * only some of them (Utils/device.js's `people.most`: four on the slowest
+ * phones, eight on the next) draws the first whole groups that fit. So a
+ * plan comes first with one standing group, then those lying by the pool,
+ * then those sitting, then everyone else — the first four are already the
+ * scene.
+ *
+ * Who plays what is chosen from what the people index measures of each
+ * clip (scripts/optimize-people.mjs): a drink goes only to someone whose
+ * clip has a hand that can hold it (`hand`, and how level it tips a glass,
+ * `tilt`) — a bottle of beer, to someone whose clip drinks, for Mixamo's
+ * drink from a bottle; a clip made for women or for men only to one
+ * (`sex`); and someone sitting gets the clip made for a seat of their
+ * seat's height (`seat` and `feet`, scaled to the character — or as the
+ * index measured that clip on that very character, its `sits`), so that
+ * their feet are on the floor, and whose legs hang clear of the seat —
+ * its knees past the front edge, and on a seat with a solid base
+ * (seats.json's `base`) its feet before it too (`knee`, `tuck`).
+ * Sunglasses go only to a character whose eyes the index has (`eyes`).
  *
  * Where one can sit or lie is the catalogue's seats.json
  * (scripts/measure-seats.mjs), in each piece's own frame; `seatsOf` puts
@@ -42,10 +67,23 @@ import { mulberry32, pointInPolygon } from "./vegetation.js";
 export const POSES = ["stand", "sit", "lie"];
 /** The drinks a person can hold; World/People.js draws any its index lacks. */
 export const DRINKS = ["wine-red", "wine-white", "flute", "tumbler", "beer", "coffee"];
-/** What someone lying by the pool may have, when the people index has it. */
-const LYING_PROPS = ["towel", "book"];
+/**
+ * What someone lying by the pool may have, when the people index has it,
+ * and how often: a towel laid past their feet, sunglasses worn, a book
+ * left open beside the towel (World/People.js's `lay`: none of them is
+ * held, so a lying clip's hands don't matter) — or nothing.
+ */
+const LYING_PROPS = [
+    ["towel", 5],
+    ["sunglasses", 2],
+    ["book-open", 1.5],
+];
+const NOTHING_LYING = 1.5;
 /** Before the people index has any characters: the visitor's two avatars (World/People.js's STAND_IN). */
-const STAND_IN_CHARACTERS = [{ id: "male" }, { id: "female" }];
+const STAND_IN_CHARACTERS = [
+    { id: "male", sex: "m" },
+    { id: "female", sex: "f" },
+];
 /** As many people as a spec keeps. */
 export const MAX_PEOPLE = 200;
 
@@ -65,6 +103,87 @@ const SEAT_HEIGHT = [0.3, 0.62];
 const SEAT_DEPTH = [0.2, 0.78];
 /** A seat shallower than this has a cushion propped against its back: sat on only when there is nowhere better. */
 const ROOMY = 0.4;
+/**
+ * A sitting clip is made for a seat of one height (its `seat` less its
+ * `feet`, scaled to the character): on a higher one the feet hang, on a
+ * lower one they are under the floor. Within FEET_NEAR of it, in metres,
+ * no one can tell; within FEET_MOST it passes; a seat no character and
+ * clip come that near is not sat on at all.
+ */
+const FEET_NEAR = 0.02;
+const FEET_MOST = 0.04;
+/**
+ * Feet under the floor count for more than feet that hang: World/People.js
+ * lifts someone off their seat until their soles are on the floor, but by
+ * no more than its LIFT_MOST (1.5 cm), so a clip made for a seat UNDER_MOST
+ * higher than this one is as far off as one whose feet hang FEET_MOST.
+ */
+const UNDER_MOST = 0.025;
+/** Where a seat's point is, out from the foot of its back (scripts/measure-seats.mjs's SIT_BACK): the middle, on a shallower seat. */
+const SIT_BACK = 0.15;
+/**
+ * A sitter's legs hang before the seat's front edge: their knees
+ * LEG_CLEAR past it, in metres — the calf behind the shin's bone then
+ * only touches the cushion — and on a seat with a solid base their
+ * ankles HEEL_CLEAR past it too, for the heel behind them. Someone whose
+ * clip keeps them further back than that (the index's `knee` and
+ * `tuck`, as long as their own thighs and shins make them: legsOf) sits
+ * that much forward of the seat's point —
+ * FORWARD_MOST at most, FORWARD_BACK for a clip that sits back (its back
+ * is to rest on the seat's), and never so far that less than SEAT_UNDER
+ * of the seat is left under them; a clip that needs more is not for that
+ * seat.
+ */
+const LEG_CLEAR = 0.04;
+const HEEL_CLEAR = 0.06;
+const FORWARD_MOST = 0.15;
+const FORWARD_BACK = 0.08;
+const SEAT_UNDER = 0.12;
+/**
+ * And their feet need floor to rest on: a sitter's foremost ankle (the
+ * index's `far`), and FOOT more for the foot before it, come short of
+ * whatever stands before the seat lower than their knees — a coffee
+ * table, a planter, a wall, the pool (legSpace: looked for out to
+ * LEG_SPACE from the seat's point, LEGS_APART either side, up to
+ * KNEE_HIGH over the floor; a table one sits up to has its top over
+ * that, and their legs under it).
+ */
+const FOOT = 0.2;
+const LEG_SPACE = 1.2;
+const LEGS_APART = 0.15;
+const KNEE_HIGH = 0.62;
+/** How far a sofa's or a lounge chair's cushion gives under someone, in metres: they sit that much lower, when their feet would otherwise hang. */
+const GIVE = 0.03;
+/** A sitting clip whose head is this far behind its seat is one sat back in: for a seat out of doors, soft and at least RECLINE_DEPTH deep. */
+const RECLINED = 0.2;
+const RECLINE_DEPTH = 0.5;
+/** A hand that tips a glass more than this off upright can't hold one (blender/import_people.py's TILT_MOST): the steadier a hand, the likelier it is given one. */
+const TILT_MOST = 80;
+/** How much less likely a lying clip propped up on its hands is on a lounger too narrow for them (the index's `reach`): they would rest on the air beside it. (Anyone else's arms World/People.js brings in.) */
+const OFF_LOUNGER = 0.3;
+/** A lying clip whose head is this far above its seat sits up of itself: not for a lounger whose back is raised more than RAISED degrees, which would sit it bolt upright. */
+const SITS_UP = 0.45;
+const RAISED = 5;
+/** What someone whose clip drinks holds: Mixamo's drinking clips lift the hand over the mouth, as one drinks from a bottle. */
+const BOTTLE = "beer";
+/**
+ * Clips no one is planned with (the editor can still give them): "Sitting
+ * Reclining Female" leans on an arm that goes through the chair's rail or
+ * the sofa's back cushion wherever it sits (9 of 9 placements audited).
+ */
+const LEFT_OUT = new Set(["Sitting Reclining Female"]);
+/** How far round a pool no one stands: its raised coping. */
+const COPING = 0.3;
+/** How far a planter's grasses reach past its box, and above it. */
+const GRASSES = { out: 0.25, up: 1.0 };
+/** How often someone on a seat one sits back in does — hands behind the head, or leaning on an arm — though no two of them alike. */
+const SITS_BACK = 0.3;
+/** The first standing group stands within this of those lying by the pool, on their level, where there is room: with them it is one scene. */
+const BY_THE_POOL = 12;
+/** Clips by what they are doing, by name. */
+const TALKING = /talk|chat|argu|explain|discuss/i;
+const LISTENING = /laugh|agree|nod|listen|idle|drink/i;
+const DRINKING = /drink|sip/i;
 /** How far before a door or a doorway, either side, no one stands about (and MARGIN more). */
 const DOORWAY = 0.6;
 /** A piece flatter than this (a rug) is walked on, not round. */
@@ -121,8 +240,11 @@ function placedPoint(placement, [x, z]) {
 /**
  * A placed piece's seats and lying surface, where they are: each seat's
  * point under a seated person's pelvis `[x, y, z]`, the way they face
- * (`facing`, a rotation), its depth and its kind's; the lounger's point
- * under a lying person's pelvis, and `rotation` the way their head lies.
+ * (`facing`, a rotation), its depth — and `room`, how far its front edge
+ * is from its back proper, where a loose pillow lies between — its height
+ * and its `base` ("solid", "open", or null where seats.json doesn't say);
+ * the lounger's point under a lying person's pelvis, `rotation` the way
+ * their head lies, and its cushion's `width` (null likewise).
  * Null for a piece no one sits or lies on.
  *
  * @param {object} placement  a spec furniture entry { id, catalog_id, position, rotation, scale }
@@ -143,7 +265,9 @@ export function seatsOf(placement, seats) {
                 at: [x, y0 + seat.height * s, z],
                 facing: wrap(seat.facing + (placement.rotation ?? 0)),
                 depth: seat.depth * s,
+                room: (seat.room ?? seat.depth) * s,
                 height: seat.height * s,
+                base: seat.base === "solid" || seat.base === "open" ? seat.base : null,
             };
         }),
         lie: null,
@@ -157,6 +281,7 @@ export function seatsOf(placement, seats) {
             head,
             rotation: rotationTowards(head[0] - x, head[1] - z),
             length: entry.lie.length * s,
+            width: Number.isFinite(entry.lie.width) ? entry.lie.width * s : null,
             incline: entry.lie.incline ?? 0,
         };
     }
@@ -285,7 +410,7 @@ function obstaclesOf(spec, catalog) {
     const land = spec.landscape;
     if (land && typeof land === "object") {
         for (const wall of land.walls || []) add("wall", wall.id, wall.base ?? 0, wall.top ?? 1, thickLine(wall.path, (wall.thickness ?? 0.4) / 2));
-        for (const planter of land.planters || []) add("planter", planter.id, planter.base ?? 0, (planter.base ?? 0) + (planter.height ?? 0.5), thickLine(planter.path, (planter.width ?? 0.5) / 2));
+        for (const planter of land.planters || []) add("planter", planter.id, planter.base ?? 0, (planter.base ?? 0) + (planter.height ?? 0.5) + GRASSES.up, thickLine(planter.path, (planter.width ?? 0.5) / 2 + GRASSES.out));
         for (const hedge of land.hedges || []) add("hedge", hedge.id, hedge.base ?? 0, (hedge.base ?? 0) + (hedge.height ?? 1), thickLine(hedge.path, (hedge.width ?? 0.6) / 2));
         for (const rail of land.railings || []) {
             const ys = rail.points.map((p) => p[2] ?? 0);
@@ -306,7 +431,7 @@ function obstaclesOf(spec, catalog) {
         // A pool: no one stands in it, at its level or a step above.
         for (const pool of land.pools || []) {
             const [x0, z0, x1, z1] = pool.box;
-            add("pool", pool.id ?? "pool", (pool.level ?? 0) - (pool.depth ?? 1.4), (pool.level ?? 0) + 1, turnedBox([(x0 + x1) / 2, (z0 + z1) / 2], x1 - x0, z1 - z0, 0));
+            add("pool", pool.id ?? "pool", (pool.level ?? 0) - (pool.depth ?? 1.4), (pool.level ?? 0) + 1, turnedBox([(x0 + x1) / 2, (z0 + z1) / 2], x1 - x0 + 2 * COPING, z1 - z0 + 2 * COPING, 0));
         }
     }
     return out;
@@ -379,6 +504,11 @@ export function clearOf(spec, catalog, point, options = {}) {
 // Planning
 // ---------------------------------------------------------------------
 
+/** Two lengths, [a, b], if that is what `value` is; else null. */
+function pairOf(value) {
+    return Array.isArray(value) && value.length === 2 && value.every((v) => Number.isFinite(v) && v > 0) ? value : null;
+}
+
 /** Pick one of `list` by `weight`, or null. */
 function pickWeighted(random, list, weight) {
     let total = 0;
@@ -402,77 +532,327 @@ function shuffled(random, list) {
 }
 
 /**
- * The cast and its clips, and choosing among them: a character for each
- * person, spread so few wear the same and no group two of one; a clip by
- * pose, with a hand free for whoever holds something, varied within a
- * group; something to hold.
+ * A clip as the planner weighs it, from the people index's entry (or an
+ * older index's, or the app's own read of one, which say less):
+ *
+ *   hand      "right" | "left", the hand that can hold a glass all through
+ *             it, or null (the index's `hand`; `true`, or nothing said,
+ *             is the right)
+ *   tilt      how far off upright that hand ever tips a glass, in degrees,
+ *             or null when the index doesn't say
+ *   sex       "f" | "m" for a clip made for women or for men (the index's
+ *             `sex`, else its name's "Female" or "Male"), or null
+ *   madeFor   sitting: the height of the seat it was made for on the
+ *             clips' own skeleton — its `seat` above its `feet` (above the
+ *             root, without them) — or null when the index has no seat
+ *   reclined  sitting: sat back in, the head well behind the seat
+ *   knee, tuck, far  sitting: how far forward of its seat's point its
+ *             rearmost knee, its rearmost ankle and its foremost ankle
+ *             ever are, on the clips' own skeleton, in metres, or null
+ *             when the index doesn't say
+ *   reach     lying: how far from the midline the hands lie, in metres,
+ *             or null when the index doesn't say
+ *   sitsUp    lying: propped up of itself, the head well above the seat
+ *   still     one pose, which doesn't move
+ *   drinks    a clip of drinking, which is never played empty-handed
+ */
+function readClip(clip) {
+    const { name, pose } = clip;
+    const hand = clip.hand === "left" ? "left" : clip.hand === false || clip.hand === null ? null : "right";
+    const tilt = hand && Number.isFinite(clip.tilt?.[hand]) ? clip.tilt[hand] : null;
+    const sex = clip.sex === "f" || clip.sex === "m" ? clip.sex : /\bfemale\b/i.test(name) ? "f" : /\bmale\b/i.test(name) ? "m" : null;
+    const seat = Array.isArray(clip.seat) ? clip.seat : null;
+    const head = Array.isArray(clip.head) ? clip.head : null;
+    const sits = pose === "sit";
+    return {
+        name,
+        pose,
+        hand,
+        tilt,
+        sex,
+        madeFor: sits && seat && Number.isFinite(seat[1]) ? seat[1] - (Number.isFinite(clip.feet?.[1]) ? clip.feet[1] : 0) : null,
+        reclined: sits && ((seat && head ? seat[2] - head[2] > RECLINED : false) || /reclin/i.test(name)),
+        knee: sits && Number.isFinite(clip.knee) ? clip.knee : null,
+        tuck: sits && Number.isFinite(clip.tuck) ? clip.tuck : null,
+        far: sits && Number.isFinite(clip.far) ? clip.far : null,
+        reach: pose === "lie" && Number.isFinite(clip.reach) ? clip.reach : null,
+        sitsUp: pose === "lie" && (seat && head ? head[1] - seat[1] > SITS_UP : /propp/i.test(name)),
+        still: clip.still === true || (Number.isFinite(clip.duration) && clip.duration < 0.1),
+        drinks: DRINKING.test(name),
+    };
+}
+
+/**
+ * The cast and its clips, and choosing among them — a character, a clip
+ * and what they have with them, together, for someone standing
+ * (`stander`), sitting on a seat (`sitter`) or lying (`lier`):
+ *
+ * - a character no one has yet, until all have been used once, then one
+ *   used least; never two of one in a group (`mates`);
+ * - a clip of the pose, not one made for the other sex, the less played
+ *   the likelier, and not one a group-mate plays (`avoid`);
+ * - a drink only in a hand that can hold one, and always with a clip of
+ *   drinking — a bottle of beer, then (BOTTLE); lying, a towel, an open
+ *   book, sunglasses if the index has the character's eyes, or nothing.
+ *
+ * `people` are those there already (the editor adding one more).
  */
 function casting(random, { characters, clips, props, people = [] }) {
-    const cast = (characters?.length ? characters : STAND_IN_CHARACTERS).map((c) => (typeof c === "string" ? { id: c } : c)).filter((c) => c?.id);
-    const used = new Map(cast.map((c) => [c.id, 0]));
-    for (const person of people) if (used.has(person.character)) used.set(person.character, used.get(person.character) + 1);
-    const clipList = (Array.isArray(clips) ? clips : clips?.list || []).filter((c) => c?.name && POSES.includes(c.pose));
+    const cast = (characters?.length ? characters : STAND_IN_CHARACTERS)
+        .map((c) => (typeof c === "string" ? { id: c } : c))
+        .filter((c) => c?.id)
+        .map((c) => ({
+            id: c.id,
+            sex: c.sex === "f" || c.sex === "m" ? c.sex : null,
+            hips: Number.isFinite(c.hips) ? c.hips : null,
+            legs: pairOf(c.legs),
+            sits: c.sits && typeof c.sits === "object" ? c.sits : null,
+            eyes: Array.isArray(c.eyes) && c.eyes.length === 3,
+        }));
+    // A clip moves a character's hips, seat and feet scaled by the character's standing hips over the clips' skeleton's.
+    const clipsHips = !Array.isArray(clips) && Number.isFinite(clips?.hips) ? clips.hips : null;
+    const scaleOf = (character) => (character.hips && clipsHips ? character.hips / clipsHips : 1);
+    /** How a sitting clip sits on a character, as the index measured it on that very body (its `sits`): [seat, knee, tuck, far], or null. */
+    const sitsOf = (character, clip) => {
+        const own = character.sits?.[clip.name];
+        return Array.isArray(own) && own.length === 4 && own.every(Number.isFinite) ? own : null;
+    };
+    /** The height of the seat a sitting clip puts a character's soles on the floor from: the body's own, or the clip's scaled to it. Null when the index doesn't say. */
+    const madeFor = (character, clip) => sitsOf(character, clip)?.[0] ?? (clip.madeFor === null ? null : clip.madeFor * scaleOf(character));
+    /**
+     * Where a sitting clip's legs come on a character, forward of its
+     * seat: its rearmost knee, its rearmost ankle and its foremost ankle
+     * (`knee`, `tuck`, `far`) — the body's own, where the index measured
+     * them (`sits`). Without that, the clip's: a clip only turns the
+     * bones, so its knees come as far as the character's thighs are long,
+     * and its ankles from there as its shins are (the index's `legs`, the
+     * character's over the clips' skeleton's) — or as its hips are high.
+     */
+    const clipsLegs = Array.isArray(clips) ? null : pairOf(clips?.legs);
+    const legsOf = (character, clip) => {
+        const own = sitsOf(character, clip);
+        if (own) return { knee: own[1], tuck: own[2], far: own[3] };
+        const [thigh, shin] = character.legs && clipsLegs ? [character.legs[0] / clipsLegs[0], character.legs[1] / clipsLegs[1]] : [scaleOf(character), scaleOf(character)];
+        const knee = clip.knee * thigh;
+        return { knee, tuck: clip.tuck === null ? null : knee + (clip.tuck - clip.knee) * shin, far: clip.far === null ? knee : knee + (clip.far - clip.knee) * shin };
+    };
+    const clipList = (Array.isArray(clips) ? clips : clips?.list || []).filter((c) => c?.name && POSES.includes(c.pose)).map(readClip);
     const propIds = new Set((Array.isArray(props) ? props : props?.list || []).map((p) => (typeof p === "string" ? p : p?.id)).filter(Boolean));
 
-    const character = (groupMates = []) => {
-        const taken = new Set(groupMates);
+    const used = new Map(cast.map((c) => [c.id, 0]));
+    const played = new Map();
+    const note = (character, clip) => {
+        used.set(character.id, (used.get(character.id) ?? 0) + 1);
+        if (clip) played.set(clip.name, (played.get(clip.name) ?? 0) + 1);
+    };
+    for (const person of people) {
+        if (used.has(person.character)) used.set(person.character, used.get(person.character) + 1);
+        if (person.clip) played.set(person.clip, (played.get(person.clip) ?? 0) + 1);
+    }
+
+    /** Whoever has been used least, group-mates apart. */
+    const pool = (mates = []) => {
+        const taken = new Set(mates);
         const free = cast.filter((c) => !taken.has(c.id));
-        const pool = free.length ? free : cast;
-        const least = Math.min(...pool.map((c) => used.get(c.id)));
-        const fewest = pool.filter((c) => used.get(c.id) === least);
-        const chosen = fewest[Math.floor(random() * fewest.length)];
-        used.set(chosen.id, used.get(chosen.id) + 1);
-        return chosen.id;
+        const from = free.length ? free : cast;
+        const least = Math.min(...from.map((c) => used.get(c.id)));
+        return from.filter((c) => used.get(c.id) === least);
+    };
+    const anyOf = (list) => list[Math.floor(random() * list.length)];
+    /** A pose's clips that a character may play. */
+    const clipsFor = (pose, character) => clipList.filter((c) => c.pose === pose && (!c.sex || c.sex === character.sex));
+    /** How much likelier a clip is for being little played. */
+    const fresh = (clip) => 1 / (1 + (played.get(clip.name) ?? 0));
+    /** Those of `list` no group-mate plays (`avoid`), if there are any. */
+    const unplayed = (list, avoid) => {
+        const others = avoid ? list.filter((c) => !avoid.has(c.name)) : list;
+        return others.length ? others : list;
     };
 
-    /** A clip of `pose`'s: one with a hand free if `holding`, preferring names `prefer` matches, not one of `avoid`. */
-    const clip = (pose, { holding = false, prefer = null, avoid = new Set() } = {}) => {
-        const posed = clipList.filter((c) => c.pose === pose);
-        const able = holding ? posed.filter((c) => c.hand) : posed;
-        const pool = able.length ? able : posed;
-        if (!pool.length) return null;
-        const liked = prefer ? pool.filter((c) => prefer.test(c.name)) : [];
-        for (const list of [liked.filter((c) => !avoid.has(c.name)), pool.filter((c) => !avoid.has(c.name)), liked, pool]) {
-            if (list.length) return list[Math.floor(random() * list.length)];
-        }
-        return null;
-    };
-    /** Whether a pose has a clip with a hand free to hold something (or no clips to say otherwise). */
-    const canHold = (pose) => {
-        const posed = clipList.filter((c) => c.pose === pose);
-        return !posed.length || posed.some((c) => c.hand);
-    };
     /** A drink: coffee or wine indoors, anything out; not one of the last two poured, so a group's differ. */
     const poured = [];
     const drink = (indoors) => {
         const list = indoors ? ["coffee", "wine-red", "wine-white", "tumbler"] : ["wine-red", "wine-white", "flute", "tumbler", "beer", "flute", "wine-white"];
-        const fresh = list.filter((id) => !poured.includes(id));
-        const pool = fresh.length ? fresh : list;
-        const chosen = pool[Math.floor(random() * pool.length)];
+        const unpoured = list.filter((id) => !poured.includes(id));
+        const chosen = anyOf(unpoured.length ? unpoured : list);
         poured.unshift(chosen);
         poured.length = Math.min(poured.length, 2);
         return chosen;
     };
-    const lyingProp = () => {
-        const have = LYING_PROPS.filter((id) => propIds.has(id));
-        return have.length && random() < 0.6 ? have[Math.floor(random() * have.length)] : null;
+    /** What goes in the hand of someone playing `clip`: a bottle, if the clip drinks; else a drink. */
+    const pour = (clip, indoors) => {
+        if (!clip?.drinks) return drink(indoors);
+        poured.unshift(BOTTLE);
+        poured.length = Math.min(poured.length, 2);
+        return BOTTLE;
+    };
+
+    /**
+     * Someone standing, by their part in their group: "drink", a clip
+     * whose hand holds a glass and a drink in it — a clip of drinking
+     * most likely (`sure`: if there is one at all), else the
+     * steadiest-handed that isn't talking; "talk", a talking clip;
+     * "listen", one laughing, agreeing or standing by. A talker or a
+     * listener has a drink too, more often than not, when their clip has
+     * a hand for one.
+     */
+    const stander = ({ role = "drink", mates = [], avoid = null, indoors = false, sure = false } = {}) => {
+        const character = anyOf(pool(mates));
+        const all = clipsFor("stand", character);
+        let clip = null;
+        let holding = false;
+        if (role === "drink") {
+            const steady = (c) => (c.drinks ? 10 : 1 + Math.max(0, TILT_MOST - (c.tilt ?? TILT_MOST)) / 20);
+            const holders = all.filter((c) => c.hand);
+            const quiet = unplayed(holders.filter((c) => !TALKING.test(c.name)), avoid);
+            const drinking = quiet.filter((c) => c.drinks);
+            clip = pickWeighted(random, sure && drinking.length ? drinking : quiet, (c) => steady(c) * fresh(c)) ?? pickWeighted(random, unplayed(holders, avoid), fresh);
+            // With no clips to say otherwise, the pose's own, a drink in its hand.
+            holding = Boolean(clip) || !all.length;
+        } else {
+            // Listening, laughing or agreeing rather than only standing by.
+            const lively = (c) => (role === "listen" && /laugh|agree|nod/i.test(c.name) ? 2 : 1);
+            const doing = all.filter((c) => (role === "talk" ? TALKING : LISTENING).test(c.name));
+            clip = pickWeighted(random, unplayed(doing, avoid), (c) => lively(c) * fresh(c));
+            holding = Boolean(clip?.hand) && random() < 0.6;
+        }
+        if (!clip && all.length) {
+            clip = pickWeighted(random, unplayed(all, avoid), fresh);
+            holding = Boolean(clip.hand) && random() < 0.6;
+        }
+        if (clip?.drinks && clip.hand) holding = true;
+        note(character, clip);
+        return { character: character.id, clip: clip?.name ?? null, prop: holding ? pour(clip, indoors) : null };
+    };
+
+    /**
+     * Someone lying, on a lounger `width` metres across (null: not known)
+     * whose back is raised `incline` degrees: a lying clip theirs to play
+     * — not one that sits up of itself, on a raised back; of the rest the
+     * least played, so that those lying side by side don't all lie alike;
+     * one propped on hands the lounger is too narrow for, seldom — and
+     * perhaps a towel, a book, or sunglasses (on a character whose eyes
+     * the index has).
+     */
+    const lier = ({ mates = [], width = null, incline = 0 } = {}) => {
+        const character = anyOf(pool(mates));
+        const all = clipsFor("lie", character);
+        const lies = all.filter((c) => !(c.sitsUp && incline > RAISED));
+        const from = lies.length ? lies : all;
+        const least = Math.min(...from.map((c) => played.get(c.name) ?? 0));
+        const onIt = (c) => (c.sitsUp && width !== null && c.reach !== null && c.reach > width / 2 ? OFF_LOUNGER : 1);
+        const clip = pickWeighted(random, from.filter((c) => (played.get(c.name) ?? 0) === least), onIt);
+        note(character, clip);
+        const have = LYING_PROPS.filter(([id]) => propIds.has(id) && (id !== "sunglasses" || character.eyes));
+        const prop = have.length ? pickWeighted(random, [...have, [null, NOTHING_LYING]], ([, weight]) => weight)[0] : null;
+        return { character: character.id, clip: clip?.name ?? null, prop };
+    };
+
+    /**
+     * How each character there is to choose from would sit on a seat with
+     * each clip theirs to play: `off`, how far from the floor their feet
+     * would be, in metres — hanging, after the seat has given `give` under
+     * them (a soft seat, under feet that hang), or under it, which counts
+     * for more (UNDER_MOST) — and `forward`, how far forward of the seat's
+     * point they must sit for their legs to hang before its front edge:
+     * their knees LEG_CLEAR past it, and their ankles HEEL_CLEAR past it
+     * where its base is solid (or not known to be open). `legs` is
+     * whether they can — within FORWARD_MOST (FORWARD_BACK sat back),
+     * with SEAT_UNDER of the seat still under them — and whether their
+     * feet then come short of what stands before the seat (its `space`);
+     * `miss`, by how much they don't, for the least bad on a seat no one
+     * fits. A clip sat back in only on a seat that `reclines`, and only
+     * while no one else plays it: no two sit back alike. With no clip's
+     * seat or legs known, nothing is off.
+     */
+    const sitOptions = (seat, mates) => {
+        const out = [];
+        // From the seat's point to its front edge.
+        const edge = Number.isFinite(seat.depth) ? seat.depth - Math.min(SIT_BACK, seat.depth / 2) : null;
+        for (const character of pool(mates)) {
+            for (const clip of clipsFor("sit", character)) {
+                if (LEFT_OUT.has(clip.name)) continue;
+                if (clip.reclined && (!seat.reclines || played.has(clip.name))) continue;
+                let off = 0;
+                let give = 0;
+                const height = madeFor(character, clip);
+                if (height !== null && Number.isFinite(seat.height)) {
+                    const over = seat.height - height;
+                    give = seat.soft ? Math.min(GIVE, Math.max(0, over)) : 0;
+                    off = over >= give ? over - give : (give - over) * (FEET_MOST / UNDER_MOST);
+                }
+                let forward = 0;
+                // How far their legs are from clear, in metres: into the seat, sat as far forward as they may, and into what stands before it.
+                let miss = 0;
+                if (clip.knee !== null && edge !== null) {
+                    const { knee, tuck, far } = legsOf(character, clip);
+                    const most = Math.max(0, Math.min(clip.reclined ? FORWARD_BACK : FORWARD_MOST, edge - SEAT_UNDER));
+                    forward = Math.max(0, edge + LEG_CLEAR - knee, seat.base !== "open" && tuck !== null ? edge + HEEL_CLEAR - tuck : 0);
+                    miss = Math.max(0, forward - most);
+                    forward = Math.min(forward, most);
+                    // Their feet, on the floor before the seat: not in what stands there.
+                    if (Number.isFinite(seat.space)) miss += Math.max(0, far + forward + FOOT - seat.space);
+                }
+                out.push({ character, clip, off, give, forward, legs: miss < 1e-9, miss });
+            }
+        }
+        return out;
+    };
+    /** How far off the floor the feet of whoever sits best on a seat would be, their legs clear of it: 0 with no sitting clips to say, Infinity where no one's legs are. */
+    const sitFit = (seat, mates = []) => {
+        const options = sitOptions(seat, mates);
+        return options.length ? Math.min(...options.map((o) => (o.legs ? o.off : Infinity))) : 0;
     };
     /**
-     * A clip and something to hold, that go together: standing or sitting,
-     * a drink if `holding` (and a clip with a hand free for it); lying, a
-     * towel or a book, when the index has them. Nothing held in a hand the
-     * clip doesn't free (a towel is lain on, not held); a drink for a clip
-     * of drinking.
+     * Someone sitting on a seat: the character and clip whose feet come
+     * nearest the floor there, their legs clear of it, among those within
+     * a few millimetres of the best — counting against a clip that it is a
+     * still pose, that a group-mate plays it, that it has been played
+     * already, that it has them sit forward, and that it talks with no one
+     * to talk to (`role` "talk": the first of two; any other, alone or
+     * listening). `holding`, with a drink, if a clip whose hand holds one
+     * sits them within FEET_MOST: a clip of drinking first. `back`, sat
+     * back in the seat, if a clip that is sits them within FEET_MOST (and
+     * the seat is one to sit back in). Also `give`, how far the seat gives
+     * under them, and `forward`, how far forward of its point they sit.
      */
-    const outfit = (pose, { holding = false, indoors = false, prefer = null, avoid } = {}) => {
-        let prop = pose === "lie" ? lyingProp() : holding && canHold(pose) ? drink(indoors) : null;
-        const inHand = (id) => Boolean(id) && id !== "towel";
-        const chosen = clip(pose, { holding: inHand(prop), prefer, avoid });
-        if (chosen && !chosen.hand && inHand(prop)) prop = null;
-        if (chosen?.hand && !prop && pose !== "lie" && /drink/i.test(chosen.name)) prop = drink(indoors);
-        return { clip: chosen?.name ?? null, prop };
+    const sitter = (seat, { mates = [], holding = false, back = false, role = null, avoid = null, indoors = false } = {}) => {
+        const options = sitOptions(seat, mates);
+        if (!options.length) {
+            const character = anyOf(pool(mates));
+            note(character, null);
+            return { character: character.id, clip: null, prop: holding ? drink(indoors) : null, give: 0, forward: 0 };
+        }
+        // Those whose feet are within FEET_MOST of the floor and whose legs are clear of the seat, if anyone's are (the editor may ask for a seat no one fits).
+        const near = options.filter((o) => o.legs && o.off <= FEET_MOST);
+        const fitting = near.length ? near : options;
+        const score = (o) =>
+            o.off +
+            (o.legs ? 0 : 0.5 + o.miss) +
+            0.1 * o.forward +
+            (o.clip.still ? 0.008 : 0) +
+            (avoid?.has(o.clip.name) ? 0.02 : 0) +
+            0.004 * Math.min(3, played.get(o.clip.name) ?? 0) +
+            (TALKING.test(o.clip.name) === (role === "talk") ? 0 : 0.012);
+        const best = (list, bonus = () => 0) => {
+            if (!list.length) return null;
+            const scored = list.map((o) => [o, score(o) - bonus(o)]);
+            const least = Math.min(...scored.map(([, points]) => points));
+            return anyOf(scored.filter(([, points]) => points <= least + 0.008))[0];
+        };
+        let chosen = back ? best(near.filter((o) => o.clip.reclined)) : null;
+        let prop = null;
+        if (!chosen && holding) {
+            chosen = best(near.filter((o) => o.clip.hand), (o) => (o.clip.drinks ? 0.012 : 0));
+            if (chosen) prop = pour(chosen.clip, indoors);
+        }
+        // Left to itself, a clip sat back in is as likely as its fit makes it — seldom the best.
+        chosen ??= best(fitting.filter((o) => !o.clip.drinks)) ?? best(fitting);
+        if (chosen.clip.drinks && chosen.clip.hand && !prop) prop = pour(chosen.clip, indoors);
+        note(chosen.character, chosen.clip);
+        return { character: chosen.character.id, clip: chosen.clip.name, prop, give: chosen.give, forward: chosen.forward };
     };
-    return { character, outfit };
+    return { stander, lier, sitter, sitFit };
 }
 
 /** The next free "person-<n>" id, "group-<n>" likewise. */
@@ -497,7 +877,13 @@ function takenSeats(people) {
 /**
  * Every seat and lounger of a spec's furniture, where it is, with what the
  * planner weighs: the room it is in, out of doors or not, its piece's
- * catalogue entry.
+ * catalogue entry; whether it is a piece one lounges in (`lounge`),
+ * whether its seat is `soft` (a sofa's or a lounge chair's cushion, which
+ * gives under someone) and whether one sits back in it (`reclines`: soft,
+ * out of doors, and its back RECLINE_DEPTH or more behind its front
+ * edge) and how much floor there is before it for a sitter's legs
+ * (`space`: legSpace); a lounger's `width` — its cushion's, or without
+ * that its piece's.
  */
 function seatingOf(site, spec, catalog, seats) {
     const items = itemsOf(catalog);
@@ -509,11 +895,50 @@ function seatingOf(site, spec, catalog, seats) {
         const item = items.get(placement.catalog_id);
         const [px, py, pz] = placement.position;
         const room = site.roomAt(px, py, pz);
-        const where = { placement, item, room, outdoor: isOutdoor(room), kind: placed.kind };
-        for (const seat of placed.seats) sitting.push({ ...seat, ...where });
-        if (placed.lie) lying.push({ ...placed.lie, ...where });
+        const outdoor = isOutdoor(room);
+        const lounge = LOUNGE.test(`${placement.catalog_id} ${item?.name || ""}`);
+        const soft = placed.kind === "sofa" || lounge;
+        const where = { placement, item, room, outdoor, kind: placed.kind, lounge, soft };
+        for (const seat of placed.seats) sitting.push({ ...seat, ...where, reclines: soft && outdoor && seat.room >= RECLINE_DEPTH, space: legSpace(site, seat) });
+        // A lounger's width: its cushion's, or the lesser of its piece's sides.
+        const [w, , d] = item?.size ?? [];
+        const width = Number.isFinite(w) && Number.isFinite(d) ? Math.min(w, d) * (placement.scale ?? 1) * (item.scale ?? 1) : null;
+        if (placed.lie) lying.push({ ...placed.lie, ...where, width: placed.lie.width ?? width });
     }
     return { sitting, lying };
+}
+
+/**
+ * How far before a seat's point the floor is clear for a sitter's legs,
+ * in metres the way it faces: to the first thing that stands in their way
+ * lower than their knees — another piece of furniture whose top is under
+ * KNEE_HIGH (a coffee table, a pouf; a table one sits up to is over
+ * their legs), or a wall, a planter, a rail, a post, a stair, a hole in
+ * the floor or a pool. Infinity with nothing within LEG_SPACE.
+ */
+function legSpace(site, seat) {
+    const [dx, dz] = facingOf(seat.facing);
+    const floor = seat.at[1] - seat.height;
+    const inTheWay = site.obstacles.filter((o) => {
+        if (o.id === seat.furniture || o.kind === "doorway") return false;
+        if (o.y1 <= floor + 0.08 || o.y0 >= floor + KNEE_HIGH) return false;
+        return o.kind !== "furniture" || o.y1 < floor + KNEE_HIGH;
+    });
+    for (let d = 0.2; d <= LEG_SPACE; d += 0.04) {
+        const x = seat.at[0] + dx * d;
+        const z = seat.at[2] + dz * d;
+        for (const o of inTheWay) {
+            if (x < o.box[0] - LEGS_APART || x > o.box[2] + LEGS_APART || z < o.box[1] - LEGS_APART || z > o.box[3] + LEGS_APART) continue;
+            if (o.distance(x, z) < LEGS_APART) return d;
+        }
+    }
+    return Infinity;
+}
+
+/** Where someone sits on a seat: its point, less what it gives under them, as far forward — the way it faces — as their legs need (casting's sitter). */
+function seatedAt(seat, give = 0, forward = 0) {
+    const [dx, dz] = facingOf(seat.facing);
+    return [seat.at[0] + dx * forward, seat.at[1] - give, seat.at[2] + dz * forward];
 }
 
 /** How far a point is from a pool's water, and from the nearest hot tub, on its level. */
@@ -558,10 +983,33 @@ export function defaultCount(spec, catalog, seats) {
  * a group of two or three for every six standing with a drink on its
  * terraces and roof decks, and the rest sitting: on its outdoor sofas and
  * lounge chairs first, now and then two together, then one or two on the
- * sofas indoors, then terrace chairs. No two on one seat; characters
- * spread across them; clips varied by pose; the same plan for the same
- * seed. As many as the space has room for by default (defaultCount): 12
- * for a site of Ladonia's size, fewer round a house with one terrace.
+ * sofas indoors, then terrace chairs. No two on one seat; no character
+ * twice until all have been used; clips varied by pose; the same plan for
+ * the same seed. As many as the space has room for by default
+ * (defaultCount): 12 for a site of Ladonia's size, fewer round a house
+ * with one terrace.
+ *
+ * A standing group has one with a drink — drinking it, or standing by
+ * with a steady hand — one talking, and a third laughing, agreeing or
+ * listening; a talker or listener holds a drink only when their clip has
+ * a hand that can; whoever's clip drinks, drinks from a bottle. Someone
+ * sits only where a character and clip can put their feet within FEET_MOST
+ * of the floor and their legs before the seat's front edge — their feet
+ * too, not tucked back into a sofa's solid base (the cast's best-fitting
+ * first: those sitting are cast before the others), sat back in only on
+ * a deep soft seat out of doors, and holds a drink only with a clip that
+ * both fits the seat and has a hand for it. A seat no one fits is left
+ * empty, and whoever was to sit there stands in a group instead. Those
+ * lying take the lying clips in turn, so that the loungers by the pool
+ * are not all one pose, and none that sits up of itself on a lounger
+ * whose back is raised.
+ *
+ * They come back in the order of their priority (the spec's order: see
+ * the top of this file) — the standing group nearest those lying by the
+ * pool (the first is placed by it, and has someone drinking), those lying
+ * by the pool, those sitting (out of doors first), then the other standing
+ * groups and those lying elsewhere — and are numbered in it, person-1
+ * first.
  *
  * @param {object} spec      a validated scene spec
  * @param {object} catalog   the furniture catalogue ({ items }, an array, or a Map by id)
@@ -569,8 +1017,9 @@ export function defaultCount(spec, catalog, seats) {
  * @param {object} [options]
  * @param {number} [options.seed]   1 by default
  * @param {number} [options.count]  how many; defaultCount(spec) if not given
- * @param {object[]} [options.characters]  the people index's characters ({ id }), or the stand-in's two
- * @param {object[]} [options.clips]       the index's clips.list ({ name, pose, hand })
+ * @param {object[]} [options.characters]  the people index's characters ({ id, hips, legs, sits, sex, eyes }), or the stand-in's two
+ * @param {object|object[]} [options.clips]  the index's `clips` ({ hips, legs, list }) — or only its list, when
+ *                                           every character is taken to be the clips' skeleton's size
  * @param {object[]} [options.props]       the index's props.list ({ id })
  * @returns {object[]} the people, as the spec keeps them
  */
@@ -579,27 +1028,17 @@ export function planPeople(spec, catalog, seats, { seed = 1, count, characters, 
     const site = siteOf(spec, catalog);
     const { sitting, lying } = seatingOf(site, spec, catalog, seats);
     const cast = casting(random, { characters, clips, props });
-    const people = [];
+    /** Everyone planned so far: a spot each — where, how, with whom — cast as they are placed (sitting) or after (the rest). */
+    const planned = [];
     const taken = new Set();
     let groupNumber = 1;
     const total = Math.max(0, Math.min(MAX_PEOPLE, Math.round(count ?? defaultCount(spec, catalog, seats))));
 
-    const add = (person) => {
-        people.push({
-            id: `person-${people.length + 1}`,
-            character: person.character,
-            pose: person.pose,
-            clip: person.clip ?? null,
-            position: person.position.map((v) => round(v)),
-            rotation: round(wrap(person.rotation), 1),
-            seat: person.seat ?? null,
-            prop: person.prop ?? null,
-            group: person.group ?? null,
-            seed: Math.floor(random() * 1e6),
-        });
+    const put = (spot) => {
+        planned.push({ group: null, seat: null, ...spot, seed: Math.floor(random() * 1e6) });
+        return planned[planned.length - 1];
     };
-    const tooClose = ([x, , z], y, mates = []) =>
-        people.some((p) => !mates.includes(p) && Math.abs(p.position[1] - y) < 1 && Math.hypot(p.position[0] - x, p.position[2] - z) < APART);
+    const tooClose = ([x, , z], y) => planned.some((p) => Math.abs(p.position[1] - y) < 1 && Math.hypot(p.position[0] - x, p.position[2] - z) < APART);
 
     // --- lying, by the water ---------------------------------------------
     const byWater = lying
@@ -614,18 +1053,11 @@ export function planPeople(spec, catalog, seats, { seed = 1, count, characters, 
         if (taken.has(key)) continue;
         taken.add(key);
         lyingCount -= 1;
-        add({
-            character: cast.character(),
-            pose: "lie",
-            ...cast.outfit("lie"),
-            position: l.at,
-            rotation: l.rotation,
-            seat: { furniture: l.furniture, index: 0 },
-        });
+        put({ pose: "lie", position: l.at, rotation: l.rotation, seat: { furniture: l.furniture, index: 0 }, byPool: l.tier === 0, width: l.width, incline: l.incline });
     }
 
     // --- how many sit, how many stand --------------------------------------
-    const left = total - people.length;
+    const left = total - planned.length;
     const usable = sitting.filter(
         (s) => s.kind !== "stool" && s.height >= SEAT_HEIGHT[0] && s.height <= SEAT_HEIGHT[1] && s.depth >= SEAT_DEPTH[0] && s.depth <= SEAT_DEPTH[1]
     );
@@ -642,6 +1074,9 @@ export function planPeople(spec, catalog, seats, { seed = 1, count, characters, 
     const places = (spec.rooms || []).filter((room) => gathersOutdoors(room) && polygonArea(room.polygon) >= 4);
     const outdoorPieces = (spec.furniture || []).filter((f) => isOutdoor(site.roomAt(f.position[0], f.position[1], f.position[2])));
     const centres = [];
+    // Where those lying by the pool are, about: the middle of them.
+    const lyingByPool = planned.filter((p) => p.byPool);
+    const poolside = lyingByPool.length ? [0, 1, 2].map((i) => lyingByPool.reduce((sum, p) => sum + p.position[i], 0) / lyingByPool.length) : null;
     /** A group of each size in turn, where one fits, each weighed against those already there. */
     const standGroups = (groupSizes) => {
         for (const size of groupSizes) {
@@ -682,42 +1117,32 @@ export function planPeople(spec, catalog, seats, { seed = 1, count, characters, 
                     }
                     // One on the ground, the next up on a roof, if there is one.
                     if (centres.length && centres.every((other) => Math.abs(other[1] - y) > 1.5)) weight *= 2.5;
-                    for (const p of people) if (Math.hypot(p.position[0] - cx, p.position[2] - cz) < 3 && Math.abs(p.position[1] - y) < 1) weight *= 0.3;
-                    options.push({ centre: [cx, y, cz], members, weight });
+                    for (const p of planned) if (Math.hypot(p.position[0] - cx, p.position[2] - cz) < 3 && Math.abs(p.position[1] - y) < 1) weight *= 0.3;
+                    const byPool = Boolean(poolside) && Math.abs(poolside[1] - y) < 1.5 && Math.hypot(poolside[0] - cx, poolside[2] - cz) <= BY_THE_POOL;
+                    options.push({ centre: [cx, y, cz], members, weight, byPool });
                 }
             }
-            const chosen = pickWeighted(random, options, (o) => o.weight);
+            // The first group, by the pool with those lying there, if anyone is and there is room.
+            const beside = centres.length ? [] : options.filter((o) => o.byPool);
+            const chosen = pickWeighted(random, beside.length ? beside : options, (o) => o.weight);
             if (!chosen) return;
             const { centre, members } = chosen;
             centres.push(centre);
             const group = `group-${groupNumber++}`;
-            const mates = [];
-            const clipsUsed = new Set();
+            // One with a drink, one talking; a third laughing, agreeing or listening.
+            const roles = shuffled(random, ["drink", "talk", "listen"].slice(0, members.length));
             members.forEach((at, k) => {
-                // A drink each; one of them talking, the others laughing, drinking or listening.
-                const outfit = cast.outfit("stand", { holding: true, prefer: k === 0 ? /talk/i : /laugh|drink|idle|listen|talk/i, avoid: clipsUsed });
-                if (outfit.clip) clipsUsed.add(outfit.clip);
                 const turn = (random() - 0.5) * 24;
-                const character = cast.character(mates);
-                mates.push(character);
-                add({
-                    character,
-                    pose: "stand",
-                    ...outfit,
-                    position: at,
-                    rotation: rotationTowards(centre[0] - at[0], centre[2] - at[2]) + turn,
-                    group,
-                });
+                put({ pose: "stand", position: at, rotation: rotationTowards(centre[0] - at[0], centre[2] - at[2]) + turn, group, role: roles[k], centre });
             });
         }
     };
     standGroups(sizes);
 
     // --- sitting --------------------------------------------------------------
-    let sitCount = total - people.length;
+    let sitCount = total - planned.length;
     const tierOf = (s) => {
-        const name = `${s.placement.catalog_id} ${s.item?.name || ""}`;
-        if (s.outdoor && (s.kind === "sofa" || LOUNGE.test(name))) return "lounge";
+        if (s.outdoor && (s.kind === "sofa" || s.lounge)) return "lounge";
         if (!s.outdoor && s.kind === "sofa") return "sofa";
         return s.outdoor ? "terrace" : "indoor";
     };
@@ -731,29 +1156,26 @@ export function planPeople(spec, catalog, seats, { seed = 1, count, characters, 
         ["sofa", Infinity],
     ];
     const seatKey = (s) => `${s.furniture}#${s.index}`;
-    const seated = []; // [seat, person index]
-    const sitOn = (s, { group = null, prefer = null, avoid = new Set() } = {}) => {
+    const seated = [];
+    /** Whether someone the cast still has would sit on a seat with their feet on the floor, and how likely that makes it. */
+    const fitWeight = (s, mates) => {
+        const off = cast.sitFit(s, mates);
+        return off <= FEET_NEAR ? 1 : off <= FEET_MOST ? 0.35 : 0;
+    };
+    /** Someone on a seat, cast there and then: those sitting have first choice of the characters. */
+    const sitOn = (s, { role = null, mates = [], avoid = null } = {}) => {
         taken.add(seatKey(s));
-        const outfit = cast.outfit("sit", { holding: random() < (s.outdoor ? 0.45 : 0.35), indoors: !s.outdoor, prefer, avoid });
-        const mates = group ? people.filter((p) => p.group === group).map((p) => p.character) : [];
-        add({
-            character: cast.character(mates),
-            pose: "sit",
-            ...outfit,
-            position: s.at,
-            rotation: s.facing,
-            seat: { furniture: s.furniture, index: s.index },
-            group,
-        });
+        const { give, forward, ...outfit } = cast.sitter(s, { mates, role, avoid, holding: random() < (s.outdoor ? 0.45 : 0.35), back: s.reclines && random() < SITS_BACK, indoors: !s.outdoor });
         seated.push(s);
-        return outfit.clip;
+        return put({ pose: "sit", ...outfit, position: seatedAt(s, give, forward), rotation: s.facing, seat: { furniture: s.furniture, index: s.index }, outdoor: s.outdoor });
     };
     for (const [tier, want] of plan) {
         let n = Math.min(want, sitCount);
         while (n > 0 && sitCount > 0) {
             const free = usable.filter((s) => tierOf(s) === tier && !taken.has(seatKey(s)) && !tooClose(s.at, s.at[1]));
             const seat = pickWeighted(random, free, (s) => {
-                let w = s.depth >= ROOMY ? 1 : 0.12;
+                let w = (s.depth >= ROOMY ? 1 : 0.12) * fitWeight(s);
+                if (w <= 0) return 0;
                 if (tier === "sofa" && LIVING.test(s.room?.name || "")) w *= 2;
                 // Spread out: not beside someone on the same piece, and fewer in a room already sat in.
                 for (const other of seated) {
@@ -765,31 +1187,30 @@ export function planPeople(spec, catalog, seats, { seed = 1, count, characters, 
             });
             if (!seat) break;
             // Now and then two together: on the same sofa, a seat apart, or the next chair along, facing alike or each other.
-            const partners =
-                n >= 2 && random() < 0.45
-                    ? usable.filter((o) => {
-                          if (taken.has(seatKey(o)) || seatKey(o) === seatKey(seat) || Math.abs(o.at[1] - seat.at[1]) > 0.2) return false;
-                          const d = Math.hypot(o.at[0] - seat.at[0], o.at[2] - seat.at[2]);
-                          // On one sofa: a seat between them, unless it seats only two.
-                          if (o.furniture === seat.furniture) return Math.abs(o.index - seat.index) >= (seats[seat.placement.catalog_id].seats.length >= 3 ? 2 : 1) && d <= 1.8;
-                          const turn = Math.abs(wrap(o.facing - seat.facing));
-                          return d >= 0.6 && d <= 2.2 && (turn <= 30 || turn >= 120) && o.depth >= ROOMY && tierOf(o) !== "indoor";
-                      })
-                    : [];
-            const partner = partners.length ? partners[Math.floor(random() * partners.length)] : null;
-            const group = partner ? `group-${groupNumber++}` : null;
-            const first = sitOn(seat, { group, prefer: partner ? /talk/i : /idle|drink|talk|laugh/i });
+            const together = n >= 2 && random() < 0.45;
+            const first = sitOn(seat, { role: together ? "talk" : null });
             n -= 1;
             sitCount -= 1;
-            if (partner && sitCount > 0) {
-                sitOn(partner, { group, prefer: /laugh|talk|drink/i, avoid: new Set(first ? [first] : []) });
-                n -= 1;
-                sitCount -= 1;
-            }
+            if (!together || sitCount <= 0) continue;
+            const partners = usable.filter((o) => {
+                if (taken.has(seatKey(o)) || o.outdoor !== seat.outdoor || Math.abs(o.at[1] - seat.at[1]) > 0.2 || fitWeight(o, [first.character]) <= 0) return false;
+                const d = Math.hypot(o.at[0] - seat.at[0], o.at[2] - seat.at[2]);
+                // On one sofa: a seat between them, unless it seats only two.
+                if (o.furniture === seat.furniture) return Math.abs(o.index - seat.index) >= (seats[seat.placement.catalog_id].seats.length >= 3 ? 2 : 1) && d <= 1.8;
+                const turn = Math.abs(wrap(o.facing - seat.facing));
+                return d >= 0.6 && d <= 2.2 && (turn <= 30 || turn >= 120) && o.depth >= ROOMY && tierOf(o) !== "indoor";
+            });
+            if (!partners.length) continue;
+            const partner = partners[Math.floor(random() * partners.length)];
+            first.group = `group-${groupNumber++}`;
+            const second = sitOn(partner, { role: "listen", mates: [first.character], avoid: new Set(first.clip ? [first.clip] : []) });
+            second.group = first.group;
+            n -= 1;
+            sitCount -= 1;
         }
     }
     // Whoever found no seat stands instead, in twos and threes.
-    let leftover = total - people.length;
+    let leftover = total - planned.length;
     const more = [];
     while (leftover >= 2) {
         const size = leftover === 2 || leftover === 4 ? 2 : 3;
@@ -797,23 +1218,70 @@ export function planPeople(spec, catalog, seats, { seed = 1, count, characters, 
         leftover -= size;
     }
     standGroups(more);
-    return people;
+
+    // --- who they are: those lying, then each standing group ---------------
+    for (const spot of planned) if (spot.pose === "lie") Object.assign(spot, cast.lier({ width: spot.width, incline: spot.incline }));
+    const standing = new Map();
+    for (const spot of planned) if (spot.pose === "stand") standing.set(spot.group, [...(standing.get(spot.group) || []), spot]);
+    // The group that comes first: the one nearest those lying by the pool, so that the first few are one scene.
+    let firstGroup = standing.keys().next().value ?? null;
+    if (poolside && standing.size > 1) {
+        const middle = (members, i) => members.reduce((sum, p) => sum + p.position[i], 0) / members.length;
+        const away = (members) => Math.hypot(middle(members, 0) - poolside[0], middle(members, 2) - poolside[2]) + Math.abs(middle(members, 1) - poolside[1]) * 3;
+        firstGroup = [...standing.entries()].sort(([, a], [, b]) => away(a) - away(b))[0][0];
+    }
+    // It has first choice of the standing clips, and in each group the one with the drink has: in the first they are
+    // drinking it, in the others most likely.
+    const parts = ["drink", "talk", "listen"];
+    for (const [group, members] of [...standing.entries()].sort(([a], [b]) => (b === firstGroup) - (a === firstGroup))) {
+        const mates = [];
+        const avoid = new Set();
+        for (const spot of [...members].sort((a, b) => parts.indexOf(a.role) - parts.indexOf(b.role))) {
+            Object.assign(spot, cast.stander({ role: spot.role, mates, avoid, sure: group === firstGroup }));
+            mates.push(spot.character);
+            if (spot.clip) avoid.add(spot.clip);
+        }
+    }
+
+    // --- in the order of their priority -----------------------------------
+    const rank = (p) => (p.pose === "stand" ? (p.group === firstGroup ? 0 : 4) : p.pose === "lie" ? (p.byPool ? 1 : 5) : p.outdoor ? 2 : 3);
+    const ordered = planned.map((p, i) => [p, i]).sort(([a, i], [b, j]) => rank(a) - rank(b) || i - j);
+    const groupIds = new Map();
+    return ordered.map(([p], i) => {
+        if (p.group && !groupIds.has(p.group)) groupIds.set(p.group, `group-${groupIds.size + 1}`);
+        return {
+            id: `person-${i + 1}`,
+            character: p.character,
+            pose: p.pose,
+            clip: p.clip ?? null,
+            position: p.position.map((v) => round(v)),
+            rotation: round(wrap(p.rotation), 1),
+            seat: p.seat ?? null,
+            prop: p.prop ?? null,
+            group: p.group ? groupIds.get(p.group) : null,
+            seed: p.seed,
+        };
+    });
 }
 
 /**
  * One more person, for the editor's Add: posed `pose`, as near `near` as
  * one can be — standing on the nearest clear floor, turned to the nearest
  * standing person within 2.5 m and joining their group if they have one
- * (else facing `facing`, or any way); sitting on the nearest free seat;
+ * (else facing `facing`, or any way); sitting on the nearest free seat,
+ * whatever its height (the character and clip that sit best on it);
  * lying on the nearest free lounger. Null when there is none within 12 m.
- * Its id is the next free "person-<n>"; the spec's people are left as
- * they are — adding it is the caller's.
+ * Cast as planPeople casts: a character used least among those there, a
+ * drink only in a hand that can hold it. Its id is the next free
+ * "person-<n>"; the spec's people are left as they are — adding it, last
+ * in their order, is the caller's.
  *
  * @param {object} spec     the spec, its `people` the ones already there
  * @param {object} catalog
  * @param {object} seats    seats.json
  * @param {object} options  { pose, near: [x, y, z] or [x, z] (then the lowest floor there),
- *                            facing (a rotation), seed, characters, clips, props }
+ *                            facing (a rotation), seed, characters, clips, props } — the last
+ *                            three as planPeople's
  */
 export function planOne(spec, catalog, seats, { pose = "stand", near = [0, 0, 0], facing = null, seed, characters, clips, props } = {}) {
     const existing = Array.isArray(spec.people) ? spec.people : [];
@@ -823,16 +1291,22 @@ export function planOne(spec, catalog, seats, { pose = "stand", near = [0, 0, 0]
     const taken = takenSeats(existing);
     const [nx, nz] = near.length >= 3 ? [near[0], near[2]] : near;
     const ny = near.length >= 3 ? near[1] : null;
-    const base = {
-        id: `person-${nextNumber(existing.map((p) => p.id), "person")}`,
-        clip: null,
-        seat: null,
-        prop: null,
-        group: null,
-        seed: Math.floor(random() * 1e6),
-    };
+    const id = `person-${nextNumber(existing.map((p) => p.id), "person")}`;
+    const seedOfTheirs = Math.floor(random() * 1e6);
     const distance = ([x, y, z]) => Math.hypot(x - nx, z - nz) + (ny === null ? 0 : Math.abs(y - ny) * 2);
-    const finish = (person) => ({ ...base, ...person, position: person.position.map((v) => round(v)), rotation: round(wrap(person.rotation), 1) });
+    /** As the spec keeps them, their fields in its order (sanitizePeople's). */
+    const finish = (person) => ({
+        id,
+        character: person.character,
+        pose: person.pose,
+        clip: person.clip ?? null,
+        position: person.position.map((v) => round(v)),
+        rotation: round(wrap(person.rotation), 1),
+        seat: person.seat ?? null,
+        prop: person.prop ?? null,
+        group: person.group ?? null,
+        seed: seedOfTheirs,
+    });
 
     if (pose === "sit" || pose === "lie") {
         const { sitting, lying } = seatingOf(site, spec, catalog, seats);
@@ -842,14 +1316,10 @@ export function planOne(spec, catalog, seats, { pose = "stand", near = [0, 0, 0]
                 : sitting.filter((s) => s.kind !== "stool" && s.height <= SEAT_HEIGHT[1] && s.depth <= SEAT_DEPTH[1] && !taken.has(`${s.furniture}#${s.index}`));
         const best = options.sort((a, b) => distance(a.at) - distance(b.at))[0];
         if (!best || distance(best.at) > 12) return null;
-        return finish({
-            character: cast.character(),
-            pose,
-            ...cast.outfit(pose, { holding: random() < 0.4, indoors: !best.outdoor }),
-            position: best.at,
-            rotation: pose === "lie" ? best.rotation : best.facing,
-            seat: { furniture: best.furniture, index: pose === "lie" ? 0 : best.index },
-        });
+        if (pose === "lie") return finish({ ...cast.lier({ width: best.width, incline: best.incline }), pose, position: best.at, rotation: best.rotation, seat: { furniture: best.furniture, index: 0 } });
+        // Whoever of the cast sits best on that seat, the seat giving under them as it does.
+        const { give, forward, ...outfit } = cast.sitter(best, { holding: random() < 0.4, back: best.reclines && random() < SITS_BACK, indoors: !best.outdoor });
+        return finish({ ...outfit, pose, position: seatedAt(best, give, forward), rotation: best.facing, seat: { furniture: best.furniture, index: best.index } });
     }
 
     // Standing: the nearest clear floor, ring by ring out from `near`.
@@ -875,11 +1345,12 @@ export function planOne(spec, catalog, seats, { pose = "stand", near = [0, 0, 0]
                     .filter((p) => p.pose === "stand" && Math.abs(p.position[1] - y) < 0.5 && Math.hypot(p.position[0] - x, p.position[2] - z) < 2.5)
                     .sort((p, q) => Math.hypot(p.position[0] - x, p.position[2] - z) - Math.hypot(q.position[0] - x, q.position[2] - z))[0];
                 const group = mate?.group ?? null;
-                const mates = group ? existing.filter((p) => p.group === group).map((p) => p.character) : [];
+                const company = group ? existing.filter((p) => p.group === group) : mate ? [mate] : [];
+                // Alone, with a drink; joining someone, talking to them or listening, as none of them already is.
+                const role = mate ? (random() < 0.5 ? "talk" : "listen") : "drink";
                 return finish({
-                    character: cast.character(mates),
+                    ...cast.stander({ role, mates: company.map((p) => p.character), avoid: new Set(company.map((p) => p.clip).filter(Boolean)), indoors: !isOutdoor(room) }),
                     pose: "stand",
-                    ...cast.outfit("stand", { holding: true, indoors: !isOutdoor(room), prefer: mate ? /talk|laugh|drink/i : null }),
                     position: [x, y, z],
                     rotation: mate ? rotationTowards(mate.position[0] - x, mate.position[2] - z) : facing ?? random() * 360 - 180,
                     group,

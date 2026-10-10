@@ -4,7 +4,7 @@
   "summary": "Ladonia Residence, a few minutes from Poreč: the first three of eight buildings, five flats in each, every one furnished. Buildings A and B — two wings in khaki render under a stone-clad box on the roof, louvred pergolas over the ground-floor gardens, an outside stair up to the first-floor flats, whose own stairs climb into the box and out onto roof terraces with a jacuzzi, an outdoor kitchen and planters of grasses; B with a pool in front. Building C — banded in corten over sand render, a stone-clad recess through both floors on each side. Parking on the street behind dry-stone walls and photinia, the oak woods behind.",
   "brief": "",
   "notes": [],
-  "updated_at": "2026-10-05T21:41:27.845Z",
+  "updated_at": "2026-10-09T22:39:35.700Z",
   "scene": {
     "name": "Ladonia Residence, Kosinožići",
     "summary": "Ladonia Residence, a few minutes from Poreč: the first three of eight buildings, five flats in each, every one furnished. Buildings A and B — two wings in khaki render under a stone-clad box on the roof, louvred pergolas over the ground-floor gardens, an outside stair up to the first-floor flats, whose own stairs climb into the box and out onto roof terraces with a jacuzzi, an outdoor kitchen and planters of grasses; B with a pool in front. Building C — banded in corten over sand render, a stone-clad recess through both floors on each side. Parking on the street behind dry-stone walls and photinia, the oak woods behind.",
@@ -21930,11 +21930,11 @@
         "id": "b-f201",
         "catalog_id": "ld-out-chair",
         "position": [
-          13.9,
-          0,
-          22.9
+          15.4,
+          0.01,
+          23.8
         ],
-        "rotation": -90,
+        "rotation": 15,
         "scale": 1
       },
       {
@@ -24180,6 +24180,221 @@
         ],
         "rotation": 75,
         "scale": 1
+      }
+    ],
+    "people": [
+      {
+        "id": "person-1",
+        "character": "josh",
+        "pose": "stand",
+        "clip": "Drinking",
+        "position": [
+          17.731,
+          0.01,
+          38.065
+        ],
+        "rotation": 170,
+        "seat": null,
+        "prop": "beer",
+        "group": "group-1",
+        "seed": 914527
+      },
+      {
+        "id": "person-2",
+        "character": "shannon",
+        "pose": "stand",
+        "clip": "Talking",
+        "position": [
+          17.74,
+          0.01,
+          39.08
+        ],
+        "rotation": 0,
+        "seat": null,
+        "prop": "wine-white",
+        "group": "group-1",
+        "seed": 375759
+      },
+      {
+        "id": "person-3",
+        "character": "kate",
+        "pose": "lie",
+        "clip": "Laying Hands Behind Head",
+        "position": [
+          13.76,
+          0.39,
+          40.22
+        ],
+        "rotation": 180,
+        "seat": {
+          "furniture": "b-f228",
+          "index": 0
+        },
+        "prop": "towel",
+        "group": null,
+        "seed": 711487
+      },
+      {
+        "id": "person-4",
+        "character": "elizabeth",
+        "pose": "lie",
+        "clip": "Laying Idle",
+        "position": [
+          13.76,
+          0.39,
+          36.02
+        ],
+        "rotation": 180,
+        "seat": {
+          "furniture": "b-f226",
+          "index": 0
+        },
+        "prop": "towel",
+        "group": null,
+        "seed": 38185
+      },
+      {
+        "id": "person-5",
+        "character": "martha",
+        "pose": "lie",
+        "clip": "Laying Idle",
+        "position": [
+          13.76,
+          0.39,
+          38.12
+        ],
+        "rotation": 180,
+        "seat": {
+          "furniture": "b-f227",
+          "index": 0
+        },
+        "prop": "towel",
+        "group": null,
+        "seed": 475288
+      },
+      {
+        "id": "person-6",
+        "character": "bryce",
+        "pose": "sit",
+        "clip": "Sitting Reclined Male",
+        "position": [
+          10.692,
+          5.768,
+          -11.416
+        ],
+        "rotation": 180,
+        "seat": {
+          "furniture": "c-f154",
+          "index": 0
+        },
+        "prop": null,
+        "group": null,
+        "seed": 369321
+      },
+      {
+        "id": "person-7",
+        "character": "sophie",
+        "pose": "sit",
+        "clip": "Sitting Idle",
+        "position": [
+          0.9,
+          -0.609,
+          -6.788
+        ],
+        "rotation": 0,
+        "seat": {
+          "furniture": "c-f164",
+          "index": 1
+        },
+        "prop": null,
+        "group": null,
+        "seed": 912467
+      },
+      {
+        "id": "person-8",
+        "character": "megan",
+        "pose": "sit",
+        "clip": "Sitting Idle",
+        "position": [
+          8.394,
+          0.423,
+          15.737
+        ],
+        "rotation": 0,
+        "seat": {
+          "furniture": "a-f076",
+          "index": 0
+        },
+        "prop": null,
+        "group": null,
+        "seed": 421371
+      },
+      {
+        "id": "person-9",
+        "character": "brian",
+        "pose": "stand",
+        "clip": "Agreeing",
+        "position": [
+          10.94,
+          5.4,
+          -20.04
+        ],
+        "rotation": -118,
+        "seat": null,
+        "prop": null,
+        "group": "group-2",
+        "seed": 639776
+      },
+      {
+        "id": "person-10",
+        "character": "lewis",
+        "pose": "stand",
+        "clip": "Talking Funny",
+        "position": [
+          12.129,
+          5.4,
+          -20.144
+        ],
+        "rotation": 128.7,
+        "seat": null,
+        "prop": null,
+        "group": "group-2",
+        "seed": 466380
+      },
+      {
+        "id": "person-11",
+        "character": "remy",
+        "pose": "stand",
+        "clip": "Drinking",
+        "position": [
+          11.602,
+          5.4,
+          -19.123
+        ],
+        "rotation": 15.8,
+        "seat": null,
+        "prop": "beer",
+        "group": "group-2",
+        "seed": 671904
+      },
+      {
+        "id": "person-12",
+        "character": "leonard",
+        "pose": "lie",
+        "clip": "Laying Hands Behind Head",
+        "position": [
+          6.64,
+          6.39,
+          27.42
+        ],
+        "rotation": 180,
+        "seat": {
+          "furniture": "b-f177",
+          "index": 0
+        },
+        "prop": "sunglasses",
+        "group": null,
+        "seed": 403942
       }
     ],
     "finishes": {},

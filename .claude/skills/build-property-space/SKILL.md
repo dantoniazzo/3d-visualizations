@@ -1,6 +1,6 @@
 ---
 name: build-property-space
-description: Build a new walkable 3D space in this repo from a real-estate project — its listing page, floor plans and renders — as close to the real thing as the app can draw it, with buildings, furnished interiors, landscape, trees, grass, sky and lighting. Use when the user gives a property listing URL or reference images and asks for a space that looks like it, or asks to correct or improve such a space. Carries the corrections log of what the user has said was wrong; read it every time.
+description: Build a new walkable 3D space in this repo from a real-estate project — its listing page, floor plans and renders — as close to the real thing as the app can draw it, with buildings, furnished interiors, landscape, trees, grass, sky and lighting, and animated people set round it. Use when the user gives a property listing URL or reference images and asks for a space that looks like it, asks to correct or improve such a space, or asks for people in one. Carries the corrections log of what the user has said was wrong; read it every time.
 ---
 
 # Build a property space from a listing
@@ -13,21 +13,30 @@ Kosinožići: generator `scripts/spaces/ladonia/`, scene id
 value, not a rule.
 
 Read the **Corrections log** at the bottom first: its general lessons are
-already folded into §0–§13; from its entries take what the user cares about
-and the "Still short" lists, which are gaps not to repeat. Add a dated
-entry naming the project whenever the user says something is wrong or you
-find something worth doing differently. Keep this file the single source of
-truth for the method — edit it, don't append duplicates.
+already folded into §0–§13 (the people's into §4b); from its entries take
+what the user cares about and the "Still short" lists, which are gaps not
+to repeat. Add a dated entry naming the project whenever the user says
+something is wrong or you find something worth doing differently. Keep
+this file the single source of truth for the method — edit it, don't
+append duplicates.
 
 **The user's standing terms.** Realism first, performance as their choice
 (the quality slider). A listing is built *exactly* — structure, scenery and
 interiors — so a buyer has the feel of the real property; where the plans
 can't be followed (a door too narrow to walk through), deviate as little as
 possible and say so. Bought-in assets (textures, skies, plants and vases,
-cars) may come from any source whose licence the user accepts — prefer CC0
-or MIT where there is a choice — each listed with source and licence in
-`assets/THIRD_PARTY.md` (cars and avatars in the README too) for the user
-to review. Furniture is modelled in Blender, not downloaded. Never restart
+cars, and the people's characters and animation clips) may come from any
+source whose licence the user accepts — prefer CC0 or MIT where there is a
+choice — each listed with source and licence in `assets/THIRD_PARTY.md`
+(cars, avatars and people in the README too) for the user to review. A
+source behind an account (Mixamo's Adobe login) is the user's to sign in
+to, in the browser pane; you then download what they agreed to (§4b).
+Where a licence lets files be used but not passed on (Mixamo's), the
+downloads stay git-ignored in `assets/`, and whether what is built from
+them is committed is the user's decision: ask (this repository is public,
+and for Mixamo they chose to keep the converted files out of git too:
+`.gitignore`). Furniture is modelled in
+Blender, not downloaded. Never restart
 their server on port 3000, never touch `scenes/wrenfield-house.json`, never
 deploy, spend or contact anyone, and commit, open PRs or merge only when
 asked. Big work goes as a plan
@@ -40,14 +49,15 @@ Supporting files in this folder:
 
 - `reference.md` — the generator's helpers (`kit.js`, `furnish.js`,
   `index.js`), the spec fields that matter, the landscape schema as the
-  builders read it, and the numbers that worked. Read it before writing or
-  changing a space's scripts.
+  builders read it, the people's data (entries, seats.json, the index, the
+  planner's constants, the scripts) and the numbers that worked. Read it
+  before writing or changing a space's scripts, and before placing people.
 - `app-notes.md` — the app around a space: the validator, the editor,
-  lights and fittings, publishing and baking, tone mapping, cars, Blender,
-  in-page audits, the browser pane's limits, the shell, git. Read "The spec,
-  the validator and the editor" and "The browser pane" before the first
-  seed and test session; the rest when you publish, bake, light, add a car
-  or use Blender.
+  lights and fittings, people, publishing and baking, tone mapping, cars,
+  Blender, in-page audits, the browser pane's limits, the shell, git. Read
+  "The spec, the validator and the editor" and "The browser pane" before
+  the first seed and test session; the rest when you publish, bake, light,
+  place people, add a car or use Blender.
 - `briefs.md` — reusable templates for the agents of a round (§11): the
   read-only auditor, the model builder in a Blender copy, the placement
   builder in a generator copy, the floor reviewer, the model and render
@@ -59,9 +69,12 @@ Supporting files in this folder:
   (`_glbbox`, `_glbparts`, `_modes`, `_plan`). `doors-dump.mjs` lists every
   hinged door with its emitted wall, side A, hinge point and where the
   leaf parks. `door-swing.mjs` sweeps each leaf to Door.js's full open
-  against the furniture and the other leaves (§8). As shipped most of them
-  audit Ladonia; read `checks/README.md` before §8 for how to run each and
-  what to change for a new project.
+  against the furniture and the other leaves (§8). `people-plans.mjs
+  <scene-id> [--seeds 20]` holds the people planner to its own rules over
+  many seeds, and reads the scene's saved people the same way (§4b); it
+  works on any seeded scene. As shipped most of the others audit Ladonia;
+  read `checks/README.md` before §8 for how to run each and what to change
+  for a new project.
 - `models/` — model QA (commands, and what a good piece reads, in
   `models/README.md`):
   - `views.py` renders four views of each id: front 3/4, orthographic
@@ -134,6 +147,22 @@ Supporting files in this folder:
   -- <keys…>`: one row per view, one column per source (render | live |
   baked), each tile labelled with its mean luminance, the table printed as
   JSON. Missing frames show red.
+- `people-audit.js` — in-page, after harness.js, in the editor's page of a
+  test server whose space has people (§4b): `__people.audit()` measures
+  each person's skin, through their clip, against the floor, their seat or
+  lounger and everything round them, and flags what is out of tolerance
+  (`__people.TOL`); `__people.load(plan)` puts a plan's people in the page
+  and `__people.patch({…})` edits them by hand, neither saving anything;
+  `__people.lineup()` frames every character side by side and
+  `__people.shots(prefix)` each person close.
+- `mixamo.js` — in-page, on mixamo.com once the user has signed in there
+  (paste its text into `javascript_tool`: that page cannot reach the
+  sink): `__mixamo.pickCharacter`, `pickAnimation` and `download` pick
+  characters and clips, drive the Download dialog and catch each
+  export's link; `__mixamo.batch(list)` and `take()` do a list of them.
+  `mixamo-fetch.sh <links-dir> <repo>/assets/people` is the background
+  watcher that curls those links into `assets/people/` (§4b;
+  `app-notes.md`, The browser pane).
 
 ## Starting a new space (in this order)
 
@@ -141,7 +170,7 @@ Supporting files in this folder:
 2. Do §1 and enough of §2 to scope the job, read-only.
 3. Send the plan and wait for "do it": the buildings and flats counted,
    the site levels, streets and lanes, what the app can't draw, the Blender
-   pieces needed, the milestones below, and your questions.
+   pieces needed, the milestones below, and your questions (people: §4b's).
 4. Scaffold `scripts/spaces/<project>/`:
    1. Copy `ladonia/kit.js`, and change only your copy from then on. Set
       your listing's defaults in it (kit's opening helpers default to
@@ -172,7 +201,8 @@ Supporting files in this folder:
       copies of the checkers (`checks/README.md`).
 5. Build in milestones, seeding and walking (§8) after each: one building's
    shell; every building at its site level with the street, lanes and
-   entrances; landscape; furniture; light; then critic rounds (§11).
+   entrances; landscape; furniture; light; people, where the user wants
+   them (§4b); then critic rounds (§11).
 
 ## 0. Session hygiene
 
@@ -182,8 +212,10 @@ Supporting files in this folder:
   (Ladonia, overnight: a counter scaled to 0.8, a sofa nudged, a terrace
   sofa turned round). Before any reseed, diff the generator's validated
   output against the scene; carry the user's edits into the generator, or
-  patch only your own entries with node. Never delete user edits that look
-  accidental (a coffee table on the lawn) — name them in the report.
+  patch only your own entries with node. A reseed's spec has no `people`:
+  copy them out of the scene first and write them back after (§4b). Never
+  delete user edits that look accidental (a coffee table on the lawn) —
+  name them in the report.
 - `npm run seed -- <id>`, never bare `npm run seed` (it rewrites every
   space). Import the generator with node first to catch module errors.
 - Test on a separate server: back up `.claude/launch.json` and add
@@ -206,9 +238,32 @@ Supporting files in this folder:
   frame, relaunch any critic that failed, and resume stopped bakes (delete
   a stopped bake's half-written `bake-<stamp>/` folder; `.bake-lock` clears
   itself once its pid is dead). A workflow's agents may all die mid-task
-  at a limit: keep their copies, diff each against its base to see what
-  it got done, and relaunch only the dead ones with the RESUMING preamble
-  (`briefs.md`) before their unchanged brief.
+  at a limit (two whole rounds did during the people work): keep their
+  copies, diff each against its base to see what it got done, read each
+  dead agent's transcript for what it had already found (below), and
+  relaunch only the dead ones with the RESUMING preamble (`briefs.md`)
+  before their unchanged brief.
+- The scratch folder is under /private/tmp and does not survive a restart
+  of the machine (2026-10-09: backups, frames and reports gone mid-task).
+  Keep nothing only there that cannot be made again:
+  - downloads go straight into `assets/`;
+  - agents return their reports as their final text, which the workflow's
+    journal keeps:
+    `~/.claude/projects/<project>/<session>/subagents/workflows/<wf>/journal.jsonl`
+    has a `{"type":"result","agentId":…,"result":…}` line for each agent
+    that finished (its label is on its `started` line), and
+    `agent-<agentId>.jsonl` beside it is the agent's whole transcript.
+    Write the reports out again from there;
+  - a vetted plan or patch goes into the report's text, entry by entry,
+    not only into a scratch file.
+
+  After any break — a restart, a limit, a night — take the scene backups
+  and their md5s again before the next write, and run `git log -3` and
+  `git status`: the user may have committed meanwhile (2026-10-06:
+  everything, the temporary launch.json entry included). The
+  `.claude/launch.json` to restore is then `git show <the commit
+  before>:.claude/launch.json`, and taking the test entry out at clean-up
+  leaves an uncommitted change: say so.
 - Agents' patches can silently undo earlier edits (one written against an
   older `kit.js` removed the door widening; 57 narrow doors came back). Back
   up the scripts, apply one patch at a time with `git apply --check`, diff
@@ -462,6 +517,9 @@ its front to Blender +Y (loose.py, ladonia.py); joinery.py's `wc`,
 walls west and south and its door north at 0. `FACE = { N: 0, W: 90, S:
 180, E: -90 }`.
 
+People on the furniture are §4b, after §9: placed last, on the pieces as
+they finally stand.
+
 ## 5. The landscape
 
 `spec.landscape` (`shared/landscape.js`, schema in `reference.md`) replaces
@@ -499,11 +557,10 @@ neighbourhood: { enabled: false } }`.
 
 ## 6. Assets
 
-Bought-in assets may carry any licence the user accepts — prefer CC0 or
-MIT where there is a choice (textures and skies are CC0; the cars are
-CC-BY-NC/-SA) — each listed with source and licence in
-`assets/THIRD_PARTY.md` (cars and avatars in the README too) for the user
-to review. Large originals go in `assets/`, never `public/` (deployed).
+Whose licence, and where each asset is listed: the standing terms at the
+top. Textures and skies are CC0; the cars are CC-BY-NC/-SA; the people are
+Mixamo's, to use but not to pass on. Large originals go in `assets/`,
+never `public/` (deployed).
 
 - Textures and skies: Poly Haven (`api.polyhaven.com/assets?t=textures`,
   thumbnails `cdn.polyhaven.com/asset_img/thumbs/<id>.png?width=200`; files
@@ -523,7 +580,9 @@ to review. Large originals go in `assets/`, never `public/` (deployed).
 - Trees: ez-tree (`scripts/trees/`, grown in the browser, packed by
   `npm run trees`). Big scanned plants are millions of triangles: no.
 - Prefer greener grass textures (ambientCG Grass001/004).
-- Furniture, fittings: Blender (§4). Cars: `app-notes.md`.
+- Furniture, fittings: Blender (§4). Cars: `app-notes.md`. People: Mixamo
+  characters and clips, through the user's sign-in (§4b); what they hold
+  is built in Blender (`blender/lib/props.py`).
 
 ## 7. Light and look
 
@@ -665,6 +724,112 @@ Depth precision: two surfaces `gap` apart fight beyond d ≈ √(gap · near ·
   (furniture undersides, kitchen backs against walls). Identify any odd
   patch by casting a ray through its pixel and reading the object's name.
 
+## 4b. People
+
+Animated people set round a property: standing in twos and threes with a
+drink, sitting on sofas and chairs, lying on the pool loungers. Do them
+once the furniture is settled and walked (§4, §8) and the light is set
+(§7), before the final review: they sit on the furniture as it stands, and
+a reseed drops them. The data — entry fields, seats.json, the index, the
+planner's constants, the scripts — is `reference.md`, People; how the app
+draws them, and what is still short, is `app-notes.md`, People.
+
+1. **Ask first**, with options. The user's answers for Ladonia stand until
+   they say otherwise: the source and its licence — Mixamo downloads;
+   random on every load, or generated once, saved in the scene and
+   editable — saved and editable; in published views, or only in the
+   editor — published, behind a People toggle; which spaces — only those
+   they name (Ladonia).
+2. **Get the assets through the user's own sign-in.** Mixamo needs an
+   Adobe account. Open mixamo.com in the browser pane, let the user sign
+   in there, and have them confirm the download list once — source,
+   counts, sizes (Ladonia: 12 characters, 0.6 GB; 17 clips, 15 MB) —
+   before you fetch anything. `app-notes.md`, The browser pane, has the
+   rules and the site's dialog values; `mixamo.js` and `mixamo-fetch.sh`
+   do the driving. Characters as FBX Binary, T-pose, with skin. Clips as
+   FBX Binary, without skin, 30 fps, no keyframe reduction, all with one
+   character selected, each file named after its clip ("Sitting
+   Talking.fbx": the pose is read from the name). They go in
+   `assets/people/characters/` and `assets/people/animations/`,
+   git-ignored.
+3. **Choose** characters by thumbnail: everyday and summer clothes, as
+   many women as men, no uniforms, kits or costumes (Ladonia's shannon
+   came in a football strip). Mixamo has no swimwear:
+   tell the user those on the loungers will be dressed. Clips by what
+   they are for (Ladonia's 17 and what each measured: `reference.md`):
+   - standing: one that drinks — only clips of drinking were recorded
+     holding anything — two or three that talk, and listeners (agreeing,
+     laughing, idling): a group is one of each;
+   - sitting: each is made for one seat height (0.34–0.44 m), so take
+     five or six, most of them with both feet flat before the seat (a
+     tucked foot goes into a sofa's base);
+   - lying: on the back, arms by the sides or behind the head. One
+     propped up of itself is no use on a lounger with a raised back.
+4. **Convert and measure**: add each new character to `SEXES` in
+   `blender/import_people.py`, then `npm run props` (once, and when a
+   prop is new), `npm run people`, `npm run seats`, `npm run build`. Read
+   `index.json`: every character has `sex`, `eyes` and `sits`, every clip
+   the `pose` and `hand` you expect. Credit the characters and clips in
+   `assets/THIRD_PARTY.md` and the README, and ask whether the converted
+   files in `public/models/people/` are to be committed (the standing
+   terms).
+5. **Plan many seeds, writing nothing.** `node
+   <skill>/checks/people-plans.mjs <id> --seeds 20` must end "No
+   problems": it holds every plan to the planner's own rules and says
+   nothing of how one looks. Then `npm run people:place -- <id> --seed n
+   --out <scratch>/plans/plan-n.json --png <scratch>/plans/plan-n.png`
+   for a dozen seeds. Read each listing and picture: a group by the pool,
+   the loungers taken, someone on an outdoor sofa, someone indoors, a
+   group on a roof, and who the first 4 and 8 drawn are (§12).
+6. **Audit by skin, in the app.** On the test server (§0), in the
+   editor's page, with harness.js and `people-audit.js`: for each
+   candidate `await __people.load(<the plan's JSON>)`, then start
+   `__people.audit()`, poll `__people.run` and read `__people.last`. It
+   poses each person through their clip as the app finishes them and
+   measures their skin against the real meshes, never bones alone or the
+   index's numbers. Its tolerances (`__people.TOL`) are those Ladonia's
+   checker passed and failed by: soles within 2 cm of the floor; seated
+   skin −4 to +1.5 cm on the seat (a sofa gives 3); lying, hips, back and
+   head −3.5 to +3 cm on the lounger, heels within 3 (which every lounger
+   fails today: `app-notes.md`, People, Still short); no skin more than
+   1 cm inside furniture, a wall, a rail, a hedge's core or a planter's
+   grasses; a drink within 16° of upright while its hand is 35 cm or more
+   from the mouth, tipped only at the lips and never 2 cm under the
+   face's skin; standing, 0.38 m clear of everything (the planner's 0.4,
+   less rounding) and facing the group within 25°. It does not see lawn
+   or meadow grass, a hedge's leaves or anything the wind moves: look in
+   the frames.
+7. **Pick the cleanest plan and edit it by hand** with
+   `__people.patch({ "<id>": { … } })`: swap two characters (a head that
+   floats on one body rests on another's), change a clip or a drink,
+   move someone a decimetre or two. Audit again after the last edit, and
+   keep what `patch` returns, the list of people, as the plan file.
+   Ladonia: twelve seeds audited, seed 12 taken, four people edited and
+   audited clean. Two were then moved again unaudited, and one of them
+   has an arm in a planter's grass (`app-notes.md`, People, Still short).
+8. **Take the frames and look at every one**: `__people.lineup()` (every
+   character: all there, opaque, matt, haired, of a size),
+   `__people.shots(prefix)` and again with `{ sip: true }`, then each
+   gathering wide by day and by night, and the site from above. A tab
+   never shown saves blurs until it is given a size (`app-notes.md`, The
+   browser pane).
+9. **Write the plan** once the audit and the frames pass. Back up the
+   scene and check its md5 against the last backup (§0), then write the
+   plan file through `validateScene` and `writeScene` (`reference.md`
+   has the command; `npm run people:place -- <id> --seed n` writes an
+   unedited seed). Diff the scene against the backup: only `people` has
+   changed. Load it: everyone built, no failed shader programs, no 4xx.
+10. **Tell the user** to restart `npm start` if it has run since before
+    the validator kept `people` (2026-10-06), or their next editor save
+    drops them, and to reload open tabs; to publish again to see them in
+    `/view/<id>`, where they are never baked and sit behind the People
+    toggle; that the editor moves, adds, deletes and re-rolls them, and a
+    re-roll replaces the vetted plan; that a reseed drops them, and the
+    same seed is not the same plan once the furniture or the planner has
+    changed — the scene holds the only copy, so copy `people` out before
+    a reseed and check each `seat.furniture` after it; and what is still
+    short.
+
 ## 10. Verify like a photographer
 
 With the test server and sink up (§0), load `harness.js` and the project's
@@ -777,6 +942,31 @@ What the rounds found (Ladonia):
   against the GLB before moving furniture, then teach the checker the
   shape (`checks/README.md`).
 
+What the people work added (2026-10-09), for anything built by agents:
+
+- A build checked on stand-ins proves the plumbing and little else. Six
+  builders made the people and checked them on the app's two avatars
+  with made-up poses, and each reported its part working. The first load
+  of the real characters and clips, in the review, broke the drinks
+  (tipped past 45° for half of every clip or more), the sitting (feet up
+  to 5 cm under the floor) and the lying (backs 15–25 cm off the
+  lounger). Get the real data in before anyone builds on it.
+- The fixer's own check is not the acceptance check. After each fix
+  round a checker who had built nothing, and measured the thing itself,
+  found what the fixer had passed: "0 hits" from rays along the shin
+  bones, with calves 1–2 cm inside the sofas. Give every fix round a
+  fresh, independent checker; this took three rounds, and the last still
+  left a list.
+- Have the checker choose as well as fail: Ladonia's audited twelve
+  seeds, picked one and tested the hand edits that cleared it.
+- What you fix after the last independent check is unchecked: run the
+  check's own tool on it again, or say so in the report. Ladonia's lead
+  made four small fixes after the checker's audit and said so; the audit
+  tool, run on the saved scene a day later, cleared them — and showed
+  what the user had since moved (§0: they keep editing): one of two
+  people nudged in the editor now has an arm in the grass the checker
+  had moved him out of.
+
 ## 10b. Bake, and check the bake
 
 The bake is what phones see, and what gives the interiors their real light;
@@ -833,6 +1023,17 @@ unbaked publish checked (§10). Details, numbers and causes:
   step 3 (× `QUALITY.flora.reach`, 0.6–1.5 by step); AO half-res.
 - A larger site widens the sun's shadow frustum and coarsens the
   buildings' shadows: check shadow texel size when the site grows.
+- People (§4b) are draw calls: 5–8 skinned meshes and about 50 thousand
+  triangles each (measured frames: `app-notes.md`, People). The phone
+  rules:
+  - The slider step caps how many are drawn — 8 at step 1, a phone's
+    default, 4 at step 0 — from the top of the spec's list, whole groups
+    at a time. So a plan's first four must already be the scene: the
+    group by the pool and the loungers.
+  - A public view downloads only the characters it draws, under a third
+    of the bytes for four of Ladonia's twelve.
+  - They are never in the bake, and a visitor can switch them off with
+    the rest of the scenery.
 
 ## 13. Pitfalls already hit (don't repeat)
 
@@ -859,10 +1060,61 @@ unbaked publish checked (§10). Details, numbers and causes:
   nearest in height (`Vegetation.js` `groundUv`).
 - Fog on huge ground triangles must be per pixel, not per vertex, or whole
   fields darken unevenly.
+- A class with two methods of one name keeps the later one, silently:
+  People's per-frame `update(delta)` replaced the editor's
+  `update(person)` until the frame call became `tick`. The `no-undef`
+  lint does not see it.
+- three's GLTFLoader drops the colon from a node's name (`prop:wine-red`
+  becomes `propwine-red`, `mixamorig:Hips` `mixamorigHips`; the original
+  stays in `userData.name`), and gives every skinned mesh a Skeleton of
+  its own even over one list of bones: share by the bones.
+- A skinned mesh's bounds are its rest pose's: cull by a sphere round the
+  pose, and pick by capsules round the bones (a ray against the skin cost
+  8.6 ms a person).
+- A list stored as "the pieces kept" (the publish options a browser
+  remembers, a manifest's) leaves out every piece added later: store the
+  pieces known beside it (`sceneryKnown`).
+- A cap by quality step must not hold in the editor's edit mode, or what
+  is being placed can be neither seen nor picked.
 
 ## Corrections log
 
 Newest first. Each: what the user said, what was changed, where.
+
+- **2026-10-05/09** — The user: "add animated Mixamo characters randomly
+  around the properties either standing with a drink in their hands
+  talking on the terrace, lying beside the pool tanning, sitting on the
+  sofa etc."; asked with options, they chose Mixamo downloads, placements
+  generated once, saved and editable, shown in published views behind a
+  People toggle, Ladonia only. Offered a list to download by hand, they
+  answered: "Can't you download mixamo yourself, I will just login through
+  the browser you open?" → §4b, all of it new: 12 characters and 17 clips
+  fetched in their session; the conversion, the props, the seat
+  measuring, the planner, the runtime and the editor and publish support
+  built by six agents on stand-in avatars, reviewed by a seventh, then
+  mended against the real set in three rounds (§11). Ladonia has 12
+  people — seed 12 of the planner as it then stood, four of them edited
+  by the checker; the plan was written exactly as audited (the scene's
+  diff: `people` alone): a pair
+  with drinks by B's pool, three on its loungers, one on a roof lounger,
+  three seated (a roof lounge chair, a terrace sofa, an indoor sofa), a
+  group of three on C5's roof. **Still short:** the list in app-notes'
+  People section — chiefly lying legs that hover over the cushion, heads
+  off the headrest on some bodies, street clothes on the loungers; the
+  last four fixes had no independent audit before the plan was written
+  (the audit tool cleared them the next day); the converted characters
+  (14 files, 13.8 MB, in `public/models/people/`): asked, the user chose
+  to keep them out of git — the repository is public — so `.gitignore`
+  holds them, a clone draws the stand-ins, and a deploy needs
+  `npm run people` or the files copied in.
+  **The user's own edits since** (the scene was saved again 2026-10-10
+  00:39, 45 minutes after the report — theirs, in the editor; carry them
+  into any re-plan, never undo them): brian (person-9) moved 0.2 m to
+  x 10.94 and remy (person-11) 0.1 m to z −19.123 on C5's roof, and a
+  terrace chair, `b-f201`, moved 1.7 m and turned. `people-audit.js` on
+  the scene as they left it finds brian's arm 1.8 cm in a planter's
+  grass (clear at the checker's x 11.14) — told to the user, not
+  changed.
 
 - **2026-10-05** — The user: lights switchable in the editor (walkthrough
   and edit mode), and a publish "with the first 4 optimizations but nothing

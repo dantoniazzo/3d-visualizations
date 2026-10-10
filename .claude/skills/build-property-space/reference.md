@@ -1,7 +1,8 @@
-# Reference: the generator, the spec and the landscape
+# Reference: the generator, the spec, the landscape and the people
 
 This covers the code as it stands for Ladonia (`scripts/spaces/ladonia/`, seeded as
 `kosinozici-villas`). `scripts/spaces/kosinozici.js` is the old first attempt. Nothing imports it.
+The people set round a space (SKILL.md §4b) are not the generator's: their data is in "People", below the landscape.
 
 ## Files
 
@@ -137,12 +138,14 @@ put(catalog, x, z, face = 0, y = 0, scale = 1)   // face: FACE key or degrees; u
 - `environment: { preset, ground, ground_size }`.
 - `garden`: Ladonia turns `hills`, `tufts`, `trees`, `blades` and `neighbourhood` to `{ enabled: false }`.
 - `doors: []`: standalone doors are only for imported models.
+- `people`: the people set round the space. The generator writes none and a seed's spec has none; see "People" below.
 
 **Heading conventions (they differ):**
 
 | field | 0 means | 90 means |
 |---|---|---|
 | furniture `rotation` | faces north (−z) | faces west |
+| person `rotation` | faces north (−z); lying, the head points north | faces west |
 | stair `yaw` | climbs +z (south on the site) | climbs east |
 | spawn `yaw` | faces +z (south) | faces east |
 
@@ -377,6 +380,248 @@ The header in `shared/landscape.js` says pergolas take `wall`, but the builder r
 - Roof parapets get LED strips automatically. A parapet here is a wall with reveal `coping_grey` or `coping_dark`, height ≤ 0.8 and `base_height` ≥ 2.5.
 
 **Validation.** `sanitizeLandscape` checks shape only, so a new landscape field survives without a validator change. It clamps numbers to ±1e5 and drops non-finite ones, drops strings over 200 characters, keeps the first 5000 items of an array and the first 64 keys of an object, drops anything nested deeper than 8 or keyed outside `/^[A-Za-z_][\w-]{0,40}$/`, and stops after 400,000 values.
+
+## People: the spec's entries, the seats, the index and the planner
+
+The method is SKILL.md §4b; how the app draws, lights and edits them, and what is still short, is `app-notes.md`, People. This is the data, as the code stood on 2026-10-10.
+
+**Files**
+- `shared/people.js`: the planner (`planPeople`, `planOne`), `seatsOf`, `siteOf`, `sanitizePeople`. Pure: node and the page alike, seeded.
+- `scripts/place-people.mjs`: `npm run people:place`.
+- `scripts/measure-seats.mjs`: `npm run seats`, which writes `public/models/furniture/seats.json`.
+- `blender/import_people.py`, then `scripts/optimize-people.mjs`: `npm run people`, which writes `public/models/people/`.
+- `blender/lib/props.py` and `blender/export_props.py`: `npm run props`, which writes `public/models/people/props.glb`.
+- `frontend/Experience/World/People.js`: the runtime. Its class comment is the contract.
+- `assets/people/characters/*.fbx` and `assets/people/animations/*.fbx`: the Mixamo downloads, git-ignored (`assets/people/**/*.fbx`).
+
+### The npm scripts
+
+| command | what it does |
+|---|---|
+| `npm run props` | Builds what the people hold, wear or lay down (Blender) into `props.glb`. Run it before `npm run people` when a prop is new, so the index lists it. |
+| `npm run people` | Converts every download (Blender, about 50 s for 12 characters and 17 clips) and packs it: `<id>.glb` a character (0.5–1.4 MB), `clips.glb` (0.9 MB), `index.json`. With nothing downloaded it makes the stand-ins instead. |
+| `npm run people -- --standin` | The stand-ins from the app's own two avatars, whatever is downloaded: `index.standin.json`, `standin-*.glb`, `clips.standin.glb`. |
+| `npm run people -- --src <dir> --out <dir>` | Another set, somewhere else. A trial run goes to a scratch `--out`: a run into `public/` replaces the stand-ins for every tab at the next `npm run build`. `--keep` keeps Blender's unpacked output. |
+| `npm run seats` | Measures every piece one can sit or lie on (32 in the catalogue) into `seats.json`. `-- <id prefix> …` measures only those and merges them in; `-- --png <dir>` also draws a top view of each with its seats. Run it again after `npm run furniture` changes a sofa, a chair or a lounger. |
+| `npm run people:place -- <scene-id> [--seed n] [--count n]` | Plans the people and **writes the scene**, as an editor save does (validated, through `writeScene`). Seed 1 and `defaultCount` if not given. |
+| `… --dry-run` | Plans and prints; writes nothing. |
+| `… --out <file.json>` | The plan to a file, `{ scene, seed, people }`; the scene is not written. |
+| `… --png <file.png>` | Also a picture from above, a panel a floor: standing red, sitting blue, lying orange, each with a tick the way it faces, groups ringed. It stops no write: without `--dry-run` or `--out` the scene is still written. |
+
+- After `props`, `people` or `seats` has written into `public/`, `npm run build`: the servers serve `dist/`.
+- `people:place` prints the plan in the spec's order: who, clip, what is held and in which hand, where; for a sitter, the feet off the floor (+ hanging, − under it), how far the seat gives and how far forward they sit, and a solid base; then who the first 4 and the first 8 drawn are. It stops if the validator would change the plan.
+- A plan is the same for the same seed only while the scene, `seats.json`, `index.json` and `shared/people.js` are the same. Ladonia's seed 12 gives another first group since the planner's last fixes (`COPING`, `GRASSES`, `LEFT_OUT`). Keep a vetted plan as a file, not as its seed.
+- To write an edited plan file — the list `__people.patch` returns, or `--out`'s `{ people }` — run from the repo (the scene diff is then `people` alone, the record's `updated_at` aside):
+
+```
+node --input-type=module -e "
+import { readFileSync } from 'node:fs';
+import { validateScene } from './server/scene/validate.js';
+import { readScene, writeScene } from './server/store/sceneStore.js';
+const [id, file] = process.argv.slice(1);
+const plan = JSON.parse(readFileSync(file, 'utf8'));
+const people = Array.isArray(plan) ? plan : plan.people;
+if (!Array.isArray(people)) throw new Error('no list of people in ' + file);
+const record = await readScene(id);
+const { scene, notes } = validateScene({ ...record.scene, people });
+if (JSON.stringify(scene.people) !== JSON.stringify(people)) throw new Error('the validator changed the plan: ' + notes.join('; '));
+await writeScene({ id, scene, brief: record.brief, notes });
+console.log('wrote', scene.people.length, 'people into', id);
+" <scene-id> <plan.json>
+```
+
+  `SCENES_DIR=<dir>` in front makes the store read and write another folder: try it on a copy of `scenes/` first. The check on the list is not a nicety: a spec whose `people` is not a list comes out of the validator with no `people` at all, and is written so.
+
+### `spec.people`: one entry a person
+
+`{ id, character, pose, clip, position, rotation, seat, prop, group, seed }`
+
+| field | value |
+|---|---|
+| `id` | `"person-<n>"`, numbered in the plan's order. |
+| `character` | A character's id from the index. One the index lacks is stood in for by one it has. |
+| `pose` | `"stand"`, `"sit"` or `"lie"`. |
+| `clip` | A clip's name, played whoever it was made for; or `null` for the pose's own (the first of that pose in the index not made for the other sex, one with a hand free if they hold something). |
+| `position` | `[x, y, z]` in site coordinates. Standing: the feet, y the floor's. Sitting: the seat's surface under the pelvis — the seat's `at`, less up to `GIVE` on a soft seat, up to `FORWARD_MOST` forward of it. Lying: the lounger's surface under the pelvis (`lie.at`). |
+| `rotation` | Degrees, as a piece of furniture's: 0 faces north (−z), 90 west, −90 east, 180 south; lying, the way the head points. Kept in (−180, 180]. A Mixamo rig faces +z, so the runtime turns it `rotation + 180°`. |
+| `seat` | `{ furniture: <placement id>, index: <its seat's number in seats.json; 0 lying> }`, or `null`. |
+| `prop` | Held (`wine-red`, `wine-white`, `flute`, `tumbler`, `beer`, `coffee`, `book`), worn (`sunglasses`), laid by them (`towel`, `book-open`), or `null`. |
+| `group` | `"group-<n>"` for a standing group or two seated together, else `null`. |
+| `seed` | An integer: where in its clip the person starts, and its speed (0.92–1.08×). |
+
+- **The list's order is the priority.** A device that draws only some (`QUALITY.people.most`) takes the first whole groups that fit; a person alone is a group of one. The planner returns: the standing group nearest those lying by the pool, those lying by the pool, those sitting out of doors, those sitting indoors, the other standing groups, those lying elsewhere.
+- **The validator** (`server/scene/validate.js` → `sanitizePeople`) keeps `people` only when the spec has a list: an empty list stays empty, a spec without the key gets none. It keeps the first 200 (`MAX_PEOPLE`); drops an entry without three finite position numbers or without a character; makes a missing or unknown pose `"stand"` and a taken id unique, each with a note; wraps `rotation`; lets go, with a note, of a seat on a piece the spec no longer has; keeps `clip`, `prop` and `group` as a string of 80 characters at most or `null`.
+- `npm run seed -- <id>` rebuilds the spec without `people`. Furniture ids are sequence numbers (`b-f228`): after a reseed that added or removed a piece, a saved entry's `seat.furniture` can name another piece.
+
+### `public/models/furniture/seats.json`
+
+One entry a catalogue id, in the piece's own frame: facing north (−z), metres at the placement's scale 1, before its rotation. The `"$comment"` key is not a piece.
+
+```
+"<catalog id>": { kind: "sofa" | "chair" | "stool" | "lounger" | "bench",
+                  seats: [{ at: [x, z], height, depth, facing, base: "solid" | "open", room? }],
+                  lie: { at: [x, z], height, head: [x, z], length, width, incline } | null }
+```
+
+| field | meaning |
+|---|---|
+| `seats[].at` | Where a seated person's buttocks rest: 0.15 m out from the foot of the back (`SIT_BACK`), or the middle of a shallower seat. |
+| `height` | The seat's surface above the piece's base. A loose pillow lying on the seat is not the seat. |
+| `depth` | From the back's foot to the front edge: what is left to sit on before a loose pillow. |
+| `room` | Only where a loose pillow lies on the seat: the front edge to the back proper, behind the pillow. |
+| `facing` | The way a sitter faces, in degrees as a `rotation`. A corner sofa's return seats face −90. |
+| `base` | `"solid"`: a box or plinth down to the floor, so feet can't be tucked back under it. `"open"`: a seat on legs. |
+| `lie.at` | The point under a lying person's pelvis: 0.1 m footwards of where the raised back begins, or 0.9 m from the head end of a flat one. |
+| `lie.head` | The middle of the head end. `seatsOf` turns `at → head` into the person's `rotation`. |
+| `lie.length`, `lie.width` | The lying surface end to end, and the cushion's width under the pelvis. |
+| `lie.incline` | The raised back's angle off the flat, in degrees. 5 or less is taken for flat. |
+
+- How it is measured: a 2 cm height field of the model as the app shows it; one seat per ~0.6 m of a run; a chaise's deep end (over 0.78 m) is one seat; a back is what stands within 0.12 m of the piece's top and 0.15 m over the seat, so an arm is not one; a seat with more than a quarter of the 0.3 m before its front edge taken by the piece itself (the corner of a corner sofa) is no seat.
+- `seatsOf(placement, seats)` puts a placed piece's seats on the site: each `at` as `[x, y, z]` with y = the placement's y + `height` × scale, `facing` turned by the placement's rotation.
+- Ladonia's pieces: `ld-lounger` lies at 0.39, 1.94 long, 0.64 wide, inclined 35°; `ld-out-lounge` sits at 0.371, 0.40 deep before its pillow (`room` 0.54), open; `ld-out-sofa` 0.40, solid; the indoor `ld-sofa-*` 0.45–0.47, solid; dining and garden chairs 0.45–0.49, open; bar stools 0.76–0.77 (the planner seats no one on a stool).
+
+### `public/models/people/index.json`
+
+Every path is under `/models/`. The app loads `index.json`, else `index.standin.json`, else its own two avatars playing Idle.
+
+**`characters[]`**: `{ id, name, file, height, hips, legs, sex, eyes, mouth, sits }`
+
+| field | meaning | used by |
+|---|---|---|
+| `id`, `name`, `file` | `"remy"`, `"Remy"`, `"people/remy.glb"`. The id is the FBX file's name. | both |
+| `height` | Metres, standing (Ladonia's twelve: 1.75–1.89). | — |
+| `hips` | How high the pelvis stands (0.93–1.05). A clip's Hips track, seat and feet are scaled by `character.hips / clips.hips`. | both |
+| `legs` | `[thigh, shin]` in metres. | planner (where `sits` lacks the clip) |
+| `sex` | `"f"`, `"m"`, or `null` for an id `SEXES` in `import_people.py` doesn't list: add every new character there. | both: a clip made for one sex is not given to the other |
+| `eyes` | `[x, up, forward]` from the head's joint, at rest: where a pair of glasses' lenses hang. `null` if not found. | runtime wears sunglasses there; the planner gives none without it |
+| `mouth` | The lips, likewise. | runtime tips a drink at it |
+| `sits` | `{ "<clip>": [seat, knee, tuck, far] }`: how each sitting clip sits on this very body, in metres — the seat height that puts its soles on the floor, and its rearmost knee, rearmost ankle and foremost ankle forward of its seat. | planner, in place of the clip's own scaled |
+
+**`clips`**: `{ file: "people/clips.glb", hips, legs, list: [...] }`. `hips` (0.962) and `legs` ([0.411, 0.377]) are the clips' own skeleton's. Pass the whole object to the planner (`clips: index.clips`), not only its list, or nothing is scaled to the character.
+
+Each of `list[]`: `{ name, pose, hand, tilt, curl, pelvis, seat, head, duration, feet?, tuck?, knee?, far?, reach?, sex?, still? }`
+
+| field | meaning | used by |
+|---|---|---|
+| `name` | The FBX file's name. | — |
+| `pose` | `"stand"`, `"sit"` or `"lie"`, read from the name (`CLASSIFY` in `import_people.py`: "sit…" sits; "lay…", "lying", "sleep", "sunbath", "tann" lie and hold nothing; anything else stands, and one named for clapping, waving, pointing, a phone or dancing holds nothing). | both |
+| `hand` | `"right"`, `"left"` or `false`: the hand that can hold a glass all through the clip. Measured (`tilt` ≤ 80° and `curl` ≥ 40° over every frame), but set outright for the drinking clips (`HANDS`), which fail the measure by drinking. | planner gives a drink only where it is not `false`; runtime holds in that hand whatever the prop's `grip` says |
+| `tilt`, `curl` | Per hand, degrees: the furthest off upright a glass in its fist ever points, and the least its fingers are ever curled. | planner prefers the steadier hand; runtime keeps a glass in the thumb's crook where `curl` < 45 |
+| `pelvis`, `seat`, `head` | At the first frame, from the root, Y up, facing +Z: the Hips; the point under the pelvis that rests on the seat (`null` standing); the head. | runtime places by `seat`; `head` says which way a lying clip lies, whether a sitting one is sat back in (0.2 m behind its seat) and whether a lying one sits up of itself (0.45 m over it) |
+| `duration` | Seconds. | — |
+| `feet` | Sitting: where the feet rest, at the soles' height. `seat[1] − feet[1]` is the seat height the clip was made for. | planner |
+| `knee`, `tuck`, `far` | Sitting: how far forward of the seat the rearmost knee, the rearmost ankle and the foremost ankle ever are. | planner: knees before the front edge, ankles before a solid base, feet short of a coffee table |
+| `reach` | Lying: how far from the midline the hands lie. | planner; the runtime brings arms in from the pose itself |
+| `sex` | `"f"` or `"m"` for a clip whose name says Female or Male. | both |
+| `still` | `true` for a clip of one frame. | runtime makes it breathe |
+
+Ladonia's 17 clips (`hand`; for a sitting clip the seat height it was made for; Mixamo's own tile name where the file was renamed, as recorded while downloading and not checked again):
+
+| clip | pose | hand | notes |
+|---|---|---|---|
+| Agreeing | stand | — | 1.8 s |
+| Drinking ("Male Drinking") | stand | left, set | drinks from a bottle, the hand lifted over the mouth; carries the body 1–2 cm over its root |
+| Happy Idle | stand | right | tilt 64.5° |
+| Laughing | stand | — | |
+| Standing Idle ("Weight Shift Idle") | stand | right | tilt 71.4° |
+| Talking ("General Conversation") | stand | right | tilt 76.9°; the hand opens as it gestures |
+| Talking Funny | stand | — | opens and splays the hands |
+| Talking Question | stand | — | |
+| Sitting Drinking | sit | right, set | 0.342; the download walks 2.7 m and sits down first (trimmed to its seated 11 s) and faced backwards (turned) |
+| Sitting Idle ("Sitting With Breathing Idle") | sit | right | 0.396; feet flat before the seat (`tuck` 0.41): fits a solid base |
+| Sitting Laughing | sit | left | 0.413; tucks a foot back (`tuck` 0.20): seldom on a solid base |
+| Sitting Talking | sit | — | 0.438; a foot stretched out (`far` 0.61); 45 s |
+| Sitting Reclined Male | sit | — | 0.381; still; sat back, hands behind the head; men only |
+| Sitting Reclining Female | sit | — | 0.351; still; women only; in `LEFT_OUT` |
+| Laying Hands Behind Head ("Male Laying Pose: On Back, Legs Crossed, Hands Behind Head") | lie | — | still; `reach` 0.24 |
+| Laying Idle ("Laying On Back Idle") | lie | — | `reach` 0.46: the arms lie out past a 0.64 m lounger and are brought in |
+| Laying Propped Female | lie | — | still; women only; sits up of itself (head 0.64 m over its seat): never on a raised back |
+
+**`props`**: `{ file: "people/props.glb", list: [{ id, node, grip }] }`. `node` is the name three's loader gives the GLB's `prop:<id>` node (`propwine-red`: it drops the colon). `grip` is `"right"`, or `null` for a prop that is worn or laid down. Each node's origin is its grip point, and its extras carry `{ prop: { id, grip, size, at, off } }`: `at` the share of its height the grip is up, `off` how far the grip is from the middle of its footprint.
+
+| id | what | size x, y, z (m) | grip |
+|---|---|---|---|
+| `wine-red` | Bordeaux glass | 0.095, 0.226, 0.095 | the stem, 0.21 of its height up |
+| `wine-white` | white wine glass | 0.081, 0.206, 0.081 | the stem, 0.23 |
+| `flute` | champagne flute | 0.069, 0.236, 0.069 | the stem, 0.23 |
+| `tumbler` | Negroni on ice with an orange wheel | 0.110, 0.113, 0.085 | the body, 0.27; 13 mm off centre (the wheel, not a handle) |
+| `beer` | brown longneck | 0.062, 0.231, 0.062 | the body, 0.33 |
+| `coffee` | cappuccino | 0.115, 0.066, 0.092 | through the handle, 0.56; 42 mm off centre |
+| `book` | closed paperback | 0.129, 0.198, 0.025 | the spine |
+| `towel` | folded beach towel | 0.46, 0.051, 0.32 | none: laid past the feet of someone lying |
+| `book-open` | paperback open face down | 0.251, 0.044, 0.198 | none: laid likewise |
+| `sunglasses` | sunglasses | 0.143, 0.047, 0.146 | none: worn, the origin under the bridge |
+
+Each is under 1,500 triangles (`BUDGET` in `blender/export_props.py`, which says when one is over). Glass is see-through by opacity, never transmission (SKILL.md §7). A new prop is a builder and a row in `PROPS` (`blender/lib/props.py`: id, name, hand or `None`, builder).
+
+### The planner (`shared/people.js`)
+
+`planPeople(spec, catalog, seats, { seed = 1, count, characters, clips, props })` returns the entries; `planOne(spec, catalog, seats, { pose, near, facing, seed, characters, clips, props })` returns one more for the editor's Add, or `null` with nothing within 12 m.
+
+**How many and where**
+- `defaultCount`: 4, plus one per 25 m² of terrace and deck, plus one per lounger by the water, up to 12. Ladonia gets 12.
+- Lying: about a quarter, and no more than there are loungers by water: those within 3.5 m of a pool (`NEAR_POOL`) first, then within 4.5 m of a hot tub (`NEAR_TUB`). With none by water, two at most on any.
+- Standing: one group of two or three for every six people. A group stands only in a room whose floor finish is of kind `ground`, not gravel, asphalt, grass or the like (`SOFT_GROUND`, so not on `roof_gravel`), whose name is not a way through (`PASSING`: parking, road, path, steps, entrance, hall…) and which is at least 4 m². A room named terrace, deck, roof, pool, garden… (`GATHERING`) is twice as likely. Name a new space's rooms accordingly. The first group stands within 12 m (`BY_THE_POOL`) of those lying by the pool, on their level, and has someone drinking.
+- Sitting: the rest — outdoor sofas and lounge chairs first, one or two on indoor sofas (a room named living, lounge… twice as likely), then terrace chairs, then indoor chairs. Seats 0.3–0.62 m high and 0.2–0.78 m deep (`SEAT_HEIGHT`, `SEAT_DEPTH`); no stools. A seat no character and clip fit is left empty, and whoever was to sit there stands.
+
+**Clearances and spacing**
+
+| constant | value | what |
+|---|---|---|
+| `MARGIN` | 0.4 m | Someone standing is this clear of every obstacle and of the edge of the room. |
+| `SPACING` | 0.9–1.3 m | A standing group's members apart, facing its middle ± 12°. |
+| `APART` | 0.8 m | Two people not of one group. |
+| `DOORWAY` | 0.6 m | Kept clear either side of a door, a doorway or glazing to the floor (and `MARGIN` more). |
+| `COPING` | 0.3 m | Round a pool's box no one stands: its raised coping. |
+| `GRASSES` | out 0.25, up 1.0 m | How far a planter's grasses are taken to reach past its box and above it. Ladonia's reach further (`app-notes.md`, People, Still short). |
+| `FLAT` | 0.035 m | A piece flatter than this (a rug) is walked on. |
+| `LEFT_OUT` | "Sitting Reclining Female" | Clips no one is planned with. The editor can still give them. |
+| `BOTTLE` | `"beer"` | What anyone whose clip drinks holds. |
+
+Obstacles (`siteOf(spec, catalog)`, which gives `roomAt`, `blockedBy`, `clearOf`): the spec's walls, furniture as its catalogue box, stairs and the holes they rise through; the landscape's walls, planters with their grasses, hedges, railings, pergola posts and screens, trees and pools with their coping. Furniture is a box here too: the inside of an L-shaped sofa counts as taken.
+
+**Sitting fit**
+
+| constant | value | what |
+|---|---|---|
+| `FEET_NEAR`, `FEET_MOST` | 0.02, 0.04 m | The feet's distance from the floor on that seat: within the first no one can tell, within the second it passes. |
+| `UNDER_MOST` | 0.025 m | Feet under the floor count for more: this much under is as far off as `FEET_MOST` hanging. |
+| `GIVE` | 0.03 m | A sofa's or a lounge chair's cushion gives this much under someone whose feet would hang. |
+| `LEG_CLEAR`, `HEEL_CLEAR` | 0.04, 0.06 m | Knees this far past the seat's front edge; on a base not `open`, ankles too. |
+| `FORWARD_MOST`, `FORWARD_BACK` | 0.15, 0.08 m | How far forward of the seat's point someone may sit for that; the second for a clip sat back in. `SEAT_UNDER` 0.12 m of seat stays under them. |
+| `FOOT`, `LEG_SPACE`, `KNEE_HIGH` | 0.2, 1.2, 0.62 m | The foremost ankle and a foot more come short of whatever stands before the seat lower than the knees, looked for out to 1.2 m. |
+| `ROOMY` | 0.4 m | A shallower seat has a cushion propped on it: sat on only when nothing better is free. |
+| `RECLINED`, `RECLINE_DEPTH`, `SITS_BACK` | 0.2, 0.5 m, 0.3 | A clip sat back in goes only on a soft seat out of doors at least 0.5 m deep, three times in ten, and never two alike. |
+
+**Lying, drinks and the rest**
+- `SITS_UP` 0.45 m, `RAISED` 5°: a lying clip that sits up of itself is not for a lounger whose back is raised. Those lying take the lying clips in turn, so the loungers by a pool are not all one pose.
+- `LYING_PROPS`: a towel (weight 5), sunglasses (2, only on a character whose `eyes` the index has), an open book (1.5), or nothing (1.5).
+- A drink goes only to a clip whose `hand` holds; the steadier the hand (`TILT_MOST` 80°) the likelier. A standing group has one with a drink, one talking, one listening; a talker or listener whose clip has a hand holds one six times in ten. Indoors the drinks are coffee, wine or a tumbler; out of doors wine, a flute, a tumbler or a beer.
+- No character twice until all are used; none twice in a group; no two of a group play one clip.
+- `MAX_PEOPLE` 200.
+
+### `QUALITY.people` per slider step (`frontend/Experience/Utils/device.js`)
+
+| step | `most` | `every` | `near` (m) | `farEvery` | `still` (m) |
+|---|---|---|---|---|---|
+| 0 Fastest (the slider's lowest; a software renderer's default) | 4 | 2 | 8 | 4 | 30 |
+| 1 Fast (a phone's or tablet's default) | 8 | 1 | 10 | 3 | 45 |
+| 2 Balanced | 16 | 1 | 12 | 3 | 60 |
+| 3 High | 32 | 1 | 15 | 2 | 90 |
+| 4 Maximum realism | all | 1 | 15 | 2 | 120 |
+
+At most `most` are drawn; each is animated every `every` frames within `near` of the camera, every `farEvery` beyond, and held still beyond `still` or out of sight.
+
+### `World/People.js`: what the editor and the checks call
+
+- `world.people` exists in the editor and in a public view. `ready` is a promise; it emits `"ready"` after a rebuild and `"change"` (with the id) when one person is added, removed or changed.
+- `rebuild(spec?)`: everyone again from `spec.people`. `add(entry)`, `remove(id)`.
+- `update(entry | { id, ...fields })`: moved or turned, the person is placed again in the same group; a changed character, pose, clip, prop or seed builds a new one.
+- `readBack(id)`: after the group itself was moved or turned (a gizmo drag), writes the entry's `position` and `rotation` from it.
+- `get(id)` (the record), `list` (the records built, in the spec's order), `count` (as many as the spec has), `objectFor(id)` (its group), `personOf(object)` (the id of the person a ray's hit is part of).
+- `show(on)`: all of them and their collision boxes, the "people" scenery. `setFilter(fn | null)`: only those `fn(entry)` is true for. Hide through these, never `group.visible`, which People overwrites.
+- `index()`: a promise of the index as the app reads it (`characters`, `clips`, `props`). `tick(delta)` is the world's per-frame call; `update` is the editor's.
+- A person's group is `person:<id>` with `userData { kind: "person", id, label }`, under the root `people`. A record carries `entry`, `group`, `model`, `meshes`, `character`, `clipEntry`, `info` (measured at the clip's start: seat, soles, back, head), `sphere` (culling) and `collisionBox`.
 
 ## Numbers that worked (as in the code)
 

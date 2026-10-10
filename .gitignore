@@ -33,3 +33,12 @@ assets/cars/*.glb
 
 # Mixamo downloads: used inside the app, never redistributed as raw files (Mixamo licence)
 assets/people/**/*.fbx
+
+# The people's characters and clips as `npm run people` converts them from
+# Mixamo: used inside the app, not passed on in a public repository (Mixamo's
+# terms). A clone without them draws the stand-ins (index.standin.json).
+public/models/people/*.glb
+public/models/people/index.json
+!public/models/people/props.glb
+!public/models/people/standin-*.glb
+!public/models/people/clips.standin.glb

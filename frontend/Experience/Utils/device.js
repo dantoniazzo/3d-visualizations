@@ -41,10 +41,11 @@ const touch = window.matchMedia?.("(pointer: coarse)").matches ?? false;
  *     `unshadowed` lights in the visitor's own room besides; every other
  *     room that is lit glows (World/RoomGlow.js).
  *   - `people`: the people round the property (World/People.js) — at most
- *     `most` of them (whole groups first, the same ones every time), each
- *     animated every `every` frames within `near` metres of the camera and
- *     every `farEvery` frames beyond, and held still beyond `still` metres
- *     or out of sight.
+ *     `most` of them (the first of the spec's list, which is in the order
+ *     of their priority, whole groups at a time; in the editor's edit mode
+ *     all of them), each animated every `every` frames within `near`
+ *     metres of the camera and every `farEvery` frames beyond, and held
+ *     still beyond `still` metres or out of sight.
  *
  * `?quality=low` is step 1, as a phone was drawn; `?quality=high` step 3,
  * as a computer was; `?quality=0`…`4` or `max` any step.

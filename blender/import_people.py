@@ -9,10 +9,22 @@ scripts/optimize-people.mjs then packs for the web:
     after its file ("Sitting Talking"). Each moves the bones as Mixamo
     gave it; the Hips also carry where the body is, so a clip's root
     motion stays in it — but a sitting or lying clip that walks in and
-    sits down first keeps only its settled part (settle), and a lying
-    clip is turned to lie with its head to +Z (head_forward).
+    sits down first keeps only its settled part (settle), a lying clip
+    is turned to lie with its head to +Z (head_forward), and a sitting
+    one that sits facing some other way, to face +Z (face_forward).
   - people.json: what the app needs to place them — each character's
-    height and hips, each clip's pose and where its pelvis and seat are.
+    height, hips and sex, how long its thighs and shins are (leg_bones),
+    how each sitting clip sits on it (seat_on) and where its eyes and
+    its mouth are on its head (eye_line: sunglasses are worn at the one,
+    a bottle is drunk from at the other); each clip's pose,
+    where its pelvis and
+    seat are, where a sitting clip's feet are — and how far back under
+    it its feet and its knees ever come, and how far out before it its
+    feet (legs_through: a sofa's base is in the way of feet tucked back,
+    a coffee table of feet stretched out) — and how far out a lying one's
+    hands, which hand can hold a glass all through it (measured:
+    hand_now, holding_hand), whom it is for if its name says
+    ("... Female"), and whether it is one still pose.
 
 Both come in the same skeleton, Mixamo's, its bones named "mixamorig:Hips"
 and so on (three.js's loader drops the colon: "mixamorigHips"). Mixamo
@@ -77,12 +89,13 @@ HIPS = "mixamorig:Hips"
 PREFIX = "mixamorig:"
 
 # What each clip is, by its name (the file's, "Sitting Talking"). For the
-# pose and for the hand, the first row whose pattern matches and gives one
-# decides; edit freely. pose: "stand" (the default), "sit" or "lie"; hand:
-# whether the right hand is free to hold a glass all through the clip
-# (true unless a row says otherwise — a lying clip's is false).
+# pose and for the hands, the first row whose pattern matches and gives
+# one decides; edit freely. pose: "stand" (the default), "sit" or "lie";
+# hands: False for a clip neither of whose hands holds anything whatever
+# they measure (a lying clip's, a clapping one's). Any other clip's are
+# measured (holding_hand).
 CLASSIFY = [
-    # pattern                                           pose     hand
+    # pattern                                           pose     hands
     (r"\bsit|sitting",                                  "sit",   None),
     (r"\blay|laying|lying|\blie\b|sleep|sunbath|tann",  "lie",   False),
     (r"clap|cheer|wav(e|ing)|point|applau|phone|text|shrug|bow|stretch|"
@@ -90,12 +103,74 @@ CLASSIFY = [
                                                         None,    False),
 ]
 
+# Which hand can hold a glass all through a clip is measured on the clip
+# itself (hand_now, hands_through): a hand can when, over every frame, a
+# glass in its fist never points more than TILT_MOST degrees off upright
+# and its fingers never open below CURL_LEAST degrees of curl. Of two
+# that can, the right, unless the left keeps the glass HAND_NEAR degrees
+# more upright. The app stands a held drink upright anyway; this is how
+# far it has to cheat, and the planner (shared/people.js) picks by it.
+#
+# No Mixamo clip but the drinking ones was made holding anything: an arm
+# hanging at the side holds a glass level (70-90 degrees), so only the
+# stillest hands pass, and a hand that gestures or opens does not.
+TILT_MOST = 80             # degrees
+CURL_LEAST = 40            # degrees
+HAND_NEAR = 5              # degrees
+
+# A clip's holding hand set outright, by name: "right", "left" or False.
+# The drinking clips are measured as failing — the hand that drinks tips
+# its glass past level to do it — and are what a drink is for: Mixamo's
+# "Drinking" drinks with the left hand (its fingers round a glass all
+# through), "Sitting Drinking" with the right.
+HANDS = {
+    "Drinking": "left",
+    "Sitting Drinking": "right",
+}
+# The stand-ins' clips hold in the right hand, as they always have.
+STANDIN_HANDS = {"Idle": "right", "Sitting (stand-in)": "right"}
+
+# Whether each character is a woman or a man, by id: a clip made for one
+# ("Laying Propped Female", "Sitting Reclined Male") is not given to the
+# other. A character not listed is neither, and gets no such clip.
+SEXES = {
+    "sophie": "f", "shannon": "f", "megan": "f", "kate": "f", "elizabeth": "f", "martha": "f",
+    "lewis": "m", "remy": "m", "bryce": "m", "brian": "m", "josh": "m", "leonard": "m",
+    "standin-female": "f", "standin-male": "m",
+}
+
 # The bones whose skin is what a body sits or lies on (the buttocks, the
 # backs of the thighs, the lower back), and how far round the pelvis to
 # look for it.
 SEAT_GROUPS = ("mixamorig:Hips", "mixamorig:LeftUpLeg", "mixamorig:RightUpLeg", "mixamorig:Spine")
 SEAT_REACH = 0.25          # m, across, from the pelvis
 SEAT_GUESS = 0.10          # m: the pelvis above the seat, when no body measures it
+# The bones whose skin is a body's feet (its shoes): their lowest point
+# is its soles. A foot whose ankle is within FOOT_DOWN of the lower one's
+# is on the floor too (the other is crossed over a knee).
+FOOT_GROUPS = ("mixamorig:LeftFoot", "mixamorig:RightFoot", "mixamorig:LeftToeBase", "mixamorig:RightToeBase")
+FOOT_DOWN = 0.08           # m
+FINGERS = ("Index", "Middle", "Ring", "Pinky")
+
+# Where a character's eyes are (eye_line). Its eye bones, the meshes of
+# its eyes or of its eyelashes say how high; a body with none of them
+# (one mesh, eyes and all), the profile of its face: the hollow of the
+# nose's bridge, which is EYES_UNDER_BRIDGE above the eyes on the
+# characters that have both (0.3-1.4 cm on eleven of Mixamo's). How far
+# forward is the front of the face where a pair of glasses' lenses hang:
+# LENS_ACROSS either side of the nose, LENS_HIGH above and below the eyes.
+EYE_MESHES = r"eye"
+LASH_MESHES = r"lash"
+HAIR_MESHES = r"hair"
+HEAD_GROUPS = ("mixamorig:Head", "mixamorig:Neck")
+EYES_UNDER_BRIDGE = 0.007  # m
+# The mouth is this far under the eyes, near enough on anyone; how far
+# forward its lips are is read off the profile there, MOUTH_HIGH either way.
+MOUTH_UNDER_EYES = 0.068   # m
+MOUTH_HIGH = 0.01          # m
+PROFILE_ACROSS = 0.008     # m: the midline's strip, either side
+LENS_ACROSS = (0.014, 0.06)
+LENS_HIGH = 0.021          # m
 TEXTURE_MOST = 1024        # px: the largest texture side the export keeps
 
 # A character whose download is not life size (Mixamo's Remy comes at
@@ -117,6 +192,9 @@ HEIGHTS = {}
 SETTLED = 0.06             # m
 SETTLE_FRAMES = 10
 TRIMS = {}
+# A sitting clip whose knees point further than this from straight ahead
+# on its first frame is turned to face ahead (face_forward).
+FACING_OFF = math.radians(20)
 
 # The made-up stand-in poses, from Idle: the pelvis above the floor,
 # which puts the avatars' seat at about 0.45 m, and lying, about 0 m.
@@ -331,6 +409,25 @@ def leg_chain(arm, posed=False):
     return sum(sides) / len(sides)
 
 
+def leg_bones(arm, posed=False):
+    """How long the thigh and the shin are — hip joint to knee, knee to
+    ankle — in metres, averaged over both legs: [thigh, shin]. A clip
+    turns each bone as it says whatever the body, so where a sitting
+    body's knees and feet come is by these, not by its height."""
+    bones = arm.pose.bones if posed else arm.data.bones
+
+    def at(b):
+        return b.head if posed else b.head_local
+    thighs, shins = [], []
+    for side in ("Left", "Right"):
+        hip, knee, foot = (bones.get(f"{PREFIX}{side}{b}") for b in ("UpLeg", "Leg", "Foot"))
+        if not (hip and knee and foot):
+            return None
+        thighs.append((at(knee) - at(hip)).length)
+        shins.append((at(foot) - at(knee)).length)
+    return [round(sum(thighs) / 2, 3), round(sum(shins) / 2, 3)]
+
+
 def standing_hips(chain, ankle):
     """How high the pelvis is standing straight: the leg chain and the
     ankle's height off the floor. A clip moves the Hips for its own
@@ -413,6 +510,97 @@ def tidy_materials(meshes):
             shrink(image)
 
 
+def eye_line(arm, meshes):
+    """Where a character's eyes are, at rest, from its head's joint: the
+    point midway between them, as high as they are, as far forward as the
+    front of the face round them — its brows, its lashes, its cheeks:
+    where the lenses of a pair of glasses hang. As glTF has it, [x, up,
+    forward], in metres; None for a body it can't be found on (no eye
+    bones, no eyes or lashes of their own, no hollow in its profile).
+    And with it where its mouth is — its lips, on its midline,
+    MOUTH_UNDER_EYES below its eyes, as far forward as its profile comes
+    there — likewise, or None: (eyes, mouth).
+
+    How high, by the first of: its eye bones (Mixamo gives a few rigs
+    them); the meshes of its eyes; those of its eyelashes (most have
+    them); the hollow of its nose's bridge on its profile, less
+    EYES_UNDER_BRIDGE."""
+    head = arm.data.bones.get(PREFIX + "Head")
+    if head is None:
+        return None, None
+    joint = head.head_local
+
+    def named(pattern, without=None):
+        return [o for o in meshes if re.search(pattern, o.name, re.I)
+                and not (without and re.search(without, o.name, re.I))]
+
+    def box(objects):
+        points = [o.matrix_world @ v.co - joint for o in objects for v in o.data.vertices]
+        if not points:
+            return None
+        return [(min(p[i] for p in points), max(p[i] for p in points)) for i in range(3)]
+
+    # the face's skin, hair apart: how far forward it comes down the
+    # midline (its profile) and either side of the nose, by height
+    profile, beside = {}, {}
+    for o in meshes:
+        if re.search(HAIR_MESHES, o.name, re.I):
+            continue
+        groups = {g.index for g in o.vertex_groups if g.name in HEAD_GROUPS}
+        for v in o.data.vertices:
+            top = max(v.groups, key=lambda g: g.weight, default=None)
+            if top is None or top.group not in groups:
+                continue
+            p = o.matrix_world @ v.co - joint
+            if -p.y < 0.02:
+                continue
+            if abs(p.x) < PROFILE_ACROSS:
+                key = round(p.z / 0.004)
+                profile[key] = max(profile.get(key, 0.0), -p.y)
+            if LENS_ACROSS[0] < abs(p.x) < LENS_ACROSS[1]:
+                beside.setdefault(round(p.z, 3), []).append(-p.y)
+
+    across, up, said = 0.0, None, None
+    bones = [arm.data.bones.get(f"{PREFIX}{side}Eye") for side in ("Left", "Right")]
+    eyes, lashes = box(named(EYE_MESHES, LASH_MESHES)), box(named(LASH_MESHES))
+    if all(bones):
+        middle = (bones[0].head_local + bones[1].head_local) / 2 - joint
+        across, up, said = middle.x, middle.z, "its eye bones"
+    elif eyes or lashes:
+        found = eyes or lashes
+        across, up = (found[0][0] + found[0][1]) / 2, (found[2][0] + found[2][1]) / 2
+        said = "its eyes" if eyes else "its eyelashes"
+    else:
+        # up the profile from the tip of the nose — the furthest forward
+        # of the face's lower half — to where it stops falling back
+        keys = sorted(k for k in profile if 0.02 <= k * 0.004 <= 0.16)
+        if keys:
+            tip = max((k for k in keys if k * 0.004 <= 0.10), key=lambda k: profile[k], default=None)
+            above = [k for k in keys if tip is not None and tip < k <= tip + 20]
+            hollow = None
+            for i, k in enumerate(above):
+                rest = above[i + 1:i + 6]
+                if rest and all(profile[j] >= profile[k] - 0.0005 for j in rest) and profile[tip] - profile[k] > 0.008:
+                    hollow = k
+                    break
+            if hollow is not None:
+                up, said = hollow * 0.004 - EYES_UNDER_BRIDGE, "the bridge of its nose"
+    if up is None:
+        return None, None
+    fronts = [f for z, row in beside.items() if abs(z - up) <= LENS_HIGH for f in row]
+    for found in (eyes, lashes):
+        if found:
+            fronts.append(-found[1][0])
+    if not fronts:
+        return None, None
+    eye = [round(across, 3), round(up, 3), round(max(fronts), 3)]
+    lips = [f for k, f in profile.items() if abs(k * 0.004 - (up - MOUTH_UNDER_EYES)) <= MOUTH_HIGH]
+    mouth = [round(across, 3), round(up - MOUTH_UNDER_EYES, 3), round(max(lips), 3)] if lips else None
+    print(f"  its eyes, by {said}: {eye[1] * 100:.1f} cm over its head's joint, its face {eye[2] * 100:.1f} cm forward there"
+          + (f"; its lips {mouth[2] * 100:.1f} cm forward, {mouth[1] * 100:.1f} cm over the joint" if mouth else "; no lips found"))
+    return eye, mouth
+
+
 def character(path, ident, name, out):
     """Load, clean, measure and export one character; leave it loaded, so
     the clips can be measured on its body."""
@@ -446,21 +634,29 @@ def character(path, ident, name, out):
     points = evaluated_points(meshes)
     lo = Vector([min(p[i] for p in points) for i in range(3)])
     hi = Vector([max(p[i] for p in points) for i in range(3)])
+    eyes, mouth = eye_line(arm, meshes)
     meta = {
         "id": ident,
         "name": name,
         "file": f"{ident}.glb",
         "height": round(hi.z - lo.z, 3),
         "hips": round(size, 3),
+        "sex": SEXES.get(ident),
+        "legs": leg_bones(arm),
+        "eyes": eyes,
+        "mouth": mouth,
         "source": os.path.basename(path),
     }
+    if meta["eyes"] is None:
+        print(f"  {ident}: its eyes could not be found — it will not be given sunglasses")
     left = arm.data.bones.get(PREFIX + "LeftHand")
     if left and left.head_local.x <= 0:
         print(f"  WARNING {ident}: its left hand is not on its left — facing check failed")
     export(os.path.join(out, meta["file"]), [arm, *meshes], animations=False)
+    sex = {"f": "a woman", "m": "a man"}.get(meta["sex"], "not in SEXES: neither a woman nor a man")
     print(f"  {ident}: {meta['height']:.2f} m tall, hips {meta['hips']:.3f} m standing "
           f"({arm.data.bones[HIPS].head_local.z:.3f} at rest), "
-          f"{len(arm.data.bones)} bones, {len(meshes)} meshes")
+          f"{len(arm.data.bones)} bones, {len(meshes)} meshes, {sex}")
     return meta, arm, meshes
 
 
@@ -504,11 +700,102 @@ def export(path, objects, animations):
 # ---------------------------------------------------------------------
 
 def classify(name):
+    """A clip's pose, and whether its hands may hold anything, by its name."""
     pose = next((p for pattern, p, _ in CLASSIFY if p and re.search(pattern, name, re.I)), "stand")
     hand = next((h for pattern, _, h in CLASSIFY if h is not None and re.search(pattern, name, re.I)), None)
     if hand is None:
         hand = pose != "lie"
     return pose, hand
+
+
+def clip_sex(name):
+    """Whom a clip is for, if its name says ("... Female", "... Male"):
+    "f", "m" or None."""
+    if re.search(r"\bfemale\b", name, re.I):
+        return "f"
+    if re.search(r"\bmale\b", name, re.I):
+        return "m"
+    return None
+
+
+def degrees_between(a, b):
+    if a.length < 1e-9 or b.length < 1e-9:
+        return 0.0
+    return math.degrees(a.angle(b))
+
+
+def hand_now(arm, side):
+    """One hand ("Right" or "Left") as posed now: how far off upright a
+    glass held in its fist would point, and how far its fingers are
+    curled, both in degrees — or None for a skeleton without fingers.
+
+    A glass in the fist stands along the knuckles, from the little
+    finger's to the first finger's, square to the line from the wrist to
+    the middle finger's — as World/People.js holds one: upright when the
+    thumb is up, level when the arm hangs at the side. A finger's curl
+    is the turns of its three joints, from the back of the hand to its
+    tip, summed; a hand's, the mean of its four fingers' (about 13 held
+    flat, 45-60 hanging loose, 110 round a glass, 220 a fist)."""
+    pose = arm.pose.bones
+
+    def at(name):
+        bone = pose.get(f"{PREFIX}{side}{name}")
+        return None if bone is None else bone.head.copy()
+    wrist, middle, first, little = at("Hand"), at("HandMiddle1"), at("HandIndex1"), at("HandPinky1")
+    if any(p is None for p in (wrist, middle, first, little)):
+        return None
+    along = (middle - wrist).normalized()
+    across = first - little
+    across -= along * across.dot(along)
+    curls = []
+    for finger in FINGERS:
+        joints = [wrist] + [at(f"Hand{finger}{i}") for i in (1, 2, 3)]
+        if any(p is None for p in joints):
+            continue
+        tip = at(f"Hand{finger}4")
+        joints.append(tip if tip is not None else pose[f"{PREFIX}{side}Hand{finger}3"].tail.copy())
+        spans = [b - a for a, b in zip(joints, joints[1:])]
+        curls.append(sum(degrees_between(a, b) for a, b in zip(spans, spans[1:])))
+    if not curls:
+        return None
+    return degrees_between(across, Vector((0, 0, 1))), sum(curls) / len(curls)
+
+
+def hands_through(arm, action):
+    """Each hand over every frame of a clip: `tilt`, the furthest off
+    upright a glass in its fist ever points, and `curl`, the least its
+    fingers are ever curled, in degrees — {"right": {...}, "left": {...}},
+    or None for a skeleton without fingers."""
+    assign(arm, action)
+    lo, hi = frames(action)
+    seen = {"right": [], "left": []}
+    for f in range(lo, hi + 1):
+        bpy.context.scene.frame_set(f)
+        for side in seen:
+            now = hand_now(arm, side.title())
+            if now is None:
+                return None
+            seen[side].append(now)
+    return {side: {"tilt": round(max(t for t, _ in rows), 1), "curl": round(min(c for _, c in rows), 1)}
+            for side, rows in seen.items()}
+
+
+def holding_hand(name, free, hands, overrides=HANDS):
+    """Which hand can hold a glass all through a clip: "right", "left" or
+    False. By the overrides, else by what its hands measure (TILT_MOST,
+    CURL_LEAST, HAND_NEAR) unless its name says neither is free; the
+    right, for a skeleton without fingers to measure."""
+    if name in overrides:
+        return overrides[name]
+    if not free:
+        return False
+    if hands is None:
+        return "right"
+    able = [side for side in ("right", "left")
+            if hands[side]["tilt"] <= TILT_MOST and hands[side]["curl"] >= CURL_LEAST]
+    if len(able) == 2:
+        return "left" if hands["left"]["tilt"] < hands["right"]["tilt"] - HAND_NEAR else "right"
+    return able[0] if able else False
 
 
 def rest_local(bone):
@@ -680,6 +967,43 @@ def head_forward(arm, action):
     turn = math.atan2(math.sin(turn), math.cos(turn))
     if abs(turn) < math.radians(2):
         return
+    turn_about_root(arm, action, turn)
+    print(f"  {action.name}: turned {math.degrees(turn):.0f}° to lie head to +Z")
+
+
+def face_forward(arm, action):
+    """Turn a sitting clip about the root so it faces +Z (glTF) as the
+    others do — its knees straight ahead of its pelvis on its first
+    frame — when it is more than FACING_OFF from it: a person's rotation
+    is the way their seat faces, whatever the clip. (Mixamo's "Sitting
+    Drinking" walks to its chair and turns round to sit, facing back the
+    way it came; "Sitting Reclining Female" sits facing +X.)"""
+    if classify(action.name)[0] != "sit":
+        return
+    assign(arm, action)
+    bpy.context.scene.frame_set(frames(action)[0])
+    bpy.context.view_layer.update()
+    pose = arm.pose.bones
+    knees = [pose.get(f"{PREFIX}{side}Leg") for side in ("Left", "Right")]
+    if not all(knees):
+        return
+    ahead = (knees[0].head + knees[1].head) / 2 - pose[HIPS].head
+    if ahead.xy.length < 0.15:      # not sitting after all: the knees are under the pelvis
+        return
+    turn = -math.pi / 2 - math.atan2(ahead.y, ahead.x)
+    turn = math.atan2(math.sin(turn), math.cos(turn))
+    if abs(turn) < FACING_OFF:
+        return
+    turn_about_root(arm, action, turn)
+    print(f"  {action.name}: turned {math.degrees(turn):.0f}° to sit facing +Z")
+
+
+def turn_about_root(arm, action, turn):
+    """Turn a whole clip `turn` radians about the upright through the
+    root: its Hips re-keyed, every frame it keeps."""
+    lo, hi = frames(action)
+    assign(arm, action)
+    pose = arm.pose.bones
     spin = Matrix.Rotation(turn, 4, "Z")
     rest = rest_local(arm.data.bones[HIPS])
     keys = []
@@ -691,7 +1015,6 @@ def head_forward(arm, action):
             rot.negate()
         keys.append((loc, rot))
     write_keys(arm, action, {HIPS: keys}, lo)
-    print(f"  {action.name}: turned {math.degrees(turn):.0f}° to lie head to +Z")
 
 
 def clip_size(arm, action):
@@ -731,6 +1054,7 @@ def import_clips(paths):
         action.name = name
         settle(arm, action)
         head_forward(arm, action)
+        face_forward(arm, action)
         if master is None:
             master = arm
             master.name = "Armature"
@@ -748,26 +1072,93 @@ def import_clips(paths):
     return master, actions, chain
 
 
-def measure_clips(master, actions):
-    """Each clip at its first frame: where the pelvis and head are from the
-    root, and every bone's turn in its parent's frame (to pose bodies by)."""
+def feet_down(arm):
+    """Where the feet that are down are, as posed now: the middle of the
+    ankles within FOOT_DOWN of the lower one's height, and that height."""
+    feet = [arm.pose.bones[f"{PREFIX}{side}Foot"].head.copy() for side in ("Left", "Right")]
+    low = min(p.z for p in feet)
+    down = [p for p in feet if p.z <= low + FOOT_DOWN]
+    return sum(down, Vector()) / len(down)
+
+
+def reach(arm):
+    """How far out a lying body's hands lie, as posed now: the further of
+    its wrists from the line through its pelvis, across it, in metres. A
+    lounger narrower than twice that leaves its hands on the air."""
+    hips = arm.pose.bones[HIPS].head
+    wrists = [arm.pose.bones.get(f"{PREFIX}{side}Hand") for side in ("Left", "Right")]
+    return max((abs(w.head.x - hips.x) for w in wrists if w), default=0.0)
+
+
+def legs_through(arm, action):
+    """Each leg over every frame of a clip: where its ankle and its knee
+    are, as (forward, up) from the pelvis's place on the clip's first
+    frame — forward as the body faces, up from the root — in metres:
+    [[(ankle, knee), (ankle, knee)], ...], the left leg's then the
+    right's, a frame a row."""
+    assign(arm, action)
+    lo, hi = frames(action)
+    pose = arm.pose.bones
+    bpy.context.scene.frame_set(lo)
+    bpy.context.view_layer.update()
+    pelvis = pose[HIPS].head.copy()
+    rows = []
+    for f in range(lo, hi + 1):
+        bpy.context.scene.frame_set(f)
+        row = []
+        for side in ("Left", "Right"):
+            ankle, knee = pose[f"{PREFIX}{side}Foot"].head, pose[f"{PREFIX}{side}Leg"].head
+            row.append(((pelvis.y - ankle.y, ankle.z), (pelvis.y - knee.y, knee.z)))
+        rows.append(row)
+    return rows
+
+
+def legs_back(rows, seat):
+    """How far back a sitting clip's legs ever come (legs_through's rows),
+    forward of its seat's point — `tuck`, its rearmost ankle, and `knee`,
+    its rearmost knee — and how far out, `far`, its foremost ankle, over
+    every frame: of the legs whose feet are down, that is. An ankle at
+    the height of the seat (`seat`, from the root) or over it is a leg
+    crossed over the other, in no one's way. (None, None, None) with no
+    leg down at all."""
+    ankles, knees = [], []
+    for row in rows:
+        for (ankle, height), (knee, _) in row:
+            if height < seat - 0.05:
+                ankles.append(ankle)
+                knees.append(knee)
+    if not ankles:
+        return None, None, None
+    return round(min(ankles), 3), round(min(knees), 3), round(max(ankles), 3)
+
+
+def measure_clips(master, actions, overrides=HANDS):
+    """Each clip, at its first frame: where the pelvis, the head and the
+    feet are from the root, how far out a lying clip's hands lie, and
+    every bone's turn in its parent's frame (to pose bodies by); and over
+    all its frames, what its hands do (hands_through) and so which can
+    hold a glass (holding_hand), and where a sitting clip's legs go
+    (legs_through)."""
     ad = master.animation_data
     for track in ad.nla_tracks:
         track.mute = True
     clips = []
     for action in actions:
-        assign(master, action)
+        pose, free = classify(action.name)
+        hands = hands_through(master, action)
+        legs = legs_through(master, action) if pose == "sit" else None
         lo, hi = frames(action)
         bpy.context.scene.frame_set(lo)
         bpy.context.view_layer.update()
         hips = master.pose.bones[HIPS].head.copy()
         head = master.pose.bones.get(PREFIX + "Head")
-        pose, hand = classify(action.name)
         posed = local_pose(master)
-        clips.append({
+        clip = {
             "name": action.name,
             "pose": pose,
-            "hand": hand,
+            "hand": holding_hand(action.name, free, hands, overrides),
+            "tilt": {side: hands[side]["tilt"] for side in hands} if hands else None,
+            "curl": {side: hands[side]["curl"] for side in hands} if hands else None,
             "pelvis": gltf(hips),
             "head": gltf(head.head) if head else None,
             "duration": round((hi - lo) / FPS, 3),
@@ -775,8 +1166,18 @@ def measure_clips(master, actions):
             "_hips": posed[HIPS].to_translation(),
             "_pelvis": hips,
             "_ankle": ankles(master, posed=True),
+            "_feet": feet_down(master),
             "_thickness": [],
-        })
+            "_soles": [],
+            "_legs": legs,
+        }
+        if pose == "lie":
+            clip["reach"] = round(reach(master), 3)
+        if clip_sex(action.name):
+            clip["sex"] = clip_sex(action.name)
+        if hi - lo <= 1:
+            clip["still"] = True
+        clips.append(clip)
     ad.action = None
     for track in ad.nla_tracks:
         track.mute = False
@@ -798,9 +1199,20 @@ def seat_on(body, body_hips, meshes, clips, clips_hips):
     """Pose `body` as each sitting or lying clip's first frame is (each bone
     turned as the clip turns it, its Hips where the clip puts them, scaled
     as the app will) and note how far its pelvis sits above the lowest
-    skin under it, in the clips' skeleton's size."""
+    skin under it — and, sitting, how high its soles are above the root —
+    in the clips' skeleton's size.
+
+    Returns how each sitting clip sits on this body, by the clip's name:
+    [seat, knee, tuck, far], in metres — the height of the seat that puts
+    its soles on the floor, and how far forward of its seat's point its
+    rearmost knee, its rearmost ankle and its foremost ankle come. No two
+    bodies rest alike or are built alike, so the same turns of the same
+    bones put their knees and feet a few centimetres apart: these are the
+    body's own, on the clip's first frame, and what the rest of the clip
+    adds on its own skeleton (legs_back)."""
     ratio = body_hips / clips_hips
     rest = {b.name: rest_local(b) for b in body.data.bones}
+    sits = {}
     for clip in clips:
         if clip["pose"] == "stand":
             continue
@@ -817,12 +1229,37 @@ def seat_on(body, body_hips, meshes, clips, clips_hips):
                  if math.hypot(p.x - pelvis.x, p.y - pelvis.y) < SEAT_REACH and p.z < pelvis.z]
         if under:
             clip["_thickness"].append((pelvis.z - min(p.z for p in under)) / ratio)
+        if clip["pose"] == "sit":
+            soles = evaluated_points(meshes, FOOT_GROUPS)
+            if soles:
+                clip["_soles"].append((min(p.z for p in soles) - body.matrix_world.translation.z) / ratio)
+            if under and soles:
+                seat = min(p.z for p in under)
+                legs = []
+                for side in ("Left", "Right"):
+                    ankle = body.matrix_world @ body.pose.bones[f"{PREFIX}{side}Foot"].head
+                    knee = body.matrix_world @ body.pose.bones[f"{PREFIX}{side}Leg"].head
+                    legs.append(((pelvis.y - ankle.y, ankle.z), (pelvis.y - knee.y, knee.z)))
+                here = legs_back([legs], seat)
+                # on the clip's own skeleton: its first frame, and all of them
+                own_seat = clip["_pelvis"].z - (pelvis.z - seat) / ratio
+                first, through = legs_back(clip["_legs"][:1], own_seat), legs_back(clip["_legs"], own_seat)
+                if None not in here and None not in first and None not in through:
+                    tuck, knee, far = (round(h + (t - f) * ratio, 3) for h, f, t in zip(here, first, through))
+                    sits[clip["name"]] = [round(seat - min(p.z for p in soles), 3), knee, tuck, far]
     rest_pose(body)
+    return sits
 
 
-def finish_clips(clips):
+def finish_clips(clips, rest_ankle):
     """The clips as people.json lists them: a sitting or lying clip's seat
-    under its pelvis, by the bodies' median, else a guess."""
+    under its pelvis, by the bodies' median, else a guess; a sitting
+    clip's feet — where on the floor they rest, at its soles' height from
+    the root (the bodies' median; else its ankles', less `rest_ankle`,
+    the ankles' height standing), so that seat's height less feet's is
+    the height of the seat the clip was made for — and how far forward
+    of its seat its rearmost ankle (`tuck`), its rearmost knee (`knee`)
+    and its foremost ankle (`far`) are, over all its frames (legs_back)."""
     out = []
     for clip in clips:
         seat = None
@@ -830,10 +1267,30 @@ def finish_clips(clips):
             depth = statistics.median(clip["_thickness"]) if clip["_thickness"] else SEAT_GUESS
             p = clip["_pelvis"]
             seat = gltf(Vector((p.x, p.y, p.z - depth)))
-        out.append({k: v for k, v in clip.items() if not k.startswith("_")} | {"seat": seat})
-        print(f"  {clip['name']}: {clip['pose']}, hand {'free' if clip['hand'] else 'busy'}, "
-              f"pelvis {out[-1]['pelvis']}, seat {seat}, {clip['duration']} s"
+        entry = {k: v for k, v in clip.items() if not k.startswith("_")} | {"seat": seat}
+        if clip["pose"] == "sit":
+            p = clip["_feet"]
+            soles = statistics.median(clip["_soles"]) if clip["_soles"] else p.z - rest_ankle
+            entry["feet"] = gltf(Vector((p.x, p.y, soles)))
+            tuck, knee, far = legs_back(clip["_legs"], seat[1])
+            if tuck is not None:
+                entry["tuck"], entry["knee"], entry["far"] = tuck, knee, far
+        out.append(entry)
+        print(f"  {clip['name']}: {clip['pose']}, pelvis {entry['pelvis']}, seat {seat}"
+              + (f", feet {entry['feet']} (a seat {seat[1] - entry['feet'][1]:.3f} m high)" if "feet" in entry else "")
+              + (f", ankles {entry['tuck']}-{entry['far']} m and knees {entry['knee']} m or more forward of it" if "tuck" in entry else "")
+              + (f", hands {clip['reach']} m out" if "reach" in clip else "")
+              + (f", {clip['duration']} s" if not clip.get("still") else ", one still pose")
+              + (f", for {'women' if clip['sex'] == 'f' else 'men'}" if clip.get("sex") else "")
               + (f" (seat from {len(clip['_thickness'])} bodies)" if clip["_thickness"] else ""))
+    # Which hand holds a glass, and what each measures.
+    print(f"\n  {'clip':<26} {'pose':<6} {'holds in':<9} {'tilt: right':>11} {'left':>6}   {'curl: right':>11} {'left':>6}")
+    for clip in out:
+        tilt, curl = clip.get("tilt") or {}, clip.get("curl") or {}
+        said = " (set in HANDS)" if clip["name"] in HANDS or clip["name"] in STANDIN_HANDS else ""
+        print(f"  {clip['name']:<26} {clip['pose']:<6} {clip['hand'] or 'neither':<9} "
+              f"{tilt.get('right', '-'):>11} {tilt.get('left', '-'):>6}   {curl.get('right', '-'):>11} {curl.get('left', '-'):>6}{said}")
+    print(f"  (a hand holds when tilt <= {TILT_MOST} and curl >= {CURL_LEAST}, degrees, over every frame)\n")
     return out
 
 
@@ -1001,8 +1458,10 @@ def main():
     else:
         master, actions, chain = import_clips(clip_files(args.src))
     rest_pose(master)
-    clips = measure_clips(master, actions)
+    clips = measure_clips(master, actions, HANDS | STANDIN_HANDS if args.standin else HANDS)
     clips_hips = clips_size(master, chain, clips)
+    rest_ankle = ankles(master)
+    clips_legs = leg_bones(master)
     for action in actions:
         stack(master, action)
     rest_pose(master)
@@ -1016,12 +1475,13 @@ def main():
     for path, ident, name in bodies:
         meta, arm, meshes = character(path, ident, name, args.out)
         characters.append(meta)
-        seat_on(arm, meta["hips"], meshes, clips, clips_hips)
+        meta["sits"] = seat_on(arm, meta["hips"], meshes, clips, clips_hips)
 
     meta = {
         "standin": args.standin,
         "characters": characters,
-        "clips": {"file": clips_name, "hips": round(clips_hips, 3), "fps": FPS, "list": finish_clips(clips)},
+        "clips": {"file": clips_name, "hips": round(clips_hips, 3), "legs": clips_legs, "fps": FPS,
+                  "list": finish_clips(clips, rest_ankle)},
     }
     with open(os.path.join(args.out, meta_name), "w") as f:
         json.dump(meta, f, indent=2)

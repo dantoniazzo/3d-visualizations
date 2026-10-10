@@ -5,24 +5,82 @@
       "name": "Alex (stand-in)",
       "file": "people/standin-male.glb",
       "height": 1.856,
-      "hips": 1.032
+      "hips": 1.032,
+      "legs": [
+        0.426,
+        0.375
+      ],
+      "sex": "m",
+      "eyes": [
+        0.004,
+        0.107,
+        0.143
+      ],
+      "mouth": [
+        0.004,
+        0.039,
+        0.154
+      ],
+      "sits": {
+        "Sitting (stand-in)": [
+          0.456,
+          0.415,
+          0.452,
+          0.47
+        ]
+      }
     },
     {
       "id": "standin-female",
       "name": "Sam (stand-in)",
       "file": "people/standin-female.glb",
       "height": 1.782,
-      "hips": 1.057
+      "hips": 1.057,
+      "legs": [
+        0.448,
+        0.45
+      ],
+      "sex": "f",
+      "eyes": [
+        0.008,
+        0.08,
+        0.106
+      ],
+      "mouth": [
+        0.008,
+        0.012,
+        0.113
+      ],
+      "sits": {
+        "Sitting (stand-in)": [
+          0.483,
+          0.439,
+          0.484,
+          0.504
+        ]
+      }
     }
   ],
   "clips": {
     "file": "people/clips.standin.glb",
     "hips": 1.028,
+    "legs": [
+      0.426,
+      0.375
+    ],
     "list": [
       {
         "name": "Idle",
         "pose": "stand",
-        "hand": true,
+        "hand": "right",
+        "tilt": {
+          "right": 74.1,
+          "left": 76.7
+        },
+        "curl": {
+          "right": 54.7,
+          "left": 74.9
+        },
         "pelvis": [
           0.001,
           1.014,
@@ -40,6 +98,14 @@
         "name": "Lying (stand-in)",
         "pose": "lie",
         "hand": false,
+        "tilt": {
+          "right": 13.8,
+          "left": 9
+        },
+        "curl": {
+          "right": 54.7,
+          "left": 74.9
+        },
         "pelvis": [
           0.001,
           0.16,
@@ -55,12 +121,21 @@
           0.205,
           0.619
         ],
-        "duration": 5.8
+        "duration": 5.8,
+        "reach": 0.236
       },
       {
         "name": "Sitting (stand-in)",
         "pose": "sit",
-        "hand": true,
+        "hand": "right",
+        "tilt": {
+          "right": 20.9,
+          "left": 23.7
+        },
+        "curl": {
+          "right": 54.7,
+          "left": 74.9
+        },
         "pelvis": [
           0.001,
           0.59,
@@ -76,7 +151,15 @@
           1.167,
           -0.14
         ],
-        "duration": 5.8
+        "duration": 5.8,
+        "feet": [
+          0.01,
+          -0.022,
+          0.481
+        ],
+        "tuck": 0.452,
+        "knee": 0.415,
+        "far": 0.47
       }
     ]
   },

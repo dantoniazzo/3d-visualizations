@@ -75,8 +75,8 @@ npm start         # http://localhost:3000
 all of its furniture, the furniture catalogue and the kit of parts doors,
 windows and stairs are dressed with are built from primitives by the
 scripts in `blender/`, at real-world size in metres, so what
-the app collides with is exactly what it draws. (The cars and the avatars
-are bought in; see below.) They are build outputs, not
+the app collides with is exactly what it draws. (The cars, the avatars
+and the people are bought in; see below.) They are build outputs, not
 repository content, so build them once:
 
 ```bash
@@ -87,8 +87,9 @@ npm run seed
 That runs `build_house.py` (the .blend), `export_app.py` (Wrenfield's
 furnishings GLB and the spec its structure is built from),
 `export_furniture.py` (the catalogue),
-`import_cars.py` (the cars) and `export_kit.py` (the kit). `npm run furniture`,
-`npm run models -- --cars` and `npm run models -- --kit` rebuild just those. Set `BLENDER=/path/to/blender` if it is not on `PATH` or
+`import_cars.py` (the cars), `export_kit.py` (the kit) and `export_props.py`
+(what the people hold). `npm run furniture`,
+`npm run models -- --cars`, `npm run models -- --kit` and `npm run props` rebuild just those. Set `BLENDER=/path/to/blender` if it is not on `PATH` or
 in the usual place.
 
 The avatars are the exception: they are bought-in characters, kept as
@@ -103,6 +104,49 @@ loads to `public/models/`:
 That takes them from 9 MB to 1.6 MB, and 0.9 MB as sent, with every pose
 within a degree of the original.
 
+**The people set round a property are bought in too**: characters and
+animation clips from [Mixamo](https://www.mixamo.com) (Adobe), who stand
+with a drink on the terraces, sit on the sofas and chairs and lie on the
+pool loungers (`World/People.js`). The downloads are kept out of the
+repository — Mixamo's files are for use in a project, not for passing on —
+in `assets/people/`, which is git-ignored; the app ships what
+`npm run people` makes of them. Those converted files
+(`public/models/people/<id>.glb`, `clips.glb`, `index.json`) are
+git-ignored as well, this repository being public: a clone without them
+draws the two stand-in characters (`index.standin.json`) until
+`npm run people` has been run on the downloads, or the files copied in
+beside a deploy. To add a character or a clip:
+
+1. Download it from Mixamo into `assets/people/characters/` or
+   `assets/people/animations/`:
+   - a character as **FBX Binary, With Skin, T-pose**;
+   - a clip as **FBX Binary, Without Skin, 30 fps, keyframe reduction
+     none**, the file named after the clip (`Sitting Talking.fbx`) —
+     whether it stands, sits or lies is read from the name.
+2. `npm run people` (needs Blender; about a minute) converts them all:
+   `blender/import_people.py` brings every character and clip to one
+   skeleton in metres, and `scripts/optimize-people.mjs` packs them into
+   `public/models/people/` — a compressed `<id>.glb` a character,
+   `clips.glb` for every clip, and `index.json`, the list the app and the
+   planner read. Until there is one the app uses stand-ins made from its
+   own two avatars.
+3. `npm run props` rebuilds what they hold and have beside them —
+   glasses, a bottle, a cup, a towel, books, sunglasses — which are not
+   bought in: `blender/lib/props.py` builds each in Blender, into
+   `public/models/people/props.glb`. Run it before `npm run people` when
+   a prop is new, so the index lists it.
+4. `npm run seats` measures where one sits or lies on each piece of the
+   furniture catalogue (`public/models/furniture/seats.json`); run it
+   again after `npm run furniture` changes a sofa, a chair or a lounger.
+5. `npm run people:place -- <scene> --seed n` plans a space's people
+   (`shared/people.js`) and writes them into its spec, where the editor
+   moves, turns, adds and removes them; another seed is another
+   arrangement, `--dry-run` only prints it. Reload any open editor tab of
+   the space first, or it autosaves its old spec over them.
+
+The characters and clips there now, and their licence, are listed in
+`assets/THIRD_PARTY.md`.
+
 The pieces are deliberately plain — boxes, cylinders and spheres — because
 the point for now is that they are the right size. Where they come from:
 
@@ -112,6 +156,7 @@ the point for now is that they are the right size. Where they come from:
 | `blender/lib/loose.py` | Loose pieces: sofas, chairs, stools, tables, bookcases, TVs, lamps, plants, decor |
 | `blender/import_cars.py` | The cars the editor offers (below), each split into the body and wheels `Car.js` drives, with its wheelbase, tracks and wheel sizes measured |
 | `blender/lib/kit.py` | The kit of parts: panelled door leaves, levers, hinges and stops, skirting, mitred architraves, window frames, glazing bars and cills, stair treads, newels, turned balusters and handrails |
+| `blender/lib/props.py` | What the people hold or have beside them: wine glasses, a champagne flute, a tumbler, a beer bottle, a coffee cup, a folded towel, a book closed and open, sunglasses |
 
 **The cars are bought in, like the avatars.** Each is a model downloaded
 from Sketchfab and kept as it came in `assets/cars/`, listed in
@@ -1132,3 +1177,9 @@ registry, not the mesh, is the authority on which finish a given face wears.
 Multiplayer architecture and avatar rig adapted from
 [PSU-VR](https://github.com/andrewwoan/PSU-VR) by Andrew Woan.
 Characters from [Ready Player Me](https://readyplayer.me/).
+The people set round a property — their characters and animation clips —
+are from [Mixamo](https://www.mixamo.com) (Adobe), converted by
+`npm run people`; what they hold was made here, in Blender
+(`blender/lib/props.py`). The cars are credited under *Building the
+models*; everything else bought in, the people's names and licence
+included, is in `assets/THIRD_PARTY.md`.
