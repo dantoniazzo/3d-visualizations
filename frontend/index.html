@@ -116,6 +116,12 @@
                     <span class="view-toggle-label">Lights</span>
                     <kbd>L</kbd>
                 </button>
+                <button class="view-toggle preview-toggle" id="preview-toggle" data-edit-only aria-pressed="false"
+                        title="Realistic preview: lit as visitors will see it — sun and shadows, lamps, lit rooms — and slower (P)">
+                    <span class="preview-toggle-icon" aria-hidden="true"></span>
+                    <span class="view-toggle-label">Realistic preview</span>
+                    <kbd>P</kbd>
+                </button>
                 <button class="view-toggle" id="editor-toggle" data-edit-only
                         title="Open the editor: move furniture, stairs, doors and more (Tab)">
                     <span class="editor-toggle-icon" aria-hidden="true"></span>
@@ -130,6 +136,12 @@
 
             <!-- The light under the pointer, from above. -->
             <div class="pick-label" id="pick-label" hidden></div>
+
+            <!-- Said once: why the view has started lighter than this device is given (index.js's tellLostGraphics). -->
+            <div class="view-notice" id="view-notice" role="status" hidden></div>
+
+            <!-- The live room, said in the view: its key at the first room it would draw, that it is coming, on, off (index.js's sayRoomLight). -->
+            <div class="room-light-hint" id="room-light-hint" role="status" hidden><kbd>K</kbd> See this room live</div>
 
             <div class="inspect-label" id="inspect-label"></div>
 
@@ -160,7 +172,7 @@
                 <span class="lock-hint-sub">
                     <b>V</b> first / third person · <b>E</b> opens a door
                     <span data-public-only>· <b>B</b> each floor from above</span>
-                    <span data-edit-only>· <b>T</b> changes a finish · <b>Tab</b> edit mode</span>
+                    <span data-edit-only>· <b>T</b> changes a finish · <b>P</b> realistic preview · <b>Tab</b> edit mode</span>
                 </span>
                 <span class="lock-hint-sub">
                     <b>F</b> drives the car, <b>H</b> its headlights ·
@@ -179,6 +191,15 @@
                     <h4>Lights</h4>
                     <button class="ghost small" id="lights-all-on" hidden>All on</button>
                     <button class="ghost small" id="lights-all-off">All off</button>
+                </div>
+                <!-- A baked view's one room drawn live, when its visitor asks (World/RoomLight.js): off at every visit. -->
+                <div class="hud-panel-section room-light" id="room-light" hidden>
+                    <button class="light-switch" id="room-light-toggle" aria-pressed="false" aria-describedby="room-light-note"
+                            title="Live room: the room you are in drawn as it really is, with its own materials, sun, lamps and shadows (K)">
+                        <span class="light-switch-label">Live room <kbd>K</kbd></span>
+                        <span class="light-switch-toggle" aria-hidden="true"></span>
+                    </button>
+                    <p class="hud-note" id="room-light-note"></p>
                 </div>
                 <div id="lights-list"></div>
             </div>

@@ -21,7 +21,10 @@ this file the single source of truth for the method — edit it, don't
 append duplicates.
 
 **The user's standing terms.** Realism first, performance as their choice
-(the quality slider). A listing is built *exactly* — structure, scenery and
+(the quality slider) — and, since 2026-10-10, the highest frame rate that
+keeps the most realism: the editor under a plain working light until the
+look is asked for, a published view drawn from its bake by default (§12).
+A listing is built *exactly* — structure, scenery and
 interiors — so a buyer has the feel of the real property; where the plans
 can't be followed (a door too narrow to walk through), deviate as little as
 possible and say so. Bought-in assets (textures, skies, plants and vases,
@@ -37,7 +40,8 @@ them is committed is the user's decision: ask (this repository is public,
 and for Mixamo they chose to keep the converted files out of git too:
 `.gitignore`). Furniture is modelled in
 Blender, not downloaded. Never restart
-their server on port 3000, never touch `scenes/wrenfield-house.json`, never
+their server on port 3000 nor build into the `dist/` it serves while work
+is in progress (§0), never touch `scenes/wrenfield-house.json`, never
 deploy, spend or contact anyone, and commit, open PRs or merge only when
 asked. Big work goes as a plan
 first (doable? steps, alternatives, questions), then step by step, quick
@@ -50,14 +54,23 @@ Supporting files in this folder:
 - `reference.md` — the generator's helpers (`kit.js`, `furnish.js`,
   `index.js`), the spec fields that matter, the landscape schema as the
   builders read it, the people's data (entries, seats.json, the index, the
-  planner's constants, the scripts) and the numbers that worked. Read it
-  before writing or changing a space's scripts, and before placing people.
-- `app-notes.md` — the app around a space: the validator, the editor,
-  lights and fittings, people, publishing and baking, tone mapping, cars,
-  Blender, in-page audits, the browser pane's limits, the shell, git. Read
-  "The spec, the validator and the editor" and "The browser pane" before
-  the first seed and test session; the rest when you publish, bake, light,
-  place people, add a car or use Blender.
+  planner's constants, the scripts), the view's lists (a link's words, the
+  browser's stored keys, the slider's steps, the publish options, the
+  bake's options and the manifest's lighting fields) and the numbers that
+  worked. Read it before writing or changing a space's scripts, before
+  placing people, and before opening a test tab with anything in its link.
+- `app-notes.md` — the app around a space: the validator, the editor with
+  its plain light, view scope and stand-ins, its rays and collision trees
+  and when it draws a frame, lights and fittings, people, publishing, what
+  a visitor's device is given, how a baked view is drawn and exposed, the
+  live room, baking, measuring, tone mapping, cars, Blender, in-page
+  audits, the browser pane's limits, the shell, git. Read "The spec, the
+  validator and the editor", "The editor's plain light and view scope",
+  "When the editor draws" and "The browser pane" before the first seed and
+  test session; "Rays and the collision trees" before adding a ray or
+  anything that moves by itself; "Measuring" before timing anything or
+  comparing two builds; the rest when you publish, bake, light, place
+  people, add a car or use Blender.
 - `briefs.md` — reusable templates for the agents of a round (§11): the
   read-only auditor, the model builder in a Blender copy, the placement
   builder in a generator copy, the floor reviewer, the model and render
@@ -88,19 +101,42 @@ Supporting files in this folder:
     (coplanar overlapping faces of different parts).
 - `walk.js` — in-page: walks the real player physics through every door
   both ways and along routes (`__walk.doors()`, `__walk.to()`,
-  `__walk.free()`).
+  `__walk.free()`). It walks the collision as it stands, and first
+  finishes a tree an edit left being built a slice a frame
+  (`sceneBuilder.settleCollision()`: `app-notes.md`, Rays and the
+  collision trees).
 - `zfight.js` — in-page: `__zfight({ limit })` finds coplanar or near
-  coplanar triangles drawn on the same depth layer, clustered.
+  coplanar triangles drawn on the same depth layer, clustered. It tests
+  what is shown, so in an editor tab it first sets the view's scope to All
+  for the page (the editor opens with the cars, the far ground and the
+  neighbourhood hidden) — and it reads the scene's own meshes, passing
+  over the stand-ins the editor draws them by (§10; left in, every surface
+  fights its own copy).
 - `harness.js` — in-page, once the space has loaded: `__K.pose(p, t, fov)`,
   `__K.shot(label, width)` (a canvas), `__K.save(name, canvases, cols)`
-  (through the sink), `__K.time(n)`, and `__K.render(name, keys, opts)`
-  over `__K.views` (the views file's `__POSES` replaces these). It stubs
-  every non-GET fetch but a publish's, its runtime file's and a bake's
-  (`/publish`, `/runtime`, `/bake`), so a test tab can publish to the test
-  server's `PUBLISH_DIR` but never save the scene.
+  (through the sink), `__K.time(n)` (the render timed to a pixel read back,
+  with its draw calls and triangles), and `__K.render(name, keys, opts)`
+  over `__K.views` (the views file's `__POSES` replaces these). An editor
+  tab opens under the editor's plain light with the houses alone drawn
+  (§10): `await __K.realistic()` turns the realistic preview on for the
+  page — sun, shadows, lamps, post-processing, everything shown — and
+  `__K.scope("all")` shows the surroundings under the plain light; `render`
+  calls the first itself, `shot` and `time` draw the tab as it is lit —
+  under the plain light by the editor's stand-ins, whose draw calls are
+  what `time` counts (§10). It
+  stubs every non-GET fetch but a publish's, its runtime file's and a
+  bake's (`/publish`, `/runtime`, `/bake`), so a test tab can publish to
+  the test server's `PUBLISH_DIR` but never save the scene — and it
+  answers a tool's own POSTs too, all but those to the sink
+  (`app-notes.md`, The browser pane).
 - `drive.js` — in-page: frames for a tab the browser isn't drawing (the
   pane hidden, a background tab): `__driveOn()`, `await __drive(ms,
-  until)`, `__driveOff()` (app-notes.md, The browser pane).
+  until)`, `__driveOff()`. Loaded after the app asked for its first frame
+  it may have nothing to run: one `experience.update()` then (app-notes.md,
+  The browser pane). An editor tab at rest asks for no frames at all — it
+  draws only when something has changed: `experience.pace.set("always")`
+  first for whatever counts on driven frames, `set(null)` after
+  (`app-notes.md`, When the editor draws).
 - `undef.config.mjs` — an ESLint config with only `no-undef`, for after
   moving code between files (`node --check` and the build both pass a call
   to a function that no longer exists; 2026-10-05 it stopped every view lit
@@ -109,6 +145,9 @@ Supporting files in this folder:
 - `ladonia-views.js` — in-page, after harness.js: the reference-matched
   poses (`__POSES`, keyed by gallery number), `__renderSet(prefix, keys)`
   and `__plans(prefix, which)` (top-down cuts 1.5 m above each floor).
+  `__renderSet` turns an editor tab's realistic preview on first
+  (`__K.realistic`); `__plans` draws the tab as it is lit — evenly, under
+  the plain light, which is what a plan cut is read for.
   Make one per project: copy it to this folder as `<project>-views.js`
   (sink.py serves only this folder), replace `__POSES` with your
   references' cameras, change the night key in `__renderSet` (`"16"`) to
@@ -136,19 +175,31 @@ Supporting files in this folder:
   and `merge-gen` merge the copies back into the repo with `git
   merge-file` against that base and report conflicts.
 - `bake-replay.py` — reruns the bake's atlas packing (`pack_zones`) on a
-  `BAKE_CHECKPOINT` scene in a minute; `app-notes.md` (Publishing … baking)
+  `BAKE_CHECKPOINT` scene in a minute; `app-notes.md` (Baking)
   has when and how.
 - `bake-check.js` — in-page, in a baked `/view/<id>` after harness.js and
-  the views file: `await __bakeCheck({ poses: [...] })` gives the sun drawn
-  vs baked vs the site sky's (degrees apart), the lightmapped meshes that
-  baked black, each room's light from the bake's probes, and the light
-  meter's exposure per pose (§10b).
+  the views file: `__bakeCheck({ poses: [...] })` gives the sun drawn vs
+  baked vs the site sky's (degrees apart); `black`, each room's part of
+  each lightmapped mesh that baked black, read from the bake's own
+  one-scale lightmap file (no switch on, every door open); `drawn`, the
+  same scan of what the view draws now, read from the resolved lightmap
+  (switches as they are, doors as they stand — null where the light is
+  not resolved); each room's daylight from the bake's probes; the light
+  meter's exposure per pose; and `cannot`, a plain list of whatever it
+  could not read. Rewritten 2026-10-12 for the resolved lightmap (the
+  older one drew `material.lightMap.image` to a canvas, which is no longer
+  a picture); run by day on Wrenfield's two bakes only so far.
 - `compare.mjs` — `node <skill>/compare.mjs <out.jpg> "<path with {k}>" …
   -- <keys…>`: one row per view, one column per source (render | live |
   baked), each tile labelled with its mean luminance, the table printed as
   JSON. Missing frames show red.
 - `people-audit.js` — in-page, after harness.js, in the editor's page of a
-  test server whose space has people (§4b): `__people.audit()` measures
+  test server whose space has people (§4b; as it loads it sets the view's
+  scope to All for the page — the editor opens with the garden not made,
+  and the planting is part of what it measures against; it measures
+  against the builder's own meshes, which the editor's stand-ins leave
+  where they were):
+  `__people.audit()` measures
   each person's skin, through their clip, against the floor, their seat or
   lounger and everything round them, and flags what is out of tolerance
   (`__people.TOL`); `__people.load(plan)` puts a plan's people in the page
@@ -218,19 +269,51 @@ Supporting files in this folder:
   name them in the report.
 - `npm run seed -- <id>`, never bare `npm run seed` (it rewrites every
   space). Import the generator with node first to catch module errors.
-- Test on a separate server: back up `.claude/launch.json` and add
-  `{ "name": "house-test", "runtimeExecutable": "env", "runtimeArgs":
-  ["PORT=3108", "PUBLISH_DIR=<scratch>/published", "BAKE=off", "node",
-  "server/index.js"], "port": 3108 }`; start it with `preview_start`.
+- **The user's own server, on port 3000, serves the repo's `dist/`**, and
+  they use the app while you work: a build into `dist/` is what their
+  tabs load next, finished or not. So work in progress is built into the
+  scratch folder — from the repo's root, `npx vite build --outDir
+  <scratch>/dist-work --emptyOutDir` (the folder as an absolute path: Vite
+  takes a relative one from `frontend/`) — and the repo's `dist/` is built
+  once, at the end, when the work is finished and checked (`npm run
+  build`), or left to the user and said so: until then their server shows
+  none of it. Wherever this file says `npm run build` for something to be
+  looked at in a test tab, it means that scratch build. One build at a
+  time where several agents share the folder.
+- Test on a server of your own, started in a folder of its own: the
+  server takes `dist`, `scenes` and `published` from its working directory,
+  and `SCENES_DIR` and `PUBLISH_DIR` move the last two (server/index.js,
+  server/store/drivers/fsStore.js, server/publish/store.js). So make
+  `<scratch>/srv` with `dist` a link to `<scratch>/dist-work` and `scenes`
+  a copy of the repo's, back up `.claude/launch.json` and add
+  `{ "name": "house-test", "runtimeExecutable": "sh", "runtimeArgs":
+  ["-c", "cd <scratch>/srv && PORT=3108 PUBLISH_DIR=<scratch>/published
+  BAKE=off SCENES_DIR=<scratch>/srv/scenes exec node
+  <repo>/server/index.js"], "port": 3108 }`; start it with `preview_start`.
+  Nothing a test tab does then reaches the user's scenes. A seed (`npm
+  run seed -- <id>`, from the repo) writes the repo's `scenes/`: copy the
+  seeded file into the server's folder and reload the tab — the server
+  reads a scene's file at each request. A second entry with `PUBLISH_DIR`
+  at the repo's `published/` shows the user's own versions — to look at
+  only, never to publish from or bake against. To compare with the app as
+  the user has it, copy `dist/` to `<scratch>/dist-before` before
+  anything is built and serve it the same way on another port (§12).
   Start this folder's sink by its path, in the background:
   `python3 <repo>/.claude/skills/build-property-space/sink.py
   <scratch>/frames` (run_in_background). Open
   `http://localhost:3108/?scene=<id>`, pass the name prompt and front the
   tab (`app-notes.md`, The browser pane), then load helpers with
   `await eval(await (await fetch("http://127.0.0.1:3199/harness.js")).text())`
-  — likewise your views file and `walk.js`. The server serves `dist/`:
-  `npm run build` after any frontend or `public/` change, and restart the
-  test server after a catalogue, finish or validator change.
+  — the harness first, in every editor tab: it stops a save, which over a
+  copy of the scenes is the second guard and over the repo's own the only
+  one — likewise your views file and `walk.js`. That tab opens under the
+  editor's plain light with the houses alone drawn, by stand-ins, and at
+  rest draws nothing: for what a visitor will see, `?preview=1` in the
+  link or `await __K.realistic()`; for a helper of your own, §10. A
+  server serves the build it was started over: build again after any
+  frontend or `public/` change, and restart the test server after a
+  catalogue, finish or validator change (it runs the repo's `server/` and
+  `shared/` as they stood when it started).
 - After a usage-limit break or reconnect: `preview_list`, `lsof` ports 3108
   and 3199, restart what died (the sink only when you next need frames,
   `run_in_background` with the longest timeout, 7200000 ms), re-check the
@@ -268,12 +351,18 @@ Supporting files in this folder:
   older `kit.js` removed the door widening; 57 narrow doors came back). Back
   up the scripts, apply one patch at a time with `git apply --check`, diff
   key files against the backup, and re-run every check after each.
-- End every report that changed a scene or the server with the user's
-  steps: reload every open app tab before editing (an old tab autosaves its
-  old scene over the fix), restart `npm start` if server code changed, and
-  re-publish and bake to see it in `/view/<id>`.
+- End every report that changed a scene, the app or the server with the
+  user's steps: `npm run build` if frontend or `public/` changed and the
+  repo's `dist/` was left as it was; reload every open app tab before
+  editing (an old tab autosaves its old scene over the fix, and keeps the
+  old build); restart `npm start` if server code changed; and re-publish
+  and bake to see it in `/view/<id>`.
 - Clean up: stop the test server, kill the sink, restore
-  `.claude/launch.json`, clear `localStorage` keys set while testing.
+  `.claude/launch.json`, close your tabs, clear the `localStorage` keys set
+  while testing (`render-quality`, `view-lighting`, `view-scenery`,
+  `view-lost-graphics`, `editor-preview`, `editor-scope`,
+  `publish-options`: `reference.md`), and reset a viewport set with
+  `resize_window`.
 
 ## 1. Research the listing first, exhaustively
 
@@ -605,9 +694,17 @@ never `public/` (deployed).
   near clear inside (`GLASS_INSIDE` #eef2f2 at 0.12); the per-room light
   probe from slider step 3 up. Interiors at night glow from their own
   surfaces (`Sky.glowIndoors`), not unshadowed point lights — and where
-  the light fittings are switched live (the editor, an unbaked publish),
-  room by room as their switches are (`RoomGlow`, app-notes.md, Lights and
-  fittings), with a few live lights nearest the visitor.
+  the light fittings are switched live (the editor's realistic preview, an
+  unbaked publish), room by room as their switches are (`RoomGlow`,
+  app-notes.md, Lights and fittings), with a few live lights nearest the
+  visitor.
+- **All of this is the look lit live**: the editor's realistic preview
+  (**P**; an editor tab opens under a plain working light instead, §10) and
+  a version published unbaked. A baked view takes its light from the bake
+  and its exposure from a meter that reads the frame (§10b; `app-notes.md`,
+  Exposure in a baked view): never judge one at a fixed exposure, and say
+  of every frame which of the three it is — plain, lit live, or baked and
+  in which mode.
 - **No refractive glass anywhere** (`transmission`): one pane in view
   darkens the whole frame through the post-processing — a shower's glass
   door left a bathroom near black and every room 15–40 % darker. Glass
@@ -623,8 +720,11 @@ never `public/` (deployed).
 - **Measure, don't judge by eye.** Mean luminance (0.2126R + 0.7152G +
   0.0722B, without the 16 px label bar) from each living-room spawn: place
   the player (`player.placeAt(spawn)`), step the world a few times and
-  render once (`app-notes.md`, The browser pane — never call
-  `experience.update()` by hand). Keep the slider step and tone mapping
+  render once (`app-notes.md`, The browser pane — not by
+  `experience.update()`, which in an editor tab at rest is a frame in
+  which no time passes), in an editor tab with the realistic
+  preview on (`await __K.realistic()`: under the plain light every room
+  reads the same, day and night). Keep the slider step and tone mapping
   fixed while comparing. Ladonia's living rooms read 128–186, bedrooms and baths 107–177, after
   the glass fix (73–122 before). Diagnose by elimination: change one thing
   at a time (env intensity, sun, lights, emissives, post) and sample a fixed
@@ -810,7 +910,9 @@ draws them, and what is still short, is `app-notes.md`, People.
 8. **Take the frames and look at every one**: `__people.lineup()` (every
    character: all there, opaque, matt, haired, of a size),
    `__people.shots(prefix)` and again with `{ sip: true }`, then each
-   gathering wide by day and by night, and the site from above. A tab
+   gathering wide by day and by night, and the site from above — the
+   gatherings with the realistic preview on (`await __K.realistic()`: an
+   editor tab's plain light is the same by day and at night). A tab
    never shown saves blurs until it is given a size (`app-notes.md`, The
    browser pane).
 9. **Write the plan** once the audit and the frames pass. Back up the
@@ -839,6 +941,34 @@ planting, furniture. Check day and night, the public view (`/view/<id>?live`
 for current work — plain `/view/<id>` is the last publish), the walkthrough
 (`/?scene=<id>`) and the editor.
 
+- **An editor tab does not open as a visitor sees it.** `/?scene=<id>`
+  opens under the editor's plain light — no sun, shadows, lamps, room glow
+  or post-processing, the same by day and at night — with the houses alone
+  drawn: no garden, cars, far ground or sky, the garden not even made. The
+  user's editor is to be fast to work in (§12). Reference frames, light
+  levels and nights need the realistic preview — `?preview=1` in the link,
+  or `await __K.realistic()`, which `__renderSet` and `__K.render` call
+  themselves — and anything that only needs the surroundings needs the
+  scope (`?scope=all`, `__K.scope("all")`; `app-notes.md`, The editor's
+  plain light and view scope). Check both: the plain view is what the user
+  works in, the preview what they publish.
+- **Nor does it draw the scene's own meshes, or every frame** (since
+  2026-10-13). Under the plain light the house and the furniture are
+  drawn by stand-ins — merged and instanced copies under the scene's
+  "stand-ins" group — while the real walls and pieces stay in the scene,
+  `visible`, on a layer no camera draws; and a tab at rest draws a frame
+  only when something has changed. The skill's own helpers allow for
+  both. One of your own must too: walking `experience.scene`, pass over
+  `userData.standIn` or every surface is there twice; a Raycaster needs
+  `layers.enable(12)` or it passes through the house; a mesh hidden or
+  re-dressed by hand inside a wall or a piece needs
+  `world.standIns.hear()` before the next still (it is otherwise in the
+  picture for up to 16 frames more); whatever waits on the app's own
+  frames needs `experience.pace.set("always")` first, `set(null)` after;
+  and a tool that reads the collision after an edit, `sceneBuilder
+  .settleCollision()` (`app-notes.md`: The editor's plain light and view
+  scope, Rays and the collision trees, When the editor draws). The
+  realistic preview draws the scene as built, every frame.
 - **Calibrate each reference's pose before critics see anything**: find on
   the plan which building, terrace or room it shows, render ~4 candidate
   poses in one sheet at the reference's aspect, pick by features (which way
@@ -848,15 +978,20 @@ for current work — plain `/view/<id>` is the last publish), the walkthrough
   looking along (fx, fz), screen-right is (−fz, fx). For exact poses, solve
   the reference's camera from 8–10 known points (building corners, window
   heads).
-- **The pane**: hidden, it has no requestAnimationFrame; never call
-  `experience.update()` by hand; `javascript_tool` stops at 45 s — render
-  3–4 views per call (`app-notes.md`). Camera rigs reset the pose every
-  frame: step the world, then pose, then render once.
+- **The pane**: hidden, it has no requestAnimationFrame: step the world
+  and render by hand, or drive the app's own frames (`drive.js`).
+  `experience.update()` by hand no longer starts a second loop, but in an
+  editor tab at rest it is a frame in which no time passes
+  (`app-notes.md`, The browser pane). `javascript_tool` stops at 45 s —
+  render 3–4 views per call. Camera rigs reset the pose every frame: step
+  the world, then pose, then render once.
 - **Other spaces**: check them against the committed code, not by eye — run
   HEAD in a scratch worktree (`git worktree add --detach`, `node_modules`
   symlinked, its own server on another port, the same publish folder) and
   compare the same view. That is how Wrenfield's black published lawn was
-  found.
+  found. Frame times are compared the same way: the committed build — or
+  a copy of the build the user's server still has (§0) — against yours, a
+  tab each, taking turns under a baton (§12).
 - **Review the code you changed**: after renderer or generator changes, an
   adversarial review workflow (one reviewer per area, one skeptic per
   finding). Ladonia's walkability round: 5 real bugs confirmed (layering
@@ -969,58 +1104,187 @@ What the people work added (2026-10-09), for anything built by agents:
 
 ## 10b. Bake, and check the bake
 
-The bake is what phones see, and what gives the interiors their real light;
+The bake is what every device draws a published version from — a
+computer with what moves still shading the sun and a shut door dimming
+its rooms ("baked"), a phone and the slider's two lowest steps with
+nothing live ("static") — and what gives the interiors their real light;
 a live view is not judged by it. Bake once the space is settled and its
-unbaked publish checked (§10). Details, numbers and causes:
-`app-notes.md`, "Publishing, the public view and baking".
+unbaked publish checked (§10). Details, numbers and causes: `app-notes.md`,
+"Baking", "How a baked view is drawn" and "Exposure in a baked view".
 
 1. **Before**: a site with its own sky is baked under it (`landscape.sky`;
    its `day`/`dusk` names plain, the HDRs in `public/textures/sky/`, or it
    falls back to the preset and says so). Spaces without one bake under
-   their preset.
-2. **Draft on a copy**, never on the user's `published/`: copy
+   their preset. A room daylight does not reach bakes black by day and
+   starts the day with its ceiling light on, told from the spec: list
+   them (`darkRooms(spec)` of `shared/daylight.js`, in node — Ladonia 20,
+   Wrenfield 4) and see they are the rooms you expect; a window left out
+   of a wall makes a room one of them.
+2. **Draft on a copy**, never on the user's `published/`: a bake rewrites
+   its version in place and deletes that version's earlier bake. Copy
    `published/<id>/manifest.json` and the version folder (without its
-   `bake-*`) to `<scratch>/pub/<id>/`, then run detached and poll —
-   `(PUBLISH_DIR=<scratch>/pub nohup node scripts/bake-public.mjs <id>
-   --samples 16 --size 1024 > <scratch>/draft.log 2>&1 &)`. Ladonia: ~2 h
-   (93 switches, ~55 s of overhead per Cycles hand-over); one bake at a time.
+   `bake-*`) to `<scratch>/pub/<id>/`, print the folder the store resolves
+   (`PUBLISH_DIR`, server/publish/store.js) and stop if it is not the
+   copy, then run detached and poll — `(PUBLISH_DIR=<scratch>/pub nohup
+   node scripts/bake-public.mjs <id> --samples 16 --size 1024 >
+   <scratch>/draft.log 2>&1 &)`. It bakes the version that `manifest.json`
+   names, the latest published: for any other folder you copied — the
+   earlier, baked version, where the latest is an unbaked one, as
+   Wrenfield's is — add `--version <v>`, or it stops on a file it does not
+   find. One bake at a time. A house's draft is
+   minutes (Wrenfield: 7 at 128 samples and 2048). Ladonia's took 1 h
+   55 min on 2026-10-04, nearly all of it handing the scene to Cycles —
+   some 1,400 times as the code then was (1,542 as committed), 423 now by
+   its settings' arithmetic, so about an hour less: not run to see. To try
+   one thing on a big site in minutes,
+   bake part of it (`--variants night --no-switches --no-doors`,
+   `BAKE_CUT`, `BAKE_BOX`: never a bake to keep).
 3. **Read the log's health lines**: `unwrapped … 100.0% … even texel
    density`; `margins narrowed` (fine); `atlas N% filled; zones' texels per
    metre within ≤ ~50%`; no `zone short of texels`; `house texels` a few cm
    at 4096 (Ladonia 5.5); `sky <hdr> turned <turn>°, strength 1, N sun
-   pixels clipped` for a site sky; `Baked in …`. Any Python traceback stops
-   the bake (`--python-exit-code`).
-4. **Look at the draft** on a test server whose `PUBLISH_DIR` is the copy:
-   `__bakeCheck` (sun angles ~0; black lightmaps only where expected; room
-   light; meter ×3 in a glazed room to ×32 in a dim bedroom), then render
-   the views (`__renderSet`) and `compare.mjs` render | unbaked or live |
-   baked. Healthy: interiors' mean luminance within ~15 % of the live
-   view's, exteriors as the renders. A draft is blotchy and its small
-   pieces bleed: judge light levels and directions, not grain.
+   pixels clipped` for a site sky; `the scene was handed to Cycles N times`
+   (Wrenfield 148: far more than its passes means something is baked an
+   object at a time again); `Baked in …`. Any Python traceback stops the
+   bake (`--python-exit-code`).
+4. **Look at the draft** on a test server whose `PUBLISH_DIR` is the copy.
+   Run `bake-check.js` (the list above) and read its `sun`, `black`,
+   `drawn`, `zones` and `cannot`; the same by hand, in the page, where it
+   says it cannot read something: the sun drawn against the bake's (`sun.position −
+   sun.target.position` of `world.environment.sun`, and
+   `experience.published.lighting.variants.day.sun.position`, both made
+   unit: the same, and the site sky's); each room's daylight from the
+   probes, in "baked" mode once `world.probes` is there
+   (`experience.renderer.realism.meter.roomDaylight(world.probes, room)`
+   over `world.spec.rooms`: step 1's rooms should be among the lowest —
+   Wrenfield's four read 0.00006–0.0015 where its other rooms read
+   0.008–0.08; Ladonia's twenty 0.00001–0.011, its guest WCs at the top
+   of that, the probes being measured with every door open); black where
+   it should not be — frames room
+   by room, by day with the lights off and at night with them on, at the
+   doorways (linings, thresholds), the casings and skirtings, and from
+   above (the wall tops are dark there, as a cut wall is on a plan). Then
+   render the views (`__renderSet`) and `compare.mjs` render | unbaked |
+   baked. Healthy: interiors' mean luminance within ~15 % of the unbaked
+   view's by day — the meter brings each room there, ×3 in a glazed room
+   to ×32 in a dim bedroom — exteriors as the renders. A draft is blotchy
+   and its small pieces bleed: judge light levels and directions, not
+   grain.
 5. **Final**: `npm run bake -- <id>` bakes the user's latest published
    version in place (only when they asked for the bake) — detached with
-   nohup, polled; a background shell is stopped after 2 h. Ladonia: 3 h
-   22 min at 512 samples, 4096, with 2048 copies for phones. `/view/<id>`
-   draws the baked light once it ends.
-6. **Check the published view** at `?quality=4` (live sun over the bake,
-   the meter reading the picture) and `?quality=0` (fully baked, the meter
-   reading the probes): `__bakeCheck` again, the reference set, and the
-   night. Then tell the user what is still short (§ Corrections log).
+   nohup, polled; a background shell is stopped after 2 h. A house is 28
+   min at 512 samples, 4096, with 2048 copies for phones (Wrenfield; 20
+   min published "Fully baked", which bakes for that mode alone). Ladonia
+   took 3 h 22 min on 2026-10-04; the user's own bake of it on 2026-10-12
+   took 1 h 52 min, by its folder's stamp and its `bakedAt` (`app-notes.md`,
+   Baking): ask before starting it. `/view/<id>` draws the baked light once it
+   ends — **if that version is still the latest**: a later publish without
+   a bake is what the plain link opens.
+6. **Check the published view** in every way a visitor meets it, saying
+   of each frame which it is: as it opens on this Mac (step 4, "baked" —
+   the bake's light, what moves shading the sun, the meter reading the
+   frame under a site's sky and the probes without one); `?quality=0`
+   ("static" — nothing live, no probes, one exposure for every room: what
+   a phone is given; `?rated=1` shows the rest of what a device rated low
+   gets); from above (**B**: always the bake's); at night (**N**); with a
+   door shut and a light switched; with **K**, the rooms round the visitor
+   drawn live — unbaked, as the editor's preview draws them: the room
+   stood in, the rooms seen through its open doors, a door opened onto
+   the next and walked through (nothing in view should change but at the
+   first press), in from the garden, and K off again (the bake's, to the
+   pixel). `?lighting=live` draws the old whole house lit live, to
+   compare. Then tell the user what is still short (§ Corrections log).
+7. **Baking again** changes what the bake holds, not how the view draws
+   it: a version baked before a fix to the bake shows the old fault until
+   it is baked again (`app-notes.md`, Baking, "What baking a version again
+   changes": Ladonia's published bake is the user's own of 2026-10-12, with
+   the fixes of that date; Wrenfield's is still 2026-10-01's). Two bakes are compared at the light probes and face by face,
+   not texel for texel (`app-notes.md`, Measuring).
 
 ## 12. Performance
 
-- The public view's low end is a mid-range Android phone about three years
-  old (phones always get the baked view, pixel ratio capped at 1.5).
-- Costs are draw calls and live lights, not triangles. The public view
-  merges static meshes per material per floor; each opening door or drawer
-  stays its own draw call (export fitted pieces shut, §4). The editor
-  walkthrough isn't batched — judge performance in `/view/<id>` with
-  `?stats`, never in the hidden pane.
-- Ladonia at 1920 × 1080 on this Mac: ~12 ms at slider step 0, ~20 at step
-  2, ~24 at step 4, interiors 16–19. The same frames time twice as slow
-  while Chrome or Blender is busy: compare within one sitting, never during
-  an export. Trees whole < 24 m, light < 48 m, impostors beyond at slider
-  step 3 (× `QUALITY.flora.reach`, 0.6–1.5 by step); AO half-res.
+The user's terms since 2026-10-10: the highest frame rate in the editor
+and in the public view with the most realism kept, and a published view
+drawn from its bake by default. What the app does for that now — a space
+gets it without asking, and can spoil it (the numbers and how they were
+taken: `app-notes.md`, "What a visitor is given", "How a baked view is
+drawn", "Measuring"):
+
+- **The editor opens cheap**: one plain light and the houses alone, until
+  the look (**P**, Realistic preview) or more of the site (the *Show*
+  menu) is asked for — and under that light it draws the house merged
+  and the furniture instanced (stand-ins: the scene's own objects are
+  untouched), answers every ray from an index, mends its collision trees
+  after an edit, outlines a selection without drawing the scene twice,
+  and draws a frame only when something has changed. Ladonia on this Mac,
+  the committed code → the plain light (2026-10-12) → this (2026-10-14):
+  edit mode over the whole property 45 ms a frame → 22–24 → 10.9 (9,541
+  draw calls → 1,438), one villa 48 → 18–20 → 10.3, a view of one room
+  (nothing in focus) 24.5 → 6.6 → 5.9; a piece selected over a villa 66 →
+  34 → 12; and since the plain light, walking by the pool 37 → 12 for the
+  whole frame, a drag's pointer move 101 ms → 2.8, leaving edit mode after
+  an edit 2.4–3.0 s → 26–32 ms, an edit view left alone 19 frames in 10
+  s. Opening to a furnished, walkable scene: 6.4–8.2 s → 4.3–4.5 in the
+  first sitting, 6.5–6.7 → 2.2–4.1 in the second — the same build read
+  4.3–4.5 in the one and 6.5–6.7 in the other (the second drove the load
+  flat out in an iframe), so each pair compares and the two do not chain.
+  What is left there: some 1,400 draw calls of what is one of a kind,
+  see-through or moving; nothing gained in a view of one room, and a room
+  in focus half a millisecond slower (3.7 → 4.2 ms). Wrenfield's walk
+  indoors, found slower by the final measurement, was mended on the 14th
+  (§ Corrections log, 2026-10-13).
+- **A baked version is drawn from its bake on every device**: "baked" at
+  slider steps 2–4 (what moves shades the sun and is lit by the bake's
+  probes, a shut door dims its rooms), "static" at steps 0–1 and on
+  phones (nothing live), the bird's-eye view from the bake always, and the
+  whole house lit live only by link (`?lighting=live`), to compare. Its
+  switches and doors are resolved into one lightmap and its rooms merged
+  into one house (Ladonia 3,952 meshes → 670). Ladonia baked at step 4:
+  25–44 ms a frame → 13–17 (the living room 79 a second, the pool 59), at
+  night 39–64 → 13–17; at step 0, 10–22 → 4–8; Wrenfield 8–10 → 5–6. The
+  rooms round the visitor drawn unbaked — their own materials, the sun,
+  their lamps, real shadows — are theirs to ask for (**K**: +1.7–4.2 ms a
+  frame standing; a walk through four rooms 14.3 → 17.3).
+- **Nothing takes a device above the step it is rated for** (touch 1,
+  integrated graphics 2, other Apple chips and discrete cards 3, Apple
+  Pro/Max/Ultra and RTX 4; `?uncapped` lifts it for a developer), each
+  step has a pixel budget, and a public view that falls under 28 frames a
+  second makes itself lighter — resolution, then the live room, then the
+  step — and goes back when there is room.
+- The public view's low end is still a mid-range Android phone about
+  three years old: "static", step 1, pixel ratio at most 1.5, eight people
+  at most. **None of this was measured on one**, nor on an integrated GPU:
+  every figure is this M4 Pro's, its pane hidden. Say so whenever a
+  number is quoted, and test a phone when there is one to test.
+- Costs are draw calls and live lights, not triangles. A light at nothing
+  costs every lit pixel what a lit one does, and three builds each lit
+  shader for the number of lights there are: a light that is off is out
+  of the scene, hidden, never dimmed to 0; in the editor anything that
+  makes a light hands it to `world.plainLight?.keepOut`. Each opening door
+  or drawer stays its own draw call (export fitted pieces shut, §4), and
+  so does every window pane, lamp glass and door leaf of a baked view.
+- What a space can spoil: a room drawn without its window is "without
+  daylight" and starts lit (§10b.1); anything new drawn out of doors that
+  is no collection's shows in the editor's House scope until `Scope.apply`
+  hides it; a material drawn by a shader of its own must carry its data
+  through a publish; and something new that moves by itself inside a wall
+  or a piece, or changes the picture with no event, is not seen by the
+  editor's ray index, its stand-ins or its frames on demand until it says
+  so (`app-notes.md`: Rays and the collision trees, When the editor
+  draws).
+- **Measure in pairs, never by eye**, and never by `?stats` in a hidden
+  pane: the committed code built in a frozen copy — or a copy of the build
+  the user's server still has (§0) — against the working tree's build, a
+  tab each, taking turns under a baton, the render timed to a
+  pixel read back (`__K.time(n)` is that: the mean of n frames after one
+  warm-up; the work's own cells were nine frames after three warm-ups,
+  best and median), the load average noted (`app-notes.md`, Measuring). The same
+  frames time twice as slow while Chrome or Blender is busy: compare
+  within one sitting, never during an export or a bake.
+- Trees whole < 24 m, light < 48 m, impostors beyond at slider step 3
+  (× `QUALITY.flora.reach`, 0.6–1.5 by step); AO half-res, kept over a
+  bake (without it a room is a tenth brighter and nothing is seated on
+  its floor; it is 4–5 ms of a step-4 frame — the user's call).
 - A larger site widens the sun's shadow frustum and coarsens the
   buildings' shadows: check shadow texel size when the site grows.
 - People (§4b) are draw calls: 5–8 skinned meshes and about 50 thousand
@@ -1076,10 +1340,316 @@ unbaked publish checked (§10). Details, numbers and causes:
   pieces known beside it (`sceneryKnown`).
 - A cap by quality step must not hold in the editor's edit mode, or what
   is being placed can be neither seen nor picked.
+- A light at intensity 0 is still a light: three builds every lit shader
+  for the count of lights and each lit pixel pays for it. Hide it
+  (`visible = false`), or in the editor keep it off every layer
+  (`world.plainLight?.keepOut`); let in for one frame, it has every shader
+  built again.
+- A shadow map that does not look every way its light shines is a leak: a
+  point outside a map is lit. The room lamp's first map looked straight
+  down, and the upper part of every wall was lit unshaded — walls the lamp
+  cannot see among them.
+- Never read a mipmapped texture after a branch on something that varies
+  by pixel: its level of detail is undefined there, and edges read the
+  coarsest level (take `dFdx`/`dFdy` before the branch, `textureGrad`).
+- three keeps the uniforms of the last shader it *built* for a material,
+  not of the one in use: a material that goes between two shaders must
+  hand every variant the same uniforms.
+- One 8-bit scale for a whole lightmap is the sunlit garden's: a room lit
+  through its windows is left fourteen to twenty of the 255 levels, and
+  lossy compression then
+  shows as tinted blocks at the room's exposure — which more samples do
+  not mend. Hold each room's part by a curve of its own.
+- A helper that reads the scene graph reads what is drawn. The editor
+  opens with the garden not made and the cars, the far ground and the
+  neighbourhood hidden, so a check run there passes on what it never saw
+  (the people's audit, z-fighting): ask for the scope first.
+- A stub that answers every POST answers your own tool's: results sent to
+  a server of yours from a harnessed tab never leave the page.
+- The editor draws stand-ins for the house and the furniture, and the
+  real meshes stay `visible`: a helper that walks the scene has every
+  surface twice (`zfight.js` called 552 of Wrenfield's 615 clusters a
+  surface against its own copy — pass over `userData.standIn`), a
+  Raycaster of its own passes through what they draw
+  (`layers.enable(12)`), and a mesh hidden by hand inside a wall or a
+  piece stays in the picture for up to 16 frames
+  (`world.standIns.hear()`).
+- Never give a scene object a property of its own (`mesh.foo = …`): it is
+  another kind of object to the engine from then on, and three's loops
+  read them all — 2 ms a frame on one ray, measured.
+- Cut from a wider box, a collision tree is another tree: room given
+  round the furniture's, so that a piece carried outside would be a mend,
+  left Wrenfield's two levels deep and its walk indoors 5 ms a frame
+  slower — taken out the same day (the box is the furniture's own again,
+  the tree the build before's). After touching how a tree is cut, time
+  the walk, not only the edit, and fold the tree against the build
+  before's (`app-notes.md`, Rays and the collision trees; `node
+  scripts/test-collision-tree.mjs`).
+- A build into `dist/` is a deploy to the user's own tabs: build work in
+  progress somewhere else (§0).
 
 ## Corrections log
 
 Newest first. Each: what the user said, what was changed, where.
+
+- **2026-10-13** — Two requests, worked from the evening of 2026-10-12
+  to the 14th. The user, on seeing K light a room's lamps live over its
+  bake: "The live lights with K should completely transform the room into
+  the same version that we see in the editor, without the bake, so the
+  room should have a rendered geometries with their own materials
+  rendered as it were the editor view, so not switch from baked to live
+  lights, but also remove the baked textures and replace with actual
+  ones". And, on the
+  performance work's list of what was left in the editor: "Do the edit
+  mode suggestions that were left to do". → For each, builders, a
+  measurer, reviews and a fixer; every figure this M4 Pro's, its pane
+  hidden, the build before against the new one in one sitting (§12).
+  - *K draws rooms unbaked* (`World/LiveRoom.js`, `World/RoomLight.js`;
+    `app-notes.md`, Live room light): the room the visitor is in, the
+    rooms that always stand open to it, and every room seen from there
+    through a door that is open or has glass in it, or a stairwell — their
+    own materials, the sun through the windows with its shadows, the sky,
+    their lamps, their glass, what moves in them, the frames and reveals
+    of their openings, a flight of stairs with the room it starts in —
+    and nothing of the bake on them. Every other room, the garden and the
+    view from above stay baked. A room is made ready a little a frame
+    before it is shown — the one behind a shut door as the door is
+    neared — so that walking on changes nothing in view; K off is the
+    bake's again to the pixel; the lamps-over-the-bake version's code is
+    gone. Against the unbaked view: 50 of 57 poses by day within 1.5
+    levels, night within 0.2; through open doors 0 px of baked room in 14
+    of 16 stills. It costs +1.7 to +3.7 ms a frame standing with the
+    doors shut, +3.0 to +4.2 with a door open to the next room; a 19.5 s
+    walk through four rooms, three doors opened, 14.3 → 17.3 ms median,
+    17–22 of 1,168 frames over 25 ms, none over 50. K never pressed, the
+    view is the build before's: 28 of 28 pictures identical to the pixel.
+  - *The editor* (`app-notes.md`: the stand-ins in "The editor's plain
+    light and view scope", "Rays and the collision trees", "When the
+    editor draws"): it draws the house as one mesh a material and the
+    furniture as instances (`World/StandIns.js`), answers every ray from
+    an index (`Utils/rays.js`), mends its collision trees after an edit
+    (`Collision.js`'s `TreeKeeper`), draws a frame only when something has
+    changed (`Pace.js`) and outlines a selection without drawing the scene
+    again (`Editor/SelectionOutline.js`). Ladonia, before → after: the
+    whole property 24.3 ms a frame → 10.9 (41 → 92 a second; 9,541 → 1,438
+    draw calls), one villa 20.0 → 10.3, one room 6.0 → 5.9; walking —
+    renderer, world and camera — the living room 20.0 → 8.7, the pool 36.9
+    → 12.1, the street 35.8 → 11.3; a piece selected over a villa 33.9 →
+    11.8; a drag's pointer move 101 ms → 2.8; leaving edit mode 2.4–3.0 s
+    → 26–32 ms; an idle edit view, drawing all the time → 19 frames in 10
+    s; load to a furnished, walkable scene 6.5–6.7 s → 2.2–4.1. Nothing
+    the editor does changed: the saved scene byte for byte, a publish's
+    files and stats equal, the pictures under the plain light equal to
+    rounding.
+  - *What the reviews found, mended on the 14th.* The editor: a piece
+    carried beyond all the others (or its undo) had the furniture's whole
+    tree built again, and half a second of walking against the pieces as
+    they had stood — the tree was given room round it (a mend, 10 ms:
+    taken out again the same day, below), and one still being built was
+    finished in the frame the visitor first moves; a publish whose
+    realistic light fails would have been taken
+    with four fifths of the meshes off the layer a merge takes; sources
+    only reordered left the old tree; seen from high over the property,
+    which of two surfaces a millimetre apart showed was chance (the edit
+    view's near plane now goes out with its distance). K: a room walked
+    into from out of doors was 76 levels too bright — not the lamp the
+    review named, but a dash of twelve texels of the sun in a pane across
+    the garden, in the room's probe — and then 13–19 too dark (its probe
+    taken through its own windows as seen from outside); the upper half
+    of a flight of stairs was the bake's until the bathroom under it was
+    opened; the façade above and below every window was drawn live. Two
+    findings were not real: the editor has no view from above to come
+    apart in, and the outline's edges and blur were made at half size
+    already.
+  - *How it was worked*: built into the scratch folder and tested on
+    servers of their own over a copy of the scenes, the user's server and
+    the repo's `dist/` untouched throughout — now §0's rule; `zfight.js`
+    taught to pass over the stand-ins (§10, §13). The lesson of the last
+    step: the measurer who came after the fixer found what the fix cost.
+  - **Still short**:
+    - *Slower than before, found by the final measurement — the first
+      mended on the 14th, the second not.* Walking indoors in Wrenfield's
+      editor: the room given to the furniture's collision tree had left
+      it two levels deep, its largest leaf 17,989 triangles, the
+      visitor's collision step 10.9 ms a frame where it cost none (a
+      whole walking frame 15.3 ms for 9.8), and the editor's walk ending
+      elsewhere than before wherever the visitor touches furniture
+      (inside a sofa 30 cm). The room is gone: the furniture's tree is
+      cut from its own box again and is the build before's in Ladonia,
+      Wrenfield and Ashgrove through thirteen edits each (box, cells,
+      every leaf's triangles in order), the walk equal to the digit
+      (villa A's 30 doors, seven routes, 44 drops onto and beside
+      furniture: 703 coordinates), the collision step 0.004–0.012 ms on
+      Wrenfield. An edit that changes the furniture's box (the outermost
+      piece moved, one put beyond the rest) has Ladonia's tree built
+      again a slice a frame — Tab back in 19–35 ms, half a second of
+      frames of 11–17 ms (one of 36–42), walked meanwhile against the
+      tree as it was with the changed pieces put right in it. The
+      realistic preview: 0.3–2.4 ms a frame more inside `render()`, same
+      draw calls — looked for on the 14th and not mended: the same calls
+      to the GPU's driver in both builds (43,076 and 43,105 a frame),
+      nothing of the editor's running in the frame; what is slower is
+      three's own walk of the same scene when it comes cold (its one
+      `updateMatrixWorld` a frame 1.5–1.8 ms for 1.35–1.45; the same call
+      in a loop 0.64–0.67 for 0.63–0.64), and how much slower turns with
+      the tab a build is read in (`app-notes.md`, Measuring).
+    - *The user's to decide*: in edit mode at rest the people and the
+      pool's water stand still (they move while frames are drawn for any
+      other reason, and while a person is selected) — before, they always
+      moved; the heartbeat still draws two frames a second at rest.
+    - *K*: a room come into from out of doors is the bake's until its
+      visitor is in it, and changes in one frame; day and night, the
+      slider and the view from above send the live rooms back to the bake
+      for 8–43 frames; what is seen out of a window or a door to the
+      garden, and the villa across it, is the bake's (out of an open
+      terrace door a fifth of the frame is over 8 levels from the unbaked
+      view's); a glazed entry door is darker live than unbaked (6–7% of a
+      frame over 8 levels, final measurement); by day stairwells
+      are 10–22 levels over the editor and some rooms evenly 5–9 off,
+      cause not found; a first K on shaders the browser has never built
+      is five to six seconds in coming, thirty frames of it 60–160 ms;
+      beyond eight groups of rooms a room in sight is the bake's.
+    - *The editor, left*: 1,438 draw calls of what is one of a kind,
+      see-through or moving (door leaves, glass, 365 single furniture
+      meshes); a view of one room gains nothing (6.0 → 5.9 ms), a room in
+      focus is slower (3.7 → 4.2) and X-ray gains little; Wrenfield's
+      first frame after leaving edit mode with furniture moved is 61–80 ms
+      long, and the longest frame of a load is longer than it was
+      (Ladonia 51–64 ms → 130–167) though the load is shorter; the
+      furniture's tree is still built in one go at load (0.35–0.9 s);
+      the first frame after a rest is 7–10 ms longer (the GPU's; hidden
+      pane only); a lower resolution while moving was measured and not
+      built (0.2–1.5 ms); an imported-model building is not merged, and
+      was not tried; `rays.js` leans on `Mesh._computeIntersections`, a
+      three r163 method outside its documentation — look at it on an
+      upgrade.
+    - *Unseen*: a visible tab at the display's rate, another GPU or
+      browser, a phone. Edits were synthetic events and the editor's own
+      functions, not a hand; Ashgrove got pictures and a sanity run only.
+    - *Left for the user*: `npm run build` and a reload of every open
+      tab — until then their server has none of this; Wrenfield's bake of
+      2026-10-01 baked again, for its doorways' reveals beside a live
+      room; villa C's first-floor hall has a wall's end baked black (the
+      bake's zoning, K or no K).
+
+- **2026-10-12** — Performance of the editor and the public view, Ladonia
+  and Wrenfield (the work of 2026-10-10 to 12). The user asked for the
+  highest frame rate in the editor and in the public view with the most
+  realism kept, the public view fully baked by default, and to "test out
+  multiple variants of optimization techniques, including quality of
+  renders for both the interior and exterior". → Five stages of builders,
+  measurers and reviewers, every change timed against the committed code
+  in a frozen copy (§12; `app-notes.md`, Measuring). Decided, and why:
+  - *The editor opens under a plain light, with the houses alone*
+    (`World/PlainLight.js`, `World/Scope.js`): most of its frame was the
+    sun's shadow map, ten to twenty-five lights in every shader, the
+    post-processing and the garden, none of which helps place a sofa. The
+    look is a key away (**P**), and a publish takes the scene lit
+    realistically whatever is on screen. Ladonia: edit mode 45–48 ms a
+    frame → 18–22, a view of one room 24.5 → 6.6, walking a room 32.6 → 9.8,
+    opening 6.4–8.2 s → 4.3–4.5; Wrenfield 14–15 → 5.
+  - *A baked version is drawn from its bake on every device*: "baked" at
+    steps 2–4, "static" at 0–1 and on phones. The whole house lit live —
+    what a computer was given — is a link's alone now: it cost 25–64 ms a
+    frame on Ladonia, more whenever something moved. The bird's-eye view
+    is the bake's always (at night 49–65 ms → 11–15).
+  - *One lightmap, one house*: the switches' and the doors' light is
+    resolved into a single lightmap on the GPU when one changes
+    (`World/LightResolver.js`), and the rooms' meshes merged
+    (`World/HouseMerger.js`: 3,952 → 670). The frame was draw calls and
+    material variants, not triangles.
+  - *What is live is the visitor's to ask for and the view's to take
+    back*: the one room they stand in (**K**, `World/RoomLight.js` — at
+    first its lamps' light over the bake, +0.5–1 ms; since the same
+    evening the rooms drawn unbaked, `World/LiveRoom.js`: the entry
+    above); a guard that lightens a view fallen
+    under 28 frames a second (`FrameGuard.js`); a ceiling at the device's
+    rated step and a pixel budget a step.
+  - *Rooms daylight does not reach start the day lit*
+    (`shared/daylight.js`), and at night a lamplit room is metered as a
+    daylit one is: drawn from their bake those rooms were black by day,
+    and a lamplit room at night a quarter darker than under the old live
+    lamps (mean level 62–84; 86–101 now, the old live lamps' 77–107).
+  - *The bake's blotches were its encoding, not its samples* (sixteen
+    variants of Wrenfield): one scale for the whole atlas left a room
+    14–20 of 255 levels and the lossy WebP erred in blocks. Each room's
+    part is now written by a curve of its own. 512 samples at 4096 stays
+    the final: 128 leaves mottle indoors by day, 2048 samples buy little
+    for four times the sampling, a 2048 atlas loses strips, sun-patch
+    edges and contact shade; out of doors 32 samples would do. Strips
+    under three texels are lit through their vertices, doorway faces cut
+    along the wall's middle and given to the room they are seen from, the
+    garden's lamps are in the night's bake, and the scene is handed to
+    Cycles 148 times a bake, not 352 (Wrenfield 34.9 min → 28).
+
+  Ladonia baked at step 4, this Mac: 25–44 ms a frame → 13–17 (the living
+  room 39 → 79 a second, the pool 23 → 59), at night 39–64 → 13–17; step
+  0, 10–22 → 4–8; a 5 s walk indoors, every frame over 25 ms → none;
+  Wrenfield 7.7–10.5 → 4.7–5.9. Unbaked, ×1.6–2.4 at night and ×1.1–1.5 by
+  day. Also folded in: §7, §10, §10b, §12 and §13 here; `app-notes.md`
+  split into sections of its own for what a visitor is given, how a baked
+  view is drawn and exposed, live room light, baking and measuring;
+  `reference.md`'s lists of the view's links, keys, steps, options and
+  manifest; the in-page helpers ask for the preview or the scope they
+  need. **Still short:**
+  - *Unmeasured*: no phone, no touch device, no integrated or slow GPU —
+    every figure is one M4 Pro's, its pane hidden, the render timed to a
+    pixel; nothing was watched in a visible tab at the display's rate.
+    The guard has never judged real frames, and its thresholds are a
+    judgement; what a low-rated device is given was seen only through
+    `?rated=` and `?quality=`. No Safari or Firefox; loads on localhost
+    only; a lost graphics context only by `WEBGL_lose_context`.
+  - *Not baked again* (as this was written; the user published and baked
+    Ladonia afresh that same day — 20261012T114849Z, with its twelve
+    people — so its plain link is drawn from a bake of this code):
+    neither published bake. Ladonia's (20261004T152226Z) still has the
+    black doorway bands and strips, no garden lamps in its night, the
+    tinted blocks in dim rooms and no people; and the latest published
+    version of both spaces is an unbaked one, so the user's plain links
+    draw lit live. Wrenfield is half an hour to publish and bake —
+    still so, and theirs to ask for.
+  - *Went back, and was mended the same day*: the lamps that now start
+    lit by day had put the lamp pool into every material of the unbaked
+    view and the editor's preview by day (3–7 ms a frame) and made a baked
+    Ladonia wait for 86 switch-layer files before its first frame (0.35 s);
+    the pool now joins the light only while a lit fitting is in sight, and
+    the first frame waits only for switches seen from the start (verified
+    against the old build: back at the mid-way figures, 17.2 / 24.7 /
+    20.6 ms unbaked by day, drawn and walkable at 3.15 s). Left: a first
+    night's one long frame is 40–75 ms longer than mid-way (cause not
+    found; it is still half the committed code's); at an indoor start the
+    first lit frame draws door leaves wrongly until the sun's mask and the
+    doors' atlas land a frame to 0.6 s later (behind the preloader, by the
+    code — not watched in a visible tab); the lamp's light on a shut
+    door's threshold goes out in one frame 3 s after the door shuts.
+  - *The look*: a lamplit room at night is still a shade under the
+    unbaked view's (86–101 for 109–125); the garden through a window from
+    a lamplit room is up to twice as bright as from outside; steps 0–1
+    expose every room alike, and brighter (140–152 for 105–111); the live
+    room lamp's shades read dull and the ring of light round a recessed
+    fitting is gone from its ceiling (of the lamps drawn over the bake,
+    gone since: the entry above); door leaves, lit a side at a time,
+    differ from every earlier frame (a glazed leaf pale grey-blue in a lit
+    room at night); mirrors and metals reflect a studio, pale by day and
+    black at night; a room without daylight is black from above with its
+    light off; rooms with a small or blinded window (Ladonia's twin
+    bedrooms) start unlit and dim.
+  - *Unfinished*: the measuring tools were left in the scratch folder,
+    which a restart empties; the editor's house is not merged and its
+    selection outline draws the scene a second time (both done since: the
+    entry above); what the preview allocates
+    (the 8192 shadow map) and the garden once made are kept until a
+    reload; face zoning does not cut at floors and ceilings; switches are
+    still baked one to a pass (lit together their light changed); the
+    ambient occlusion is still drawn over a bake (4–5 ms: kept for the
+    look, the user's call); window panes are not merged (about 500 draws
+    out of doors); the cars' textures and the trees' and grass's reach
+    were left as they were.
+  - *Not tried*: people in a baked view or in a room lit live (no baked
+    version had any; Ladonia's of that day has, and the live room was
+    measured on it); a version published "Always high"; Ashgrove (it has
+    no published version); a whole bake of Ladonia with this code (only
+    cut-down night bakes of it were run, for the garden's lamps).
 
 - **2026-10-05/09** — The user: "add animated Mixamo characters randomly
   around the properties either standing with a drink in their hands
@@ -1169,7 +1739,7 @@ Newest first. Each: what the user said, what was changed, where.
   race); interiors metered (Realism's `LightMeter`); glass and metals
   whose shaders failed (`userData` textures through `Material.clone`)
   fixed; two adversarial review rounds, all confirmed findings fixed
-  (`app-notes.md`, Publishing and baking). Final bake of version
+  (`app-notes.md`, Baking). Final bake of version
   20261004T152226Z: 3 h 22 min, 5.5 cm texels, no errors; interiors at
   101–112 of 255 mean brightness against the live view's 105–124,
   sunlit exteriors 7–9% brighter, shaded façades 25% brighter (as in

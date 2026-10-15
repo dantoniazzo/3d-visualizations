@@ -1,7 +1,7 @@
 import { AXES, AXIS_CSS } from "./axes.js";
 import { blockedText } from "./Editor.js";
 import Collections from "./Collections.js";
-import { floorName } from "../World/Switches.js";
+import { SCOPES } from "../World/Scope.js";
 
 /**
  * Edit mode's chrome, laid out the way Blender's default workspace is: a
@@ -53,6 +53,7 @@ const ICONS = {
     bulb: '<path d="M8 1a5 5 0 0 1 3 9v1.6H5V10a5 5 0 0 1 3-9zm0 1.6a3.4 3.4 0 0 0-2 6.2l.6.4V10h2.8v-.8l.6-.4A3.4 3.4 0 0 0 8 2.6zM5.5 12.6h5v1.2l-1 1.2h-3l-1-1.2z"/>',
     sun: '<circle cx="8" cy="8" r="3"/><path d="M7.3 0h1.4v2.6H7.3zm0 13.4h1.4V16H7.3zM0 7.3h2.6v1.4H0zm13.4 0H16v1.4h-2.6zM2.1 3.1l1-1 1.8 1.8-1 1zm9 9l1-1 1.8 1.8-1 1zm-9 1.8l1.8-1.8 1 1-1.8 1.8zm9-9l1.8-1.8 1 1-1.8 1.8z"/>',
     moon: '<path d="M10.5 1.2A6.6 6.6 0 1 0 14.8 11 5.4 5.4 0 0 1 10.5 1.2z"/>',
+    preview: '<path d="M8 1.5a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13zM8 3v10a5 5 0 0 0 0-10z"/>',
 };
 
 const icon = (name, size = 16) =>
@@ -132,6 +133,14 @@ export default class EditorUI {
                             </select>
                         </label>
                     </div>
+                    <label class="ed-select ed-scope-select" data-scope-label>
+                        ${icon("eye")}
+                        <select data-setting="scope" aria-label="How much of the site is shown">
+                            ${Object.entries(SCOPES)
+                                .map(([id, scope]) => `<option value="${id}">${scope.label}</option>`)
+                                .join("")}
+                        </select>
+                    </label>
                     <label class="ed-select ed-focus-select" title="Work on one floor or one room — everything else is hidden (Page Up / Page Down, /)">
                         ${icon("layers")}
                         <select data-setting="focus"></select>
@@ -140,7 +149,8 @@ export default class EditorUI {
                     <button class="ed-toggle" data-action="garden" title="Garden: the grass, the trees, the hills, and how the view is coloured">${icon("garden")}</button>
                     <button class="ed-toggle" data-action="lights" title="Lights: turn the light fittings on and off (L) — or Ctrl / ⌘-click a light or its switch in the view" aria-controls="ed-lights" aria-expanded="false" hidden>${icon("bulb")}</button>
                     <button class="ed-toggle" data-action="daynight" title="Day or night" hidden>${icon("sun")}</button>
-                    <button class="ed-btn ed-walk" data-action="walk-here" title="Stand where the view is pointing and start walking">${icon("walk")}<span>Walk from here</span></button>
+                    <button class="ed-toggle ed-toggle-text" data-action="preview" aria-pressed="false">${icon("preview")}<span>Realistic preview</span></button>
+                    <button class="ed-btn ed-walk" data-action="walk-here" title="Walk from here: stand where the view is pointing and start walking">${icon("walk")}<span>Walk from here</span></button>
                     <button class="ed-btn ed-walk" data-action="publish" title="Publish the public view: a link to send clients, drawn as cheaply as it can be">${icon("publish")}<span>Publish</span></button>
                     <span class="ed-save" data-save>Saved</span>
                 </div>
@@ -214,10 +224,13 @@ export default class EditorUI {
             orientation: $('[data-setting="orientation"]'),
             increment: $('[data-setting="increment"]'),
             focus: $('[data-setting="focus"]'),
+            scope: $('[data-setting="scope"]'),
+            scopeLabel: $("[data-scope-label]"),
             xray: $('[data-action="xray"]'),
             garden: $('[data-action="garden"]'),
             lights: $('[data-action="lights"]'),
             dayNight: $('[data-action="daynight"]'),
+            preview: $('[data-action="preview"]'),
             lightsPanel: $("[data-lights]"),
             lightsList: $("[data-lights-list]"),
             focusChip: $("[data-focus-chip]"),
@@ -288,6 +301,8 @@ export default class EditorUI {
                     return this.toggleLightsPanel();
                 case "daynight":
                     return editor.toggleDayNight();
+                case "preview":
+                    return editor.togglePreview();
                 case "walk-here":
                     return editor.walkFromHere();
                 case "publish":
@@ -315,7 +330,8 @@ export default class EditorUI {
             editor.setFocus(Collections.parse(e.target.value));
             e.target.blur();
         });
-        for (const select of [this.dom.orientation, this.dom.increment]) {
+        this.dom.scope.addEventListener("change", (e) => editor.setScope(e.target.value));
+        for (const select of [this.dom.orientation, this.dom.increment, this.dom.scope]) {
             select.addEventListener("change", () => select.blur());
         }
         this.dom.filter.addEventListener("input", (e) => {
@@ -491,6 +507,10 @@ export default class EditorUI {
         this.dom.orientation.value = editor.orientation;
         this.dom.increment.value = String(editor.increment);
         this.dom.focus.value = Collections.key(editor.focus);
+        // How much of the site is drawn (World/Scope.js).
+        const scope = editor.world.scope.value;
+        this.dom.scope.value = scope;
+        this.dom.scopeLabel.title = `Show: ${SCOPES[scope].hint}. The houses alone are the fastest to work on; the walkthrough's realistic preview always shows everything.`;
         this.dom.snap.classList.toggle("is-on", editor.snapEnabled);
         this.dom.xray.classList.toggle("is-on", editor.xray);
         this.dom.garden.classList.toggle("is-on", Boolean(editor.gardenPanel));
@@ -504,6 +524,13 @@ export default class EditorUI {
         this.dom.dayNight.innerHTML = icon(night ? "moon" : "sun");
         this.dom.dayNight.title = night ? "Night — switch to day" : "Day — switch to night";
         this.dom.dayNight.classList.toggle("is-on", night);
+        // The walkthrough's: edit mode is lit plainly either way.
+        const preview = Boolean(world.preview);
+        this.dom.preview.classList.toggle("is-on", preview);
+        this.dom.preview.setAttribute("aria-pressed", String(preview));
+        this.dom.preview.title = `Realistic preview (P): the walkthrough lit as visitors will see it — sun and shadows, lamps, lit rooms — and slower. ${
+            preview ? "On" : "Off: it is lit plainly, as edit mode always is"
+        }.`;
 
         // The chip says what is being worked on, and gets back out of it.
         const chip = this.dom.focusChip;
@@ -542,7 +569,7 @@ export default class EditorUI {
             list.innerHTML = floors
                 .map(
                     ({ level, switches: items }) =>
-                        `${floors.length > 1 ? `<h5>${escape(switches.floorName?.(level) ?? floorName(level, switches.levels))}</h5>` : ""}` +
+                        `${floors.length > 1 ? `<h5>${escape(switches.floorName(level))}</h5>` : ""}` +
                         items
                             .map((item) => `<button class="ed-light" data-switch="${escape(item.id)}" aria-pressed="false"><span>${escape(item.label)}</span><i></i></button>`)
                             .join("")
@@ -593,7 +620,8 @@ export default class EditorUI {
         this.updateNavGizmo();
 
         const editor = this.editor;
-        const label = `${editor.view.label} · ${editor.collections.describe(editor.focus)}${editor.xray ? " · X-ray" : ""}`;
+        const scope = editor.world.scope.current;
+        const label = `${editor.view.label} · ${editor.collections.describe(editor.focus)}${scope === "all" ? "" : ` · ${SCOPES[scope].label} only`}${editor.xray ? " · X-ray" : ""}`;
         if (label !== this.viewLabel) {
             this.viewLabel = label;
             this.dom.viewLabel.textContent = label;
@@ -747,7 +775,8 @@ export default class EditorUI {
         this.lastTree = tree;
 
         const collections = editor.collections;
-        const shownItem = (e) => collections.shows(collections.membership(e), editor.focus, editor.hiddenCollections);
+        const scope = editor.world.scope.current;
+        const shownItem = (e) => collections.shows(collections.membership(e), editor.focus, editor.hiddenCollections, scope);
         const matches = (e) => !filter || e.label.toLowerCase().includes(filter);
         const count = (node) => (node.items?.filter(matches).length || 0) + (node.children || []).reduce((n, c) => n + count(c), 0);
 
@@ -1137,6 +1166,14 @@ export default class EditorUI {
                 { label: "Right", hint: "3", action: () => editor.view.setView("right") },
                 { label: "Perspective / Orthographic", hint: "5", action: () => editor.view.toggleOrtho() },
                 { separator: true },
+                { heading: "Show" },
+                ...Object.entries(SCOPES).map(([id, scope]) => ({
+                    label: `${scope.label} — ${scope.menu}`,
+                    checked: editor.world.scope.value === id,
+                    action: () => editor.setScope(id),
+                })),
+                { separator: true },
+                { label: "Realistic preview in the walkthrough", hint: "P", checked: Boolean(editor.world.preview), action: () => editor.togglePreview() },
                 { label: "X-ray", hint: "Alt Z", checked: editor.xray, action: () => editor.setXray(!editor.xray) },
                 { label: "Selection's room alone", hint: "/", action: () => editor.toggleLocalView() },
                 { label: "Floor above", hint: "PgUp", action: () => editor.stepFloor(1) },

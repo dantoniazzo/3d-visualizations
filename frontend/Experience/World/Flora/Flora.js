@@ -7,7 +7,10 @@ import { buildHedges } from "./hedges.js";
 import { bedGrasses, lawnSward, meadowSward, planterGrasses } from "./grass.js";
 import { GardenLights } from "./lights.js";
 import { shared } from "./shaders.js";
+import { QUALITY } from "../../Utils/device.js";
 import { distanceOutside, scatter, terrainHeight } from "../../../../shared/landscape.js";
+
+const _visitor = new THREE.Vector3();
 
 /**
  * A site's living landscape (shared/landscape.js), drawn live — the wind
@@ -26,9 +29,21 @@ import { distanceOutside, scatter, terrainHeight } from "../../../../shared/land
  * houses are walked into. It takes the place of the Fluffy Tree garden
  * (World/Vegetation) for a site with a landscape, and answers what the
  * world and the scenery ask of that: show, setLight, update, its trees.
+ *
+ * The editor, whose view may leave the surroundings out (World/Scope.js),
+ * can have it made later (`planted: false`, then `plant`): until then only
+ * where its trees stand is known, and their trunks walked into — the
+ * species' models, the impostors' atlases, the hedges and every blade of
+ * grass wait for the first time they are shown. Hidden (setShown), nothing
+ * of it is drawn, sorted by distance or moved by the wind.
  */
 export default class Flora {
-    constructor(world) {
+    /**
+     * @param {World} world
+     * @param {object} [options]
+     * @param {boolean} [options.planted]  made at once (the default), or when `plant` is first called
+     */
+    constructor(world, { planted = true } = {}) {
         this.world = world;
         this.experience = new Experience();
         this.scene = this.experience.scene;
@@ -43,13 +58,37 @@ export default class Flora {
         this.height = (x, z) => terrainHeight(terrain, x, z);
         this.keepOut = this.makeKeepOut();
 
-        // --- trees and shrubs --------------------------------------------
+        // Where every tree and shrub stands, and the trunks to walk into:
+        // these whether or not anything of the garden is drawn.
         this.trees = this.planTrees();
         this.bushes = [];
+        this.buildTrunks();
+        this.planted = false;
+        this.variant = "day";
+        if (planted) this.plant();
+        else this.setLight("day");
+    }
+
+    /** The garden made — once, the first time it is to be drawn. */
+    plant() {
+        if (this.planted) return;
+        this.planted = true;
+        const world = this.world;
+        const terrain = this.spec.terrain || { base: 0 };
+
+        // --- trees and shrubs --------------------------------------------
         const loader = this.experience.resources.loaders.gltfLoader;
         this.treeSet = new Trees(this.group, this.trees, loader, this.experience.renderer.renderer);
-        this.treeSet.ready.then(() => this.treeSet.place(this.camera.activeCamera, true));
-        this.buildTrunks();
+        this.treeSet.ready.then(() => {
+            if (this.disposed) return;
+            this.treeSet.place(this.camera.activeCamera, true);
+            // Planted late, in the editor, the species come after the time
+            // of day was last set and after the rooms' glow went into the
+            // shaders (World/RoomGlow.js): both again, for them.
+            if (this.experience.publicView) return;
+            this.treeSet.setLight(this.night && !world.plain ? 0.12 : 1);
+            world.roomGlow?.applyTo(this.group);
+        });
 
         // --- hedges ------------------------------------------------------
         const leafTexture = new THREE.TextureLoader().load("/textures/trees/leaves-aspen.webp");
@@ -76,7 +115,19 @@ export default class Flora {
         // --- the evening -------------------------------------------------
         this.lights = new GardenLights(this.spec.lights || [], this.spec.pools || [], this.spec.planters || [], this.roofParapets());
         this.group.add(this.lights.group);
-        this.setLight("day");
+        world.plainLight?.keepOut(this.lights.group);
+        this.setLight(this.variant);
+    }
+
+    /**
+     * Drawn, or not (World/Scope.js): hidden, nothing of it is updated
+     * either (update); shown again, its trees and grass are sorted afresh
+     * for wherever the camera now is.
+     */
+    setShown(shown) {
+        const was = this.group.visible;
+        this.group.visible = shown;
+        if (shown && !was && this.planted) this.applyQuality();
     }
 
     /**
@@ -122,8 +173,9 @@ export default class Flora {
         for (const tree of this.spec.trees || []) {
             const [x, z] = tree.position;
             // `elevation`: standing above the ground — a shrub in a roof planter.
-            const y = Number.isFinite(tree.elevation) ? tree.elevation : this.height(x, z) - 0.05;
-            out.push({ species: tree.species, x, z, y, scale: tree.scale ?? 1, yaw: tree.yaw ?? 0, placed: true });
+            const raised = Number.isFinite(tree.elevation);
+            const y = raised ? tree.elevation : this.height(x, z) - 0.05;
+            out.push({ species: tree.species, x, z, y, scale: tree.scale ?? 1, yaw: tree.yaw ?? 0, placed: true, raised });
         }
         const regions = [...(this.spec.forest || []).map((r) => ({ ...r, kind: "forest" })), ...(this.spec.shrubs || []).map((r) => ({ ...r, kind: "shrub" }))];
         regions.forEach((region, k) => {
@@ -182,13 +234,36 @@ export default class Flora {
     /** What a visitor has hidden (World/Scenery.js): the trees and bushes, the grass. */
     show({ trees = true, grass = true } = {}) {
         for (const tree of this.trees) tree.hidden = !trees && !tree.placed;
+        if (!this.planted) return;
         this.treeSet.place(this.camera.activeCamera, true);
         this.lawn.group.visible = grass;
         this.meadow.group.visible = grass;
     }
 
-    /** The slider's step (Utils/device.js): the trees' and the grass's reach and density, at once. */
-    applyQuality() {
+    /**
+     * What grows above a floor seen from above goes with what the view
+     * takes away (World/BirdView.js): the roof terraces' planters — their
+     * grasses, their shrubs, the light strips under their copings — which
+     * otherwise hang in the air over the floor below. `shows` says whether
+     * something growing at a height is on a floor that shows; `null`,
+     * everything again. The ground's own — the lawns, the meadow, the
+     * hedges, the trees, however high up a hill — is the lowest floor's,
+     * under every one shown.
+     *
+     * @param {((y: number) => boolean)|null} shows
+     */
+    showUpTo(shows) {
+        for (const tree of this.trees) tree.above = Boolean(shows) && Boolean(tree.raised) && !shows(tree.y);
+        if (!this.planted) return;
+        this.treeSet.place(this.camera.activeCamera, true);
+        this.planters.showUpTo(shows);
+        this.lights.showUpTo(shows);
+    }
+
+    /** The slider's step (Utils/device.js): the trees' and the grass's reach and density, and how many garden lights shine, at once. */
+    applyQuality(quality = QUALITY) {
+        if (!this.planted) return;
+        this.lights.setBudget(quality.garden);
         const camera = this.camera.activeCamera;
         this.treeSet.place(camera, true);
         this.lawn.place(camera);
@@ -198,44 +273,76 @@ export default class Flora {
     settingsChanged() {}
     useGroundLight() {}
 
-    /** Day, or night: the garden lights, the houses' room lights, the far trees' light. */
+    /**
+     * Day, or night: the garden lights, the houses' room lights, the far
+     * trees' light. Under the editor's plain light (World/PlainLight.js) the
+     * night shows only in the garden lights' own glass: they light nothing
+     * (PlainLight keeps them out), and nothing dims or glows for it.
+     */
     setLight(variant) {
         const night = variant === "night";
+        this.variant = variant;
         this.night = night;
-        this.lights.set(night);
+        this.lights?.set(night, this.visitor());
         // The rooms' own lights cast no shadows: lit, they would light the
         // walls' outsides too. The rooms glow instead (Sky.glowIndoors).
         const fixtures = this.world.sceneBuilder?.lights;
         if (fixtures) fixtures.visible = false;
-        this.world.sky?.glowIndoors(night);
-        this.treeSet.setLight(night ? 0.12 : 1);
+        const dark = night && !this.world.plain;
+        this.world.sky?.glowIndoors(dark);
+        this.treeSet?.setLight(dark ? 0.12 : 1);
         const water = this.world.sceneBuilder?.landscapeLive?.getObjectByName("pool-water");
         if (water) {
-            water.material.emissive.set(night ? "#1fa9c4" : "#000000");
-            water.material.emissiveIntensity = night ? 1.4 : 0;
+            water.material.emissive.set(dark ? "#1fa9c4" : "#000000");
+            water.material.emissiveIntensity = dark ? 1.4 : 0;
         }
     }
 
+    /**
+     * Where the visitor is, for the garden's lights to gather round: on
+     * foot or in a car; from above, what the view is over; in the editor,
+     * what its view looks at.
+     */
+    visitor() {
+        const world = this.world;
+        if (world.birdView?.active) return _visitor.copy(world.birdView.target);
+        const editor = world.editor;
+        if (editor?.active && editor.view?.target) return _visitor.copy(editor.view.target);
+        const player = world.player;
+        if (player?.inVehicle && player.currentCar) return _visitor.copy(player.currentCar.group.position);
+        if (player?.player?.collider) return _visitor.copy(player.player.collider.start);
+        return _visitor.copy(this.camera.activeCamera.position);
+    }
+
     update(delta) {
+        // The pool's ripple, whatever else of the site is drawn.
+        const water = this.world.sceneBuilder?.landscapeLive?.getObjectByName("pool-water");
+        if (water?.material.userData.time) water.material.userData.time.value += delta;
+        // Not made yet, or left out of the view (setShown): no wind, nothing sorted.
+        if (!this.planted || !this.group.visible) return;
         shared.uTime.value += delta;
         const camera = this.camera.activeCamera;
         const sun = this.world.environment?.sun;
         if (sun) {
             shared.uSunView.value.copy(sun.position).sub(sun.target.position).normalize().transformDirection(camera.matrixWorldInverse);
-            shared.uSunColour.value.copy(sun.color).multiplyScalar(sun.visible ? sun.intensity * 0.35 : 0);
+            // (None of it under the editor's plain light, which has no sun.)
+            shared.uSunColour.value.copy(sun.color).multiplyScalar(sun.visible && !this.world.plain ? sun.intensity * 0.35 : 0);
         }
         this.treeSet.place(camera);
+        // The few garden lights there are, to the lamps nearest the visitor.
+        this.lights.update(delta, this.visitor());
         this.placeTimer = (this.placeTimer ?? 0) - delta;
         if (this.placeTimer <= 0) {
             this.placeTimer = 0.25;
             this.lawn.place(camera);
             this.meadow.place(camera);
         }
-        const water = this.world.sceneBuilder?.landscapeLive?.getObjectByName("pool-water");
-        if (water?.material.userData.time) water.material.userData.time.value += delta;
     }
 
     dispose() {
+        this.disposed = true;
+        this.scene.remove(this.group);
+        if (!this.planted) return;
         this.treeSet.dispose();
         this.hedges.dispose();
         this.lawn.dispose();
@@ -244,7 +351,6 @@ export default class Flora {
         this.beds.dispose();
         this.lights.dispose();
         this.leafTexture.dispose();
-        this.scene.remove(this.group);
     }
 }
 

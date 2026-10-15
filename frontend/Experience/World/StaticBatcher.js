@@ -199,7 +199,7 @@ export function canMerge(mesh) {
 }
 
 /** The attributes a batch for this material needs, in a fixed order. */
-function attributesFor(material, geometry) {
+export function attributesFor(material, geometry) {
     const names = ["position", "normal", "uv"];
     if (geometry.attributes.uv1) names.push("uv1");
     if (material.vertexColors && geometry.attributes.color) names.push("color");
@@ -237,7 +237,7 @@ function extractMesh(mesh) {
  * floats (quantised glTF attributes included), and its triangles turned
  * back the right way round if the mesh was mirrored.
  */
-function extract(geometry, start, count, matrix, names) {
+export function extract(geometry, start, count, matrix, names) {
     const source = geometry.attributes;
     const index = geometry.index;
     const total = index ? index.count : source.position.count;

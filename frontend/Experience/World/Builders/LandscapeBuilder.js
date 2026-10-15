@@ -248,10 +248,14 @@ function terrainMaterial(materials) {
     const ids = { lawn: "terrain_lawn", meadow: "terrain_meadow", gravel: "terrain_gravel", forest: "terrain_forest", hillside: "terrain_hillside" };
     const maps = Object.fromEntries(Object.entries(ids).map(([key, id]) => [key, textures.get(id)]));
     const tile = Object.fromEntries(Object.entries(ids).map(([key, id]) => [key, materials.tileSize(id)]));
-    const normal = textures.getData("terrain_meadow", "normal")?.clone() ?? null;
+    const relief = textures.getData("terrain_meadow", "normal");
+    const normal = relief?.clone() ?? null;
     if (normal) {
         normal.repeat.setScalar(1 / tile.meadow);
-        normal.needsUpdate = true;
+        // For the GPU once its picture — its source's, which may still be
+        // on its way — is in (TextureLibrary.whenLoaded), not before.
+        normal.version = 0;
+        textures.whenLoaded(relief).then(() => (normal.needsUpdate = true));
     }
     const material = new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 0.96, metalness: 0, normalMap: normal });
     material.name = "terrain";

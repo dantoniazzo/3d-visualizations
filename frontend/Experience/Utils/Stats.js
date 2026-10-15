@@ -57,6 +57,17 @@ export default class Stats {
         this.windowStart = performance.now();
         this.lastFrame = this.windowStart;
         this.worstFrame = 0;
+        this.pauses = 0;
+    }
+
+    /**
+     * The frame about to be drawn comes after a pause of the editor's own —
+     * it draws only when something has changed (Pace.js): the wait is not a
+     * slow frame, and the count of frames a second is of those drawn.
+     */
+    paused() {
+        this.lastFrame = performance.now();
+        this.pauses++;
     }
 
     /** Call before the frame is rendered. */
@@ -81,7 +92,7 @@ export default class Stats {
         const { render, memory } = this.renderer.info;
         const px = this.renderer.getPixelRatio();
         const lines = [
-            `${((this.frames * 1000) / elapsed).toFixed(0).padStart(3)} fps  ${(elapsed / this.frames).toFixed(1)} ms  worst ${this.worstFrame.toFixed(0)} ms`,
+            `${((this.frames * 1000) / elapsed).toFixed(0).padStart(3)} fps  ${(elapsed / this.frames).toFixed(1)} ms  worst ${this.worstFrame.toFixed(0)} ms${this.pauses ? "  (drawn on demand)" : ""}`,
             `render ${(this.renderTime / this.frames).toFixed(1)} ms cpu`,
             `calls  ${render.calls}`,
             `tris   ${(render.triangles / 1000).toFixed(0)}k`,
@@ -96,6 +107,7 @@ export default class Stats {
         this.frames = 0;
         this.renderTime = 0;
         this.worstFrame = 0;
+        this.pauses = 0;
         this.windowStart = now;
     }
 

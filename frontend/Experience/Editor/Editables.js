@@ -8,6 +8,8 @@ import StructureBuilder from "../World/Builders/StructureBuilder.js";
 import { creditLine } from "../World/Vehicle/CarModels.js";
 import { DOOR_TYPES, DOOR_SWINGS } from "../../../shared/catalog.js";
 import { DRINKS, POSES, seatsOf } from "../../../shared/people.js";
+import { seeReal } from "../Utils/layers.js";
+import rays from "../Utils/rays.js";
 
 /**
  * Everything the editor can select, behind one interface.
@@ -1155,7 +1157,7 @@ const SEAT_KEEP = 0.6;
 /** Dragged, a person sitting or lying takes a free seat this near the pointer, in plan, or none. */
 const SEAT_REACH = 1.5;
 
-const _seatRay = new THREE.Raycaster();
+const _seatRay = seeReal(new THREE.Raycaster());
 
 /**
  * One of the people round the property (World/People.js): its entry in
@@ -1509,7 +1511,7 @@ export function seatPointOf(placement, seat, pose, seats) {
 /** A ray's first hit on a shown piece of furniture with seats (Editor.seatingUnder). */
 export function seatingHit(ray, furnitureGroup, accept) {
     _seatRay.ray.copy(ray);
-    for (const hit of _seatRay.intersectObject(furnitureGroup, true)) {
+    for (const hit of rays.cast(_seatRay, [furnitureGroup])) {
         if (accept(hit)) return hit;
     }
     return null;

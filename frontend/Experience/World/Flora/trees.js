@@ -271,7 +271,8 @@ export class Trees {
             const counts = [0, 0, 0];
             const targets = [kind.whole, kind.light, [kind.impostor.mesh]];
             kind.list.forEach((tree, i) => {
-                if (tree.hidden) return;
+                // Hidden by the visitor, or above the floor a view from above shows (Flora.showUpTo).
+                if (tree.hidden || tree.above) return;
                 const d = Math.hypot(tree.x - at.x, tree.z - at.z);
                 const way = d < near ? 0 : d < far ? 1 : 2;
                 _position.set(tree.x, tree.y, tree.z);

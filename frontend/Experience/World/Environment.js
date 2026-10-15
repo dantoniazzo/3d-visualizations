@@ -21,7 +21,7 @@ const FADE = 55;
  * by its night lightmap; this is only the sky and the moonlight on what
  * moves — people, doors, the car.
  */
-const NIGHT = {
+export const NIGHT = {
     background: "#0d1018",
     hemi: { sky: "#2b3552", ground: "#0b0b0e", intensity: 0.45 },
     sun: { color: "#b8c8ff", intensity: 0.3, position: [-9, 16, -6] },
@@ -32,7 +32,7 @@ const NIGHT = {
 };
 
 /** The night sky's light on everything, lit live (setLiveVariant): faint, as it falls into the rooms too. */
-const LIVE_NIGHT_SKY = 0.12;
+export const LIVE_NIGHT_SKY = 0.12;
 
 /**
  * Ambient lighting, sky and fog, driven entirely by the scene spec's
@@ -227,12 +227,16 @@ export default class Environment {
 
     /**
      * The house's light is baked into it — its shadows too, so it casts
-     * none live; live lights are left only for what moves. The garden's
-     * trees and grass still shade themselves and each other, as live
-     * (World/Vegetation), in the sun's shadow map — but not on a phone,
-     * where no shadow map is drawn at all. Its exposure is the bake's —
-     * Blender's, in stops: at 0 the light is drawn as Blender shows it —
-     * not a preset's.
+     * none live; live lights are left only for what moves. As a computer
+     * is given it (`shade`), the sun's shadow map is of what moves alone —
+     * the doors, the people, the car — and the garden's shade is the
+     * bake's too; from a bake without the sun's share of the light kept
+     * apart, the garden's trees and grass still shade themselves and each
+     * other in it, as live (World/Vegetation). Fully baked (`still`: a
+     * phone, the slider's two lowest steps, a version published so), no
+     * shadow map is drawn at all. Its exposure is the bake's — Blender's,
+     * in stops: at 0 the light is drawn as Blender shows it — not a
+     * preset's.
      *
      * Lit live (`live`), the sun is the bake's own sun, drawn with the
      * house's shadows (fitShadows) at full strength (setVariant): what the
@@ -320,7 +324,8 @@ export default class Environment {
         // The sky's light on what is drawn live is the sky's (Sky.applyIndoor).
         if (sky) return;
 
-        const reflections = preset.reflections ?? 1;
+        // Under the editor's plain light (World/PlainLight.js), the day's whatever the time of day.
+        const reflections = world?.plain ? 1 : preset.reflections ?? 1;
         this.scene.traverse((node) => {
             if (!node.isMesh) return;
             for (const material of Array.isArray(node.material) ? node.material : [node.material]) {

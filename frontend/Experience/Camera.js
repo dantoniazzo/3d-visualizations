@@ -3,6 +3,8 @@ import { EventEmitter } from "events";
 
 import Experience from "./Experience.js";
 import { OrbitControls } from "./Utils/CustomOrbitControls.js";
+import { seeReal } from "./Utils/layers.js";
+import rays from "./Utils/rays.js";
 
 /**
  * Two input schemes, picked from the device:
@@ -182,7 +184,7 @@ export default class Camera extends EventEmitter {
 
         // Geometry the third-person camera must not pass through.
         this.collisionObjects = [];
-        this.cameraRay = new THREE.Raycaster();
+        this.cameraRay = seeReal(new THREE.Raycaster());
 
         this.onCanvasClick = () => this.requestLock();
         this.onMouseMove = (event) => {
@@ -479,10 +481,11 @@ export default class Camera extends EventEmitter {
      * third-person view and staring at the back of the plasterboard.
      */
     resolveDistance(direction, desired, origin = this.target) {
-        this.cameraRay ??= new THREE.Raycaster();
+        this.cameraRay ??= seeReal(new THREE.Raycaster());
         if (this.collisionTree) {
             this.cameraRay.set(origin, direction);
-            const hit = this.collisionTree.rayIntersect(this.cameraRay.ray);
+            // (No further than the boom is long: a hit past it changes nothing.)
+            const hit = this.collisionTree.rayIntersect(this.cameraRay.ray, { far: desired });
             if (!hit || hit.distance >= desired) return desired;
             return Math.max(0.12, hit.distance - 0.16);
         }
@@ -491,7 +494,7 @@ export default class Camera extends EventEmitter {
         this.cameraRay.set(origin, direction);
         this.cameraRay.far = desired;
 
-        const hits = this.cameraRay.intersectObjects(this.collisionObjects, true);
+        const hits = rays.cast(this.cameraRay, this.collisionObjects);
         if (hits.length === 0) return desired;
 
         // Keep a small gap so the near plane doesn't clip into the surface.

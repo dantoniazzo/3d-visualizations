@@ -14,9 +14,9 @@ import { LAMP_SHADOW_SIZE, LIVE_LAMPS } from "../Utils/device.js";
  * the visitor goes from room to room or turns switches on and off, so the
  * scene always has as many lights and shaders never have to be built
  * again. They go to the switches that are on whose light reaches the room
- * the visitor is in — or, from above, the floor that is shown — nearest
- * first, a switch at a time: all of its lamps or none. A switch that gets
- * none is drawn from the bake, all of its light, as a phone draws it.
+ * the visitor is in, nearest first, a switch at a time: all of its lamps
+ * or none. A switch that gets none is drawn from the bake, all of its
+ * light, as a view drawn from the bake draws it.
  *
  * Each is as the bake lit it (the switch's `lights`): where it hangs, its
  * colour, and its power in watts, over 4π as a PointLight takes it.
@@ -24,8 +24,12 @@ import { LAMP_SHADOW_SIZE, LIVE_LAMPS } from "../Utils/device.js";
  * A lamp's shadow is drawn again only when it moves to another lamp, or
  * when something near it moves — a door, a person, the car: six renders of
  * everything round it, not every frame. So is the sun's, of the whole house:
- * when something moves, and otherwise a few times a second, for the trees
- * swaying in the wind.
+ * when something moves or the view has moved on, and otherwise a few times
+ * a second, for the trees swaying in the wind. (Moves: by more than a
+ * visitor settles where they stand, which drew it every frame.)
+ *
+ * From above (the bird's-eye view) none of it is live: the lamps are out
+ * and no shadow is drawn again until the view is left (hold).
  */
 
 /** How far a lamp's shadow reaches, in metres: past this, nothing is drawn into it. */
@@ -36,6 +40,15 @@ const MOTION_REACH = 12;
 const REASSIGN = 0.5;
 /** How often, in seconds, the sun's shadow is drawn again when nothing has moved. */
 const SUN_REDRAW = 0.1;
+/** Less movement than this, in metres (or, turned, in a matrix's units), is none: a visitor standing still settles by less. */
+const STILL = { move: 0.01, turn: 0.002 };
+/**
+ * The sun's shadow is drawn again once the view has moved this far, in
+ * metres, whatever else has: a site's own trees (World/Flora) are in it —
+ * the bake has none of their shade — whole near the view and lighter
+ * further off, so what casts changes as the visitor walks.
+ */
+const SUN_MOVE = 1;
 
 const _position = new THREE.Vector3();
 const _here = new THREE.Vector3();
@@ -51,8 +64,8 @@ export default class LiveLamps {
      * @param {World} world  drawing a public view lit live, with its switches
      * @param {object} [options]
      * @param {number} [options.lamps]  how many lamps to light live: none,
-     *        drawn from the bake on a phone, where this only draws the sun's
-     *        shadow of what moves again as it moves
+     *        drawn from the bake as a computer is given it, where this only
+     *        draws the sun's shadow of what moves again as it moves
      * @param {boolean} [options.sway]  whether the sun's shadow has trees in
      *        it, swaying, to draw again now and then as well
      */
@@ -68,6 +81,8 @@ export default class LiveLamps {
         this.sun.shadow.needsUpdate = true;
         this.sunTimer = 0;
         this.sunRedraw = sway ? SUN_REDRAW : Infinity;
+        /** Where the view was when the sun's shadow was last drawn. */
+        this.sunFrom = new THREE.Vector3(Infinity, 0, 0);
 
         this.pool = Array.from({ length: lamps }, (_, k) => {
             const light = new THREE.PointLight(0xffffff, 0, 0, 2);
@@ -87,12 +102,36 @@ export default class LiveLamps {
         this.key = null;
         this.timer = 0;
         this.tracked = null;
+        this.held = false;
+    }
+
+    /**
+     * From above (World.lightFromAbove), nothing live: every lamp out — its
+     * switch's light all from the bake again (SceneBuilder.setLiveSwitches)
+     * — and no shadow drawn again, the sun's or a lamp's, whatever moves.
+     * Let go, the lamps are handed round again at once and the sun's shadow
+     * drawn again, as the walkthrough has them.
+     */
+    hold(held) {
+        this.held = Boolean(held);
+        if (this.held) {
+            for (const slot of this.pool) {
+                slot.fitting = null;
+                slot.light.intensity = 0;
+            }
+            if (this.pool.length) this.builder.setLiveSwitches(this.entries.map(() => false));
+        } else {
+            this.key = null;
+            this.timer = 0;
+            this.sunTimer = 0;
+        }
     }
 
     update(delta) {
+        if (this.held) return;
         this.timer -= delta;
         const where = this.where();
-        const key = `${where.zone ?? ""}|${where.level ?? ""}|${this.builder.switchWeights.join("")}`;
+        const key = `${where.zone ?? ""}|${this.builder.switchWeights.join("")}`;
         if (key !== this.key || this.timer <= 0) {
             this.key = key;
             this.timer = REASSIGN;
@@ -101,39 +140,31 @@ export default class LiveLamps {
         const moved = this.moved();
         this.redrawShadows(moved);
         this.sunTimer -= delta;
-        if (moved.length || this.sunTimer <= 0) {
+        const eye = this.experience.camera.activeCamera.position;
+        if (moved.length || this.sunTimer <= 0 || !(eye.distanceToSquared(this.sunFrom) < SUN_MOVE * SUN_MOVE)) {
             this.sun.shadow.needsUpdate = true;
             this.sunTimer = this.sunRedraw;
+            this.sunFrom.copy(eye);
         }
     }
 
-    /**
-     * Where the visitor is: the room they stand in (or drive through), or
-     * — looking down on a floor from above — that floor, and the point
-     * looked at.
-     */
+    /** Where the visitor is: the room they stand in (or drive through). */
     where() {
-        const bird = this.world.birdView;
-        if (bird?.active) return { zone: null, level: bird.level, point: _here.copy(bird.target) };
         const player = this.world.player;
         if (player?.inVehicle && player.currentCar) _here.copy(player.currentCar.group.position);
         else if (player?.player?.collider) _here.copy(player.player.collider.start);
         const room = this.builder.roomAt(_here.x, _here.y, _here.z);
-        return { zone: room?.id ?? null, level: null, point: _here };
+        return { zone: room?.id ?? null, point: _here };
     }
 
     /** Hand the lights to the lamps that are on nearest the visitor. */
-    assign({ zone, level, point }) {
+    assign({ zone, point }) {
         const weights = this.builder.switchWeights;
         const candidates = [];
         this.entries.forEach((entry, index) => {
             if (!(weights[index] > 0) || !entry.lights?.length || !entry.indirect) return;
-            if (level !== null) {
-                if (this.switches?.list[index]?.level !== level) return;
-            } else if (!zone || !entry.layers?.[zone] || !this.switches) {
-                // Its light does not reach the room the visitor is in.
-                return;
-            }
+            // Its light does not reach the room the visitor is in.
+            if (!zone || !entry.layers?.[zone] || !this.switches) return;
             const distance = Math.min(...entry.lights.map((fitting) => point.distanceTo(_position.set(...fitting.position))));
             candidates.push({ index, entry, distance });
         });
@@ -185,7 +216,11 @@ export default class LiveLamps {
             object.updateWorldMatrix(true, false);
             const now = object.matrixWorld.elements;
             const visible = shown(object);
-            if (entry.last && entry.visible === visible && entry.last.every((value, i) => value === now[i])) continue;
+            // Something hidden casts nothing wherever it goes; shown or
+            // hidden, it counts. And a visitor standing still settles where
+            // they stand, a hair every frame — which drew the sun's shadow
+            // again every frame, with nothing moving.
+            if (entry.last && entry.visible === visible && (!visible || still(entry.last, now))) continue;
             entry.last = now.slice();
             entry.visible = visible;
             moved.push(object.getWorldPosition(new THREE.Vector3()));
@@ -228,4 +263,17 @@ export default class LiveLamps {
             light.dispose();
         }
     }
+}
+
+/**
+ * Whether a matrix is as it was, give or take a visitor settling where
+ * they stand (STILL) — what they drift by adds up, since `last` is kept
+ * until it is passed.
+ */
+function still(last, now) {
+    for (let i = 0; i < 16; i++) {
+        const limit = i >= 12 && i <= 14 ? STILL.move : STILL.turn;
+        if (Math.abs(last[i] - now[i]) > limit) return false;
+    }
+    return true;
 }

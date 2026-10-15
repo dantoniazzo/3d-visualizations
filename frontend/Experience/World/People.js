@@ -119,7 +119,10 @@ import { seatsOf } from "../../../shared/people.js";
  *     (as many as the spec has).
  *   - `show(on)` — all of them, and their boxes (the "people" scenery);
  *     `setFilter(fn)` — only those `fn(entry)` is true for (the editor's
- *     collections), or everyone with `null`.
+ *     collections), or everyone with `null`; `setUnseen(fn)` — those
+ *     `fn(entry)` is true for not drawn, but still there to walk round
+ *     (the editor's view scope, which changes nothing of what is walked
+ *     into), or none with `null`.
  * Each person's group is `person:<id>`, its userData
  * `{ kind: "person", id, label }`, all of them under `root` ("people", in
  * the scene). Emits "ready" when a rebuild is done and "change" (with the
@@ -357,6 +360,7 @@ export default class People extends EventEmitter {
         /** The drinks drawn here: their geometries and materials, by kind and colour. */
         this.drawn = new Map();
         this.filter = null;
+        this.unseen = null;
         this.generation = 0;
         this.frame = 0;
         this.built = false;
@@ -530,6 +534,13 @@ export default class People extends EventEmitter {
     /** Only those `fn(entry)` is true for, or everyone (`null`). */
     setFilter(fn) {
         this.filter = fn;
+        this.refreshVisibility();
+    }
+
+    /** Those `fn(entry)` is true for left undrawn, where they stand — still walked round — or none (`null`). */
+    setUnseen(fn) {
+        if (!fn && !this.unseen) return;
+        this.unseen = fn;
         this.refreshVisibility();
     }
 
@@ -1334,13 +1345,15 @@ export default class People extends EventEmitter {
      * Who is drawn: in a walkthrough, within the step's most — the first of
      * the spec's list, whole groups at a time — and in the editor's edit
      * mode, where they are placed, all of them; and of those, whoever the
-     * filter lets through.
+     * filter lets through. Those are there (`solid`: walked round); of them,
+     * whoever is left unseen (setUnseen) is not drawn.
      */
     refreshVisibility() {
         const rates = QUALITY.people ?? DEFAULT_RATES;
         const allowed = chosen(this.spec?.people ?? [], this.world.editor?.active ? Infinity : rates.most);
         for (const person of this.people.values()) {
-            person.group.visible = allowed.has(person.id) && (!this.filter || Boolean(this.filter(person.entry)));
+            person.solid = allowed.has(person.id) && (!this.filter || Boolean(this.filter(person.entry)));
+            person.group.visible = person.solid && !(this.unseen && this.unseen(person.entry));
         }
         this.collisionDirty = true;
         this.shadowsDirty = true;
@@ -1350,7 +1363,7 @@ export default class People extends EventEmitter {
      * Each frame (World.update): each one in view and near enough animated,
      * as often as the step says. (`update` is the editor's: a person changed.)
      */
-    tick(delta) {
+    tick(delta, hold = false) {
         if (this.collisionDirty) this.buildCollision();
         if (!this.people.size) return;
         if (this.relight) this.lightUp();
@@ -1358,6 +1371,9 @@ export default class People extends EventEmitter {
             this.shadowsDirty = false;
             this.world.lampPool?.redrawAll();
         }
+        // A frame drawn only to see whether anything has changed (the editor at rest, Pace.js): nobody moves in it —
+        // not even by the time each has waited since their last turn.
+        if (hold) return;
         const rates = QUALITY.people ?? DEFAULT_RATES;
         const camera = this.experience.camera.activeCamera;
         _matrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
@@ -1399,7 +1415,8 @@ export default class People extends EventEmitter {
         const proxies = new THREE.Group();
         if (this.root.visible) {
             for (const person of this.people.values()) {
-                if (!person.group.visible) continue;
+                // There, drawn or not (refreshVisibility); one just built is, until it is asked.
+                if (!(person.solid ?? person.group.visible)) continue;
                 const box = person.collisionBox;
                 const proxy = new THREE.Mesh(UNIT_BOX, PROXY_MATERIAL);
                 box.getCenter(proxy.position);

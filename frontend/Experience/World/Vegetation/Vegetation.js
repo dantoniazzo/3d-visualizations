@@ -44,6 +44,11 @@ import { applySettings, barkMaterial, bladeMaterial, canopyMaterial, lawnMateria
  *     shade — or at night, its light — from the lightmap of the ground it
  *     grows from, and the trees the sun or the moon the bake was lit by
  *     (setLight).
+ *
+ * The editor, whose view may leave the surroundings out (World/Scope.js),
+ * can have it grown later (`planted: false`, then `plant`): until then only
+ * where its trees stand is planned, and their trunks walked into. Hidden
+ * (setShown), nothing of it is drawn or brought up to date.
  */
 
 /** Fluffy Tree's tree, stood at the origin. */
@@ -76,8 +81,10 @@ const _camera = new THREE.Vector3();
 export default class Vegetation {
     /**
      * @param {World} world  its scene builder and environment made
+     * @param {object} [options]
+     * @param {boolean} [options.planted]  grown at once (the default), or when `plant` is first called
      */
-    constructor(world) {
+    constructor(world, { planted = true } = {}) {
         this.experience = new Experience();
         this.scene = this.experience.scene;
         this.world = world;
@@ -85,23 +92,49 @@ export default class Vegetation {
 
         this.group = new THREE.Group();
         this.group.name = "vegetation";
-        // Drawn from the bake on a phone, the trees' and bushes' shade is
-        // baked, and the sun's shadow map is what moves alone.
+        // Drawn from the bake as a computer is given it (Utils/device.js's
+        // movingShadowsOnly), the trees' and bushes' shade is baked, and
+        // the sun's shadow map is what moves alone.
         this.castsShadows = !movingShadowsOnly(this.experience.published?.lighting);
         this.scene.add(this.group);
-
-        // The bushes' leaves: their shape, as Fluffy Tree's tree's are (an
-        // alpha map of the same texture, read as its own is).
-        this.leafTexture = new THREE.TextureLoader().load("/textures/vegetation/leaves.png");
-        this.leafTexture.colorSpace = THREE.SRGBColorSpace;
-        this.leafTexture.anisotropy = 4;
 
         this.settings = gardenSettings(this.spec);
         /** What a visitor has not hidden (show). */
         this.shown = { trees: true, hills: true, grass: true };
         applySettings(this.settings);
+        this.planted = false;
+        this.variant = "day";
+        if (planted) {
+            this.plant();
+        } else {
+            // Where the trees stand, and their trunks to walk into: these
+            // whether or not anything of the garden is drawn.
+            this.plan();
+            this.buildTrunks();
+        }
+    }
+
+    /** The garden grown — once, the first time it is to be drawn. */
+    plant() {
+        if (this.planted) return;
+        this.planted = true;
+        // The bushes' leaves: their shape, as Fluffy Tree's tree's are (an
+        // alpha map of the same texture, read as its own is).
+        this.leafTexture = new THREE.TextureLoader().load("/textures/vegetation/leaves.png");
+        this.leafTexture.colorSpace = THREE.SRGBColorSpace;
+        this.leafTexture.anisotropy = 4;
         this.grow();
-        this.setLight("day");
+        this.setLight(this.variant);
+    }
+
+    /**
+     * Drawn, or not (World/Scope.js): hidden, nothing of it is brought up
+     * to date either (update); shown again, its trees are shared out afresh
+     * for wherever the camera now is.
+     */
+    setShown(shown) {
+        if (shown && !this.group.visible) this.lodAt = null;
+        this.group.visible = shown;
     }
 
     /**
@@ -116,6 +149,8 @@ export default class Vegetation {
         const before = JSON.stringify(this.shown);
         Object.assign(this.shown, shown);
         if (JSON.stringify(this.shown) === before) return;
+        // Not grown yet: only which trunks are walked into.
+        if (!this.planted) return this.buildTrunks();
         this.showTrees();
         if (this.bushLeaves) this.bushLeaves.visible = this.shown.trees;
         this.buildTrunks();
@@ -142,6 +177,14 @@ export default class Vegetation {
     settingsChanged(settled = true) {
         this.settings = gardenSettings(this.spec);
         applySettings(this.settings);
+        if (!this.planted) {
+            // Not grown yet: only where its trees now stand, to walk into.
+            if (settled) {
+                this.plan();
+                this.buildTrunks();
+            }
+            return;
+        }
         if (settled) this.grow();
         else this.fit();
     }
@@ -483,7 +526,9 @@ export default class Vegetation {
     setLight(variant) {
         const preset = this.world.environment?.preset;
         if (!preset) return;
-        const night = variant === "night";
+        this.variant = variant;
+        // Under the editor's plain light (World/PlainLight.js), the day's at night too.
+        const night = variant === "night" && !this.world.plain;
         const sun = night ? NIGHT.sun : preset.sun;
         uniforms.uSunDirection.value.set(...sun.position).normalize();
         const day = openLight(preset.sun, [preset.hemi.sky, preset.background], 1);
@@ -670,6 +715,8 @@ export default class Vegetation {
 
     /** The wind; and each square of grass drawn with as much of it as its distance calls for. */
     update(delta) {
+        // Not grown yet, or left out of the view (setShown): no wind, nothing shared out.
+        if (!this.planted || !this.group.visible) return;
         uniforms.uTime.value += delta;
         // The camera the view is drawn from: edit mode's, or the visitor's.
         this.experience.camera.activeCamera.getWorldPosition(_camera);
@@ -742,7 +789,7 @@ export default class Vegetation {
         this.tuftDepth?.dispose();
         this.tuftBaked?.dispose();
         this.tuftTexture?.dispose();
-        this.leafTexture.dispose();
+        this.leafTexture?.dispose();
     }
 }
 

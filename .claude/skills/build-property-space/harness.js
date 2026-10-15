@@ -2,6 +2,36 @@
 // window.__K. Renders camera views to JPEGs through the frame sink
 // (sink.py on 127.0.0.1:3199). The app must be a test server's — saves are
 // stubbed so nothing writes the scene file.
+//
+// An editor tab (`/?scene=<id>`) opens under the editor's plain light with
+// the houses alone drawn (World/PlainLight.js, World/Scope.js): no sun, no
+// shadows, no lamps, no post-processing, and no garden, cars, far ground
+// or sky. A frame that judges light, or shows any of those, needs
+// `await __K.realistic()` first — __K.render does it itself — or the link's
+// `?preview=1`; `__K.scope("all")` shows the surroundings under the plain
+// light. shot() and time() draw and time the tab as it is lit now: say
+// which. A public view (`/view/<id>`) is always lit as it is.
+//
+// An editor tab draws a frame only when something has changed (app-notes.md,
+// When the editor draws): shot(), time() and render() draw by hand and are
+// not touched by it; whatever waits on the app's own frames needs
+// `experience.pace.set("always")` first.
+//
+// Under the plain light the editor draws the house and the furniture by
+// stand-ins (World/StandIns.js: merged and instanced copies under the
+// scene's "stand-ins" group): shot() and time() draw those, and time()'s
+// draw calls are theirs. The real meshes stay in the scene, `visible`, on
+// layer 12, which no camera draws. So a tool of yours that walks the scene
+// passes over `userData.standIn`; a Raycaster of yours needs
+// `layers.enable(12)`; and after hiding or re-dressing a mesh by hand inside
+// a wall or a piece, `experience.world.standIns.hear()` before the next
+// shot — it is otherwise in the picture for up to 16 frames more
+// (app-notes.md, The editor's plain light and view scope).
+//
+// The stub answers every non-GET itself (`{}`, 200) but those to the sink
+// and a publish's: a tool of yours that POSTs anywhere else — a results
+// server on another port — must take `window.fetch` before this is loaded,
+// or post through the sink.
 (async () => {
     for (let i = 0; i < 160; i++) {
         const w = window.experience?.world;
@@ -18,6 +48,26 @@
     const e = window.experience, w = e.world, r = e.renderer.renderer, cam = e.camera.activeCamera;
     const K = (window.__K = {
         e, w, r, cam,
+        /**
+         * An editor tab's walkthrough lit as a visitor will see it — the realistic preview (World.setPreview): the sun and its
+         * shadows, the lamps, the lit rooms, the post-processing, and with it everything shown — for this page only (nothing
+         * kept in the browser), once what it first makes is there: the post-processing's chunk, the garden's trees. `false`:
+         * back to the plain light. Edit mode is always plain; a public view is always as it is. Returns what is drawn now.
+         */
+        async realistic(on = true) {
+            if (!e.publicView && w.setPreview) {
+                await w.setPreview(on, { remember: false });
+                const R = e.renderer;
+                if (on && !w.plain && R.postWanted && R.quality?.post && !R.post) await R.usePost(true, R.postWanted);
+                if (on) await Promise.race([Promise.resolve(w.vegetation?.treeSet?.ready).catch(() => {}), new Promise((res) => setTimeout(res, 20000))]);
+            }
+            return { plain: Boolean(w.plain), scope: w.scope?.current ?? "all", post: Boolean(e.renderer.post), garden: w.vegetation?.planted ?? null };
+        },
+        /** An editor tab's scope under the plain light — "house" (as it opens), "exterior" or "all" (World/Scope.js) — for this page only. */
+        scope(value = "all") {
+            w.scope?.set(value, { remember: false });
+            return w.scope?.current ?? "all";
+        },
         /** Put the camera at p looking at t, with a vertical fov. */
         pose(p, t, fov = 40) { cam.position.set(...p); cam.lookAt(...t); cam.fov = fov; cam.updateProjectionMatrix(); cam.updateMatrixWorld(); },
         /** The frame as drawn now, scaled to `width`, labelled. */
@@ -48,6 +98,8 @@
         /** Views by name: [position, target, fov]. Add the references' camera positions here. */
         views: {},
         async render(name, keys, { night = false, width = 800, cols = 2 } = {}) {
+            // Reference frames are judged for their light: in an editor tab, the realistic preview first.
+            await K.realistic();
             if (night) await w.setLighting?.("night");
             const shots = [];
             for (const k of keys) { const [p, t, f] = K.views[k]; K.pose(p, t, f); shots.push(K.shot(k + (night ? " (night)" : ""), width)); }

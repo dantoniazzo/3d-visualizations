@@ -21,6 +21,10 @@ import { buildOctree, collectTriangles, isTransient } from "../World/Collision.j
  * standing on a floor or pushed flush against a wall — the positions
  * snapping produces — count as fitting rather than as touching.
  *
+ * The pieces the view's scope leaves out (World/Scope.js, Editor.outOfScope)
+ * are not tested against — a car that is not drawn stops nothing — but the
+ * building always is, whatever of it is drawn.
+ *
  * `against` narrows what a hull is tested with: "all" (default), "noslab"
  * (skip floors and ceilings — the clear column above a floor opening), or
  * "static" (the building only — a stair's headroom). `slabsBelow` keeps
@@ -248,7 +252,8 @@ export default class FitChecker {
     hitEditables(hull, exclude, ignore) {
         for (const editable of this.editor.editables.values()) {
             if (exclude.has(editable) || ignore.has(editable.key)) continue;
-            if (!editable.isObstacle()) continue;
+            // (Nor a piece the view's scope leaves out: nothing seen to be in the way.)
+            if (!editable.isObstacle() || this.editor.outOfScope.has(editable)) continue;
             if (!editable.worldBox().intersectsBox(hull.box)) continue;
 
             let hit = false;

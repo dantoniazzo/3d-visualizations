@@ -1,12 +1,24 @@
 import * as THREE from "three";
 
 import Experience from "../Experience.js";
-import { floorName } from "./Switches.js";
+import { planStoreys, storeyName } from "../../../shared/storeys.js";
 
 /**
  * The bird's-eye view of a public view: one floor at a time, seen from
  * above with everything over it taken away — the floors above, the floor's
  * own ceilings and the roof — like the top of a doll's house lifted off.
+ *
+ * A floor is a storey as a visitor counts them (shared/storeys.js): every
+ * building's ground floor together, with the terraces and the street round
+ * them, then their first floors, then their roof terraces — whatever
+ * heights the buildings stand at, and however many floor levels the
+ * version's meshes are levelled by.
+ *
+ * It is always drawn from the bake, with nothing live (World.lightFromAbove):
+ * no live sun or lamps on the house, no shadow map drawn again while it is
+ * open — whatever the walkthrough it is opened from is lit by, which comes
+ * back as the view is left. A version that was not baked has no bake to
+ * draw from: it is drawn flat, its sun unshadowed and none of its lamps lit.
  *
  * The camera turns round a point on the floor: drag to turn it and tilt
  * it, scroll or pinch to go nearer or further. It follows the visitor, who
@@ -42,19 +54,6 @@ const REACH = 1.5;
 /** How far a press may move, in pixels, and still be a click rather than a drag. */
 const CLICK_SLOP = 6;
 
-/**
- * A material that draws nothing — no colour, no depth — for a mesh kept
- * only for its shadow (BirdView.showLit): single-sided as the mesh was, so
- * its shadow is cast by the same faces.
- */
-const shadowOnlyMaterials = new Map();
-function shadowOnly(side) {
-    if (!shadowOnlyMaterials.has(side)) {
-        shadowOnlyMaterials.set(side, new THREE.MeshBasicMaterial({ name: "shadow-only", colorWrite: false, depthWrite: false, side }));
-    }
-    return shadowOnlyMaterials.get(side);
-}
-
 const _offset = new THREE.Vector3();
 const _ndc = new THREE.Vector2();
 const _raycaster = new THREE.Raycaster();
@@ -77,9 +76,12 @@ export default class BirdView {
         this.limits = { ...DEFAULT_LIMITS, ...(limits || {}) };
 
         const options = this.builder.staticOptions();
+        /** The floor levels' heights, lowest first: what each mesh's `level` counts in. */
         this.levels = levels?.length ? levels : options.levels;
         this.options = options;
-        this.floors = this.levels.map((elevation, level) => ({ level, elevation, box: this.floorBox(elevation) }));
+        /** The storeys those levels make up — the floors shown, and listed. */
+        this.storeys = planStoreys(this.builder.spec.rooms, this.levels);
+        this.floors = this.storeys.list.map((storey) => this.floorOf(storey));
 
         this.active = false;
         this.level = 0;
@@ -100,53 +102,54 @@ export default class BirdView {
     // Floors
     // ------------------------------------------------------------------
 
-    /** Which floor a height is on: the highest whose level it has reached. */
-    levelAt(y) {
+    /** Which of the floor levels a height is on: the highest it has reached. */
+    reached(y) {
         let level = 0;
         for (let i = 0; i < this.levels.length; i++) if (y >= this.levels[i] - 0.3) level = i;
         return level;
     }
 
-    /** The plan extent of a floor's rooms, indoors and out, a little beyond. */
-    floorBox(elevation) {
-        const box = new THREE.Box3();
-        for (const room of this.builder.spec.rooms) {
-            if (Math.abs(room.elevation - elevation) > 0.3) continue;
-            for (const [x, z] of room.polygon) box.expandByPoint(_offset.set(x, elevation, z));
-        }
-        if (box.isEmpty()) box.set(new THREE.Vector3(-5, elevation, -5), new THREE.Vector3(5, elevation, 5));
-        return box;
-    }
-
-    /** "Ground floor", "First floor", … — or, buildings at different heights, "Level +3.0 m" (Switches.js's floorName). */
-    static floorName(level, levels) {
-        return floorName(level, levels);
-    }
-
-    /** Whether something on `level`, of `kind`, shows in the view of floor `shown`. */
-    static shows(level, kind, shown) {
-        if (level > shown) return false;
-        if (kind === "roof") return false;
-        return !(kind === "ceiling" && level === shown);
+    /** Which floor a height is on: the storey of the level it has reached. */
+    levelAt(y) {
+        return this.storeys.ofLevel[this.reached(y)] ?? 0;
     }
 
     /**
-     * Show or take away one of the house's meshes in a view lit live. What
-     * a floor's view takes away still casts its shadow — the floor above
-     * shades this one, and a room's ceiling and the roof keep the sun off
-     * its floor, as they did when it was baked — drawn with a material that
-     * draws nothing. (The tops of the ceilings, which the bake lit with the
-     * roof off, take the sun unshadowed: SceneBuilder's bakedAmbient.)
+     * A storey as a floor to show: the plan extent of its rooms, indoors
+     * and out, which the view follows the visitor over; the point turned
+     * round when it is picked from the list — the middle of its houses,
+     * not of the street that runs on past them; and its rooms indoors, each
+     * with its area, which the floor is exposed by (Realism.js).
      */
-    static showLit(mesh, visible) {
-        if (visible) {
-            if (mesh.userData.drawnMaterial) mesh.material = mesh.userData.drawnMaterial;
-            mesh.visible = true;
-            return;
+    floorOf(storey) {
+        const box = new THREE.Box3();
+        const houses = new THREE.Box3();
+        const indoors = [];
+        for (const room of storey.rooms) {
+            const indoor = room.ceiling_finish !== "none";
+            for (const [x, z] of room.polygon) {
+                box.expandByPoint(_offset.set(x, storey.elevation, z));
+                // Above the ground, everything stands on a house.
+                if (indoor || storey.index > 0) houses.expandByPoint(_offset);
+            }
+            if (indoor) indoors.push({ room, area: areaOf(room.polygon) });
         }
-        mesh.visible = true;
-        mesh.userData.drawnMaterial ??= mesh.material;
-        mesh.material = shadowOnly(mesh.userData.drawnMaterial.side);
+        if (box.isEmpty()) box.set(new THREE.Vector3(-5, storey.elevation, -5), new THREE.Vector3(5, storey.elevation, 5));
+        if (houses.isEmpty()) houses.copy(box);
+        return { level: storey.index, elevation: storey.elevation, levels: storey.levels, box, middle: houses.getCenter(new THREE.Vector3()), indoors };
+    }
+
+    /** "Ground floor", "First floor", "Roof terrace"… (shared/storeys.js). */
+    floorName(level) {
+        return storeyName(this.storeys, level);
+    }
+
+    /** Whether something on floor level `level` (of `levels`), of `kind`, shows in the view of floor `shown`. */
+    shows(level, kind, shown) {
+        const floor = this.storeys.ofLevel[level] ?? 0;
+        if (floor > shown) return false;
+        if (kind === "roof") return false;
+        return !(kind === "ceiling" && floor === shown);
     }
 
     // ------------------------------------------------------------------
@@ -174,6 +177,8 @@ export default class BirdView {
         this.bind();
         document.body.classList.add("bird-view");
         this.onResize();
+        // Drawn from the bake, nothing live, for as long as it is open.
+        this.world.lightFromAbove(true);
         this.showFloor(this.level);
         this.update(0);
         this.world.emit("bird", { active: true, level: this.level });
@@ -185,6 +190,8 @@ export default class BirdView {
         this.unbind();
         document.body.classList.remove("bird-view");
         this.showFloor(null);
+        // Lit as the walkthrough was, again.
+        this.world.lightFromAbove(false);
 
         const camera = this.rig.perspectiveCamera;
         Object.assign(camera, this.saved);
@@ -222,7 +229,7 @@ export default class BirdView {
      * again; `follow` goes back to theirs.
      */
     setLevel(level, { follow = false } = {}) {
-        level = THREE.MathUtils.clamp(level, 0, this.levels.length - 1);
+        level = THREE.MathUtils.clamp(level, 0, this.floors.length - 1);
         this.follow = follow;
         if (level !== this.level) {
             this.level = level;
@@ -242,22 +249,24 @@ export default class BirdView {
 
     /**
      * Show a floor with everything over it taken away, or with `null`
-     * everything again. The merged meshes say which floor they are on and
-     * whether they are a ceiling or the roof; the few drawn live — glass,
-     * doors, the car — are placed once, the same way.
+     * everything again. The merged meshes say which floor level they are
+     * on and whether they are a ceiling or the roof; the few drawn live —
+     * glass, doors, the car — are placed once, the same way. What is taken
+     * away is not drawn at all — nothing of it is kept for its shadow: the
+     * view is drawn from the bake, and no shadow map is drawn for it
+     * (World.lightFromAbove). The garden goes by the floor it grows on, as
+     * the house does: a roof terrace's planters with the roof.
      */
     showFloor(shown) {
         const all = shown === null || shown === undefined;
-        const live = this.builder.liveLight;
         for (const mesh of this.builder.batches?.children || []) {
-            const visible = all || BirdView.shows(mesh.userData.level ?? 0, mesh.userData.kind ?? null, shown);
-            if (live) BirdView.showLit(mesh, visible);
-            else mesh.visible = visible;
+            mesh.visible = all || this.shows(mesh.userData.level ?? 0, mesh.userData.kind ?? null, shown);
         }
         for (const entry of this.looseMeshes()) {
-            entry.mesh.visible = all ? entry.visible : entry.visible && BirdView.shows(entry.level, entry.kind, shown);
+            entry.mesh.visible = all ? entry.visible : entry.visible && this.shows(entry.level, entry.kind, shown);
         }
         this.showResidents(all ? null : shown);
+        this.world.vegetation?.showUpTo?.(all ? null : (y) => this.levelAt(y) <= shown);
         if (all) this.showPeople(null);
     }
 
@@ -324,19 +333,25 @@ export default class BirdView {
         return _offset.set(collider.start.x, collider.start.y - collider.radius, collider.start.z);
     }
 
-    /** Where to turn round: over the visitor, or the middle of the floor looked at. */
+    /**
+     * Where to turn round: over the visitor — at the height of the floor
+     * level they stand on, which on a floor of several buildings is not
+     * every building's — or the middle of the floor looked at.
+     */
     aim(now = false) {
         const floor = this.floors[this.level];
         if (this.follow) {
             const feet = this.feet();
             const box = floor.box;
+            const level = this.reached(feet.y);
+            const height = this.storeys.ofLevel[level] === this.level ? this.levels[level] : floor.elevation;
             this.goal.set(
                 THREE.MathUtils.clamp(feet.x, box.min.x - REACH, box.max.x + REACH),
-                floor.elevation + TARGET_HEIGHT,
+                height + TARGET_HEIGHT,
                 THREE.MathUtils.clamp(feet.z, box.min.z - REACH, box.max.z + REACH)
             );
         } else {
-            floor.box.getCenter(this.goal);
+            this.goal.copy(floor.middle);
             this.goal.y = floor.elevation + TARGET_HEIGHT;
         }
         if (now) this.target.copy(this.goal);
@@ -496,4 +511,11 @@ export default class BirdView {
     dispose() {
         this.deactivate();
     }
+}
+
+/** The area of a polygon of [x, z] points. */
+function areaOf(polygon) {
+    let area = 0;
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) area += polygon[j][0] * polygon[i][1] - polygon[i][0] * polygon[j][1];
+    return Math.abs(area) / 2;
 }

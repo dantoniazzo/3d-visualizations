@@ -192,6 +192,22 @@ body.mode-edit {
     color: var(--ed-text-dim);
 }
 
+// How much of the site is shown (World/Scope.js): three short words.
+.ed-scope-select {
+    flex: none;
+}
+
+// The header's words stay on one line each, and its left half keeps its
+// width: what gives way in a narrow window is the floor/room menu, below.
+.ed-bar:not(.ed-bar-right) {
+    flex: none;
+}
+
+.ed-modes button,
+.ed-walk {
+    white-space: nowrap;
+}
+
 // In a narrow window the floor/room menu gives way, not the buttons beside it.
 .ed-focus-select {
     flex: 0 1 auto;
@@ -240,6 +256,43 @@ body.mode-edit {
     }
     &[hidden] {
         display: none;
+    }
+}
+
+// A toggle that says what it is: the walkthrough's realistic preview.
+.ed-toggle-text {
+    width: auto;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 0 7px;
+    white-space: nowrap;
+}
+
+// With every word in it the header is full at about 1460 px. In less, the
+// preview's words go first, its icon staying; then, under about 1360 px,
+// "Walk from here"'s, which keeps its icon and says the rest in its tooltip
+// — so that the floor/room menu has the width to say "Whole property" down
+// to about 1260 px, and gives way only below that.
+@media (max-width: 1480px) {
+    .ed-toggle-text {
+        width: 26px;
+        padding: 0;
+        justify-content: center;
+
+        span {
+            display: none;
+        }
+    }
+}
+
+@media (max-width: 1365px) {
+    .ed-walk[data-action="walk-here"] {
+        padding: 0 5px;
+
+        span {
+            display: none;
+        }
     }
 }
 

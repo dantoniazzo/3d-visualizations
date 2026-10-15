@@ -8,6 +8,11 @@
  * (`compress`). `scenery` is what of it the version has at all — and
  * `sceneryKnown`, kept beside it, the pieces there were to choose from
  * when the choice was made (see `publishOptions`).
+ *
+ * A choice marked `retired` is one a version may have been published with
+ * and is still read as, but the panel no longer offers: `lighting`'s
+ * "phones" (fully baked on a phone) is what "auto" gives, now that no
+ * device is given the whole house lit live.
  */
 import { SCENERY, SCENERY_IDS } from "./scenery.js";
 
@@ -49,15 +54,15 @@ export const PUBLISH_OPTIONS = [
         hint: "Off, it is lit live, as the editor's walkthrough is: the sun, the sky and the lights drawn live, and switched live. Draft or Final bakes day and night light in Blender, on this machine, right after publishing, and the view draws from that bake instead.",
         choices: [
             { value: "off", label: "Off", detail: "lit live, as in the editor; lights switch live" },
-            { value: "draft", label: "Draft", detail: "2048², 128 samples, ~3 min" },
-            { value: "final", label: "Final", detail: "4096², 512 samples, ~15 min" },
+            { value: "draft", label: "Draft", detail: "2048², 128 samples, ~7 min for a house" },
+            { value: "final", label: "Final", detail: "4096², 512 samples, ~28 min for a house" },
         ],
         default: "final",
     },
     {
         id: "quality",
         label: "Phone quality",
-        hint: "Pixel ratio and shadows. Auto draws phones and tablets lighter; ?quality= in a link still overrides it.",
+        hint: "Pixel ratio and shadows. Auto draws phones and tablets lighter; ?quality= in a link still overrides it. No device is drawn above the step it is rated for, whichever is asked.",
         choices: [
             { value: "auto", label: "Auto" },
             { value: "low", label: "Always low" },
@@ -68,10 +73,11 @@ export const PUBLISH_OPTIONS = [
     {
         id: "lighting",
         label: "Lighting",
-        hint: "Once baked. Live: the sun and the lamps drawn live, with shadows; on a phone, the bake's light with what moves shading the sun. Fully baked: the bake's light alone, nothing drawn live — the lightest there is. Visitors can still pick another in the menu; ?lighting= in a link overrides both.",
+        hint: "Once baked, every device draws the bake's light. Baked: what moves — people, cars, doors — still shades the sun and is lit by the bake's light probes, and a shut door dims its rooms; phones, and any device at the two lowest quality steps, get it fully baked. Fully baked: the bake's light alone, nothing drawn live — the lightest there is — on every device; its bake then leaves out what only the other reads (the rooms with each door shut, the light probes), so it is a quarter quicker to bake and its house two fifths less to download, and the version cannot be drawn the other way without baking it again. The bird's-eye view is drawn from the bake either way. Visitors can pick Fully baked themselves in the menu, never anything heavier.",
         choices: [
-            { value: "auto", label: "Live", detail: "phones with moving shadows" },
-            { value: "phones", label: "Live", detail: "phones fully baked" },
+            { value: "auto", label: "Baked", detail: "what moves shades the sun; phones fully baked" },
+            // What "auto" now gives: kept for the versions and the browsers that have it, no longer offered.
+            { value: "phones", label: "Baked", detail: "phones fully baked", retired: true },
             { value: "static", label: "Fully baked", detail: "everywhere" },
         ],
         default: "auto",

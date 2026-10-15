@@ -437,6 +437,8 @@ const GENERATORS = {
 export default class TextureLibrary {
     constructor() {
         this.cache = new Map();
+        /** Each data map still on its way, with when it is in (whenLoaded). */
+        this.arriving = new WeakMap();
         /** Where the ground's gradient lies: its centre and its width, in metres (setGradient). */
         this.gradient = { x: 0, z: 0, size: 90 };
     }
@@ -508,7 +510,9 @@ export default class TextureLibrary {
         if (!url) return null;
         const key = `${id}:${which}`;
         if (this.cache.has(key)) return this.cache.get(key);
-        const texture = new THREE.TextureLoader().load(url);
+        let arrived;
+        const texture = new THREE.TextureLoader().load(url, () => arrived());
+        this.arriving.set(texture, new Promise((resolve) => (arrived = resolve)));
         texture.colorSpace = THREE.NoColorSpace;
         texture.wrapS = THREE.RepeatWrapping;
         texture.wrapT = THREE.RepeatWrapping;
@@ -516,6 +520,16 @@ export default class TextureLibrary {
         texture.name = key;
         this.cache.set(key, texture);
         return texture;
+    }
+
+    /**
+     * Once a data map's picture is in (getData) — never, if it does not
+     * load. For a copy of one made meanwhile: it shares the picture, but
+     * three marks a copy for the GPU as it is made, and warns at every
+     * frame that draws it of a texture to update that has no picture yet.
+     */
+    whenLoaded(texture) {
+        return this.arriving.get(texture) ?? Promise.resolve();
     }
 
     /**

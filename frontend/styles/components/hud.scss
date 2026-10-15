@@ -585,6 +585,67 @@ kbd {
     }
 }
 
+// A baked view's one room drawn live (index.js's setupRoomLight): a switch
+// over the list, and a line under it saying what it does, or why not now.
+.room-light {
+    flex: none;
+    gap: 0.25rem;
+
+    .light-switch {
+        margin: 0 -0.5rem;
+        width: calc(100% + 1rem);
+        background: none;
+        border: 0;
+        font-family: inherit;
+
+        kbd {
+            margin-left: 0.4rem;
+        }
+
+        &:disabled {
+            cursor: default;
+            opacity: 0.55;
+
+            &:hover {
+                background: none;
+                color: var(--text-muted);
+            }
+        }
+
+        // (From above only its line shows: the switch's own `display` would keep it there.)
+        &[hidden] {
+            display: none;
+        }
+    }
+
+    &[hidden] {
+        display: none;
+    }
+}
+
+// The live room's word in the view, where the action prompt is said (a key, and what it does or where it has got to); it leaves by itself.
+.room-light-hint {
+    position: absolute;
+    left: 50%;
+    top: 64%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.8rem;
+    background: rgba(12, 14, 18, 0.72);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-size: 0.84rem;
+    backdrop-filter: blur(8px);
+    pointer-events: none;
+    white-space: nowrap;
+
+    &[hidden] {
+        display: none;
+    }
+}
+
 .light-switches {
     display: flex;
     flex-direction: column;
@@ -644,6 +705,27 @@ kbd {
             transform: translateX(12px);
             background: #ffd66e;
         }
+    }
+}
+
+// The editor's realistic preview: a ball, shaded while it is on — the
+// walkthrough is otherwise lit plainly, as edit mode is.
+.preview-toggle.is-on {
+    border-color: var(--accent, rgba(255, 255, 255, 0.35));
+}
+
+.preview-toggle-icon {
+    width: 14px;
+    height: 14px;
+    flex: none;
+    box-sizing: border-box;
+    border: 1.5px solid currentColor;
+    border-radius: 50%;
+    opacity: 0.85;
+
+    .is-on & {
+        border-color: #ffd66e;
+        background: radial-gradient(circle at 35% 30%, #fff3c9 0, #ffd66e 35%, rgba(255, 214, 110, 0.15) 75%);
     }
 }
 
@@ -804,6 +886,30 @@ body:not(.public-view) [data-public-only] {
         &:active {
             cursor: grabbing;
         }
+    }
+}
+
+// Said once, at the top of the view (index.js's tellLostGraphics); a click sends it away.
+.view-notice {
+    position: absolute;
+    top: 4.2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: min(34rem, calc(100vw - 2rem));
+    padding: 0.6rem 1rem;
+    border-radius: 0.75rem;
+    background: rgba(12, 14, 18, 0.82);
+    border: 1px solid var(--border);
+    backdrop-filter: blur(8px);
+    color: var(--text);
+    font-size: 0.84rem;
+    line-height: 1.4;
+    text-align: center;
+    cursor: pointer;
+    pointer-events: auto;
+
+    &[hidden] {
+        display: none;
     }
 }
 

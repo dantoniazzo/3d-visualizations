@@ -1,5 +1,7 @@
 import * as THREE from "three";
 
+import Experience from "../Experience.js";
+
 /**
  * The doors and drawers of furniture: a wardrobe's doors, a kitchen's
  * cupboards and drawers, the fridge's doors, a nightstand's drawers.
@@ -138,6 +140,8 @@ export default class Openables {
             node.add(lamp);
         }
         lamp.name = `inside:${id}`;
+        // Under the editor's plain light (World/PlainLight.js) it lights nothing.
+        new Experience().world?.plainLight?.keepOut(lamp);
         return lamp;
     }
 

@@ -3,6 +3,11 @@
 //   await eval(await (await fetch("http://127.0.0.1:3199/ladonia-views.js")).text());
 // then `await __renderSet("r2-")` writes r2-<ref>.jpg for each reference,
 // `await __plans("p2-")` the plan cuts 1.5 m above each floor of A/B and C.
+// In an editor tab __renderSet turns the realistic preview on first
+// (harness.js's __K.realistic: the editor opens under its plain light with
+// the houses alone drawn, and a reference is matched for its light, its
+// trees and its sky). __plans draws the tab as it is lit: under the plain
+// light a cut is evenly lit, which is what a plan cut is read for.
 (() => {
     const K = window.__K;
     const { e, r } = K;
@@ -28,6 +33,7 @@
         K.cam.updateProjectionMatrix();
     };
     window.__renderSet = async (prefix, keys = Object.keys(window.__POSES), width = 1600) => {
+        await K.realistic?.();
         size(1920, 1080);
         const out = {};
         for (const k of keys) {

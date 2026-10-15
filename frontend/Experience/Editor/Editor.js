@@ -14,11 +14,15 @@ import Ghost from "./Ghost.js";
 import Snapper, { STEP_UP } from "./Snapper.js";
 import Collections, { LEVEL_NAMES } from "./Collections.js";
 import TransformSession from "./TransformSession.js";
+import SelectionOutline from "./SelectionOutline.js";
 import { FurnitureEditable, StairEditable, FloorOpeningEditable, WallOpeningEditable, VehicleEditable, PersonEditable, seatPointOf, seatingHit } from "./Editables.js";
 import { DEG, round } from "./axes.js";
 import { FINISHES } from "../../../shared/catalog.js";
 import { DEFAULT_CAR } from "../../../shared/cars.js";
 import { planOne, planPeople, rotationTowards } from "../../../shared/people.js";
+import { SCOPES, isShown } from "../World/Scope.js";
+import { seeReal } from "../Utils/layers.js";
+import rays from "../Utils/rays.js";
 
 /**
  * Edit mode: a Blender-style editor over the live scene.
@@ -37,9 +41,23 @@ import { planOne, planPeople, rotationTowards } from "../../../shared/people.js"
  * the roof see-through. Walls never stop a click: whatever is behind one
  * can be selected through it.
  *
+ * How much of the site is drawn at all is the view's scope (World/Scope.js,
+ * the header's "Show" and the View menu): the houses with their yards — as
+ * it starts, and the fastest — the surroundings with the houses as empty
+ * shells, or everything. It holds here and in the walkthrough under the
+ * plain light. What it leaves out is not drawn, picked, snapped to or
+ * fitted against — but is as solid to walk into as ever, and published all
+ * the same. Whatever is selected, added or opened that needs more than the
+ * scope shows widens it, and says so (reveal, toggleGarden).
+ *
  * Tab switches between this and the walkthrough. On the way back the
  * collision octrees are rebuilt from whatever moved, so the player walks
  * into the new layout exactly as it was left.
+ *
+ * Edit mode is always drawn under the plain light (World/PlainLight.js):
+ * the same by day and at night, no shadows, no lamps, no haze — everything
+ * seen, and as fast as it can be drawn. The walkthrough is too, unless its
+ * realistic preview is on (`P`, World.setPreview).
  *
  * The same editor also works from the walkthrough, with the crosshair as
  * its cursor (FieldEdit): input and drawing then go through the player's
@@ -53,7 +71,7 @@ import { planOne, planPeople, rotationTowards } from "../../../shared/people.js"
  * contents) and "edited" (something worth saving).
  */
 
-const _ray = new THREE.Raycaster();
+const _ray = seeReal(new THREE.Raycaster());
 const _v = new THREE.Vector3();
 const _down = new THREE.Vector3(0, -1, 0);
 const _sphereHit = new THREE.Vector3();
@@ -99,6 +117,8 @@ export default class Editor extends EventEmitter {
         this.focus = null;
         /** Collections switched off in the outliner: "level:0", "room:id", "outside", "roof". */
         this.hiddenCollections = new Set();
+        /** The pieces the view's scope leaves out (applyVisibility): not snapped to, nor fitted against. */
+        this.outOfScope = new Set();
         this.xray = false;
         this.xrayed = new Set();
         this.xrayMaterials = new Map();
@@ -116,6 +136,7 @@ export default class Editor extends EventEmitter {
         /** People hidden while a move has nowhere for them yet (PersonEditable.setHidden). */
         this.hiddenPeople = new Set();
         this.personFilter = (entry) => this.personShown(entry);
+        this.personUnseen = (entry) => this.personOutOfScope(entry);
         this.peoplePicker = this.makePeoplePicker();
         this.owners = new WeakMap();
         this.holeHelpers = new Map();
@@ -156,15 +177,26 @@ export default class Editor extends EventEmitter {
             this.emit("settings");
         });
         this.world.on("switches", () => this.ui.renderLights());
-        this.world.on("lighting", () => {
-            // A switch of day or night begun in the walkthrough may end in edit mode: its haze is the walkthrough's.
-            this.keepFogOut();
+        this.world.on("lighting", () => this.emit("settings"));
+        this.world.on("preview", () => this.emit("settings"));
+        // The view's scope (World/Scope.js), changed — or no longer what is
+        // drawn: the realistic preview and a publish draw everything. The
+        // collections shown and hidden again, and whatever is selected that
+        // it now leaves out let go.
+        this.world.on("scope", (within) => {
+            const selected = this.selection;
+            if (selected && !this.session && !this.collections.inScope(this.collections.membership(selected), within)) this.select(null);
+            this.applyVisibility();
             this.emit("settings");
         });
         this.world.on("furniture-ready", () => {
             this.refreshRegistry();
             for (const editable of this.editables.values()) editable.invalidate();
+            // The pieces just come in, shown or not as the focus and the scope have it.
+            this.applyVisibility();
         });
+        // Whatever the registry was made again for, the index of what a ray can meet looks through every unit again (Utils/rays.js).
+        this.on("changed", () => rays.touch());
 
         // The people: in the registry once built, again whenever one is built anew.
         const people = this.world.people;
@@ -184,6 +216,9 @@ export default class Editor extends EventEmitter {
             .then((response) => (response.ok ? response.json() : {}))
             .catch(() => ({}))
             .then((seats) => (this.seats = seats));
+
+        // What the view's scope leaves out of the houses, from the start.
+        if (this.world.scope.current !== "all") this.applyVisibility();
     }
 
     /** Edit mode opens only once the visitor is actually in the space. */
@@ -231,8 +266,6 @@ export default class Editor extends EventEmitter {
 
         this.active = true;
         document.body.classList.add("mode-edit");
-        this.savedFog = this.scene.fog;
-        this.scene.fog = null;
         this.helpers.visible = true;
 
         // Start from where the visitor is standing, a few metres back and up.
@@ -268,10 +301,10 @@ export default class Editor extends EventEmitter {
         this.helpers.visible = false;
         this.gizmo.configure(null);
         this.ghost.reset();
-        this.scene.fog = this.savedFog ?? this.scene.fog;
 
-        // Whatever moved is walked into from here on.
-        this.builder.refreshCollision();
+        // Whatever moved is walked into from here on (at once, but for an edit
+        // that has the whole tree built again: then a slice a frame, SceneBuilder.refreshCollision).
+        this.builder.refreshCollision({ wait: false });
 
         this.view.deactivate();
         const player = this.world.player;
@@ -455,8 +488,39 @@ export default class Editor extends EventEmitter {
 
     select(editable) {
         if (this.selection === editable) return;
+        // Never something the view leaves out: its scope widens to take it in.
+        if (editable) this.reveal(editable);
         this.selection = editable || null;
         this.emit("selection", this.selection);
+    }
+
+    /**
+     * The view's scope (World/Scope.js) widened to everything, if it leaves
+     * a piece out — a car picked in the outliner while only the houses are
+     * drawn, a chair added indoors while only the surroundings are: what is
+     * selected is never something that cannot be seen. Said in a line; not
+     * kept for the next visit, which starts in the scope last chosen.
+     */
+    reveal(editable) {
+        const scope = this.world.scope;
+        const within = scope.current;
+        if (within === "all" || this.collections.inScope(this.collections.membership(editable), within)) return;
+        this.gardenScope = null;
+        scope.set("all", { remember: false });
+        this.ui.toast(`Showing everything: ${editable.label} is not part of the ${SCOPES[within].label} view`);
+    }
+
+    /**
+     * As reveal, for a floor or a room indoors worked on alone while only
+     * the surroundings are drawn: of it there would be a few outside walls
+     * on bare ground, and no saying why.
+     */
+    revealFocus(focus) {
+        const scope = this.world.scope;
+        if (scope.current !== "exterior" || !this.collections.focusIndoors(focus)) return;
+        this.gardenScope = null;
+        scope.set("all", { remember: false });
+        this.ui.toast(`Showing everything: ${this.collections.describe(focus)} is not part of the ${SCOPES.exterior.label} view`);
     }
 
     selectKey(key) {
@@ -533,7 +597,7 @@ export default class Editor extends EventEmitter {
      */
     raycast(pointer, ndc = false) {
         _ray.setFromCamera(ndc ? new THREE.Vector2(pointer.x, pointer.y) : this.toNdc(pointer), this.camera);
-        for (const hit of _ray.intersectObjects(this.pickTargets(), true)) {
+        for (const hit of rays.cast(_ray, this.pickTargets())) {
             if (!isShown(hit.object)) continue;
             if (hit.object.userData?.helper && !hit.object.userData.pickable) continue;
             // Cut away by a room focus: not there to be clicked.
@@ -568,7 +632,7 @@ export default class Editor extends EventEmitter {
     /** A floor point under the pointer, for adding things and walking from. */
     surfaceUnder(pointer, ndc = false) {
         _ray.setFromCamera(ndc ? new THREE.Vector2(pointer.x, pointer.y) : this.toNdc(pointer), this.camera);
-        for (const hit of _ray.intersectObjects(this.pickTargets(), true)) {
+        for (const hit of rays.cast(_ray, this.pickTargets())) {
             if (!isShown(hit.object) || hit.object.userData?.helper || hit.object.userData?.xray || !hit.face) continue;
             // Not a person's head or shoulders: what is under them.
             if (this.isPerson(hit.object)) continue;
@@ -600,7 +664,7 @@ export default class Editor extends EventEmitter {
 
             _ray.set(new THREE.Vector3(f.cx, bottom + 0.05, f.cz), _down);
             _ray.far = 0.15;
-            const hit = _ray.intersectObject(editable.object3d, true)[0];
+            const hit = rays.into(_ray, editable.object3d)[0];
             _ray.far = Infinity;
             if (hit) riders.push(other);
         }
@@ -641,6 +705,8 @@ export default class Editor extends EventEmitter {
 
     onSessionUpdate(session) {
         this.ui.onSessionUpdate(session);
+        // A step of a move, whoever made it: drawn at once (the editor draws only when something changes, Pace.js).
+        this.experience.wake("session");
     }
 
     endSession(result) {
@@ -1194,6 +1260,18 @@ export default class Editor extends EventEmitter {
         return Boolean(this.collections.shows(this.collections.membership(editable), this.focus, this.hiddenCollections));
     }
 
+    /**
+     * Whether the view's scope leaves a person out (World/Scope.js): one
+     * indoors, while only the surroundings are drawn — unless selected or
+     * being moved. Not drawn then, but still where they are to walk round
+     * (People.setUnseen): a scope changes nothing of what is walked into.
+     */
+    personOutOfScope(entry) {
+        const editable = this.editables.get(`person:${entry.id}`);
+        if (!editable || editable === this.selection || this.session?.editable === editable) return false;
+        return !this.collections.inScope(this.collections.membership(editable), this.world.scope.current);
+    }
+
     setPersonHidden(id, hidden) {
         if (hidden) this.hiddenPeople.add(id);
         else this.hiddenPeople.delete(id);
@@ -1397,6 +1475,8 @@ export default class Editor extends EventEmitter {
      */
     setFocus(focus, { frame = true } = {}) {
         this.focus = focus || null;
+        // Never something the view leaves out: its scope widens to take it in.
+        if (focus) this.revealFocus(focus);
         // A collection focused on is one the user wants to see.
         if (focus) {
             this.hiddenCollections.delete(Collections.key(focus));
@@ -1507,7 +1587,7 @@ export default class Editor extends EventEmitter {
                 const member = spec && collections.isOutdoor(spec)
                     ? { outside: true, rooms: [room] }
                     : { levels: [collections.levelOf(elevation)], rooms: room ? [room] : [] };
-                return Boolean(collections.shows(member, this.focus, this.hiddenCollections));
+                return Boolean(collections.shows(member, this.focus, this.hiddenCollections, this.world.scope.current));
             },
         });
         if (!light) return false;
@@ -1525,7 +1605,7 @@ export default class Editor extends EventEmitter {
     sightUnder(pointer) {
         _ray.setFromCamera(this.toNdc(pointer), this.camera);
         const c = this.clipBox;
-        for (const hit of _ray.intersectObjects(this.pickTargets(), true)) {
+        for (const hit of rays.cast(_ray, this.pickTargets())) {
             const data = hit.object.userData || {};
             if (!isShown(hit.object) || data.helper || data.xray) continue;
             const material = hit.object.material;
@@ -1538,41 +1618,66 @@ export default class Editor extends EventEmitter {
         return Infinity;
     }
 
-    /** Day or night, in edit mode too: the sky, the lights' starting states, the garden's lights. */
+    /**
+     * Day or night, in edit mode too: under its plain light, the sky behind
+     * and which of the lights' two sets of states is shown — the light on
+     * everything stays as it is.
+     */
     async toggleDayNight() {
         const world = this.world;
         if (!world.lighting) return;
-        // Edit mode draws without the walkthrough's haze: it is put back while
-        // the variant recolours it (or the sky makes its own), and taken away
-        // again — after the switch, and after the sky's new haze, if any.
-        if (this.active && this.savedFog) this.scene.fog = this.savedFog;
         try {
-            const pending = world.setLighting(world.lighting === "night" ? "day" : "night");
-            this.keepFogOut();
-            await pending;
+            await world.setLighting(world.lighting === "night" ? "day" : "night");
         } finally {
-            this.keepFogOut();
             this.emit("settings");
         }
     }
 
     /**
-     * In edit mode, the walkthrough's haze — a new one, if the sky or the
-     * dome has just made one — kept for when it is left; `always`, even
-     * none (the neighbourhood switched off).
+     * The walkthrough's realistic preview, on or off (World.setPreview):
+     * from edit mode, which is drawn plain either way, said in a line.
      */
-    keepFogOut(always = false) {
-        if (!this.active || (!this.scene.fog && !always)) return;
-        this.savedFog = this.scene.fog;
-        this.scene.fog = null;
+    togglePreview() {
+        const on = !this.world.preview;
+        this.world.setPreview(on);
+        if (this.active) this.ui.toast(on ? "Realistic preview on: the walkthrough is lit as visitors will see it" : "Realistic preview off: the walkthrough is lit plainly, as here");
     }
 
-    /** The Garden panel (GardenPanel.js), open or shut. */
+    /** The view's scope (World/Scope.js): "house", "exterior" or "all", from now on and for the next visit. */
+    setScope(value) {
+        // Chosen by hand: not the Garden panel's to put back.
+        this.gardenScope = null;
+        // The surroundings alone, asked for with a floor or a room indoors
+        // in focus: all of them, rather than what little of that floor is
+        // out of doors (revealFocus, the other way round).
+        if (value === "exterior" && this.focus && this.collections.focusIndoors(this.focus)) {
+            this.ui.toast(`Showing the whole property: ${this.collections.describe(this.focus)} is not part of the ${SCOPES.exterior.label} view`);
+            this.setFocus(null, { frame: false });
+        }
+        this.world.scope.set(value);
+    }
+
+    /**
+     * The Garden panel (GardenPanel.js), open or shut. What it edits — the
+     * grass, the trees, the hills, the neighbourhood — is drawn while it is
+     * open, a room in focus or not (Scope.need); a view of the houses alone
+     * shows everything meanwhile, and goes back to the houses as it shuts.
+     */
     toggleGarden() {
+        const scope = this.world.scope;
         if (this.gardenPanel) {
             this.gardenPanel.dispose();
             this.gardenPanel = null;
+            scope.need("garden", false);
+            if (this.gardenScope && scope.value === "all") scope.set(this.gardenScope, { remember: false });
+            this.gardenScope = null;
         } else {
+            if (scope.value === "house") {
+                this.gardenScope = scope.value;
+                scope.set("all", { remember: false });
+                this.ui.toast("Showing everything while the Garden panel is open");
+            }
+            scope.need("garden", true);
             this.gardenPanel = new GardenPanel(this.world);
             // Not over the lights panel, in a narrow window: that one shuts.
             const lights = this.ui.dom.lightsPanel;
@@ -1583,24 +1688,36 @@ export default class Editor extends EventEmitter {
 
     /**
      * Show and hide the building and the pieces for the current focus and
-     * hidden collections. Outside edit mode, everything shows.
+     * hidden collections — outside edit mode, neither holds — and for the
+     * view's scope (World/Scope.js), which holds in the walkthrough too
+     * while it is drawn plainly.
      */
     applyVisibility() {
+        // (What is shown may be about to change: a frame is due, Pace.js.)
+        this.experience.wake("visibility");
         const collections = this.collections;
         const focus = this.active ? this.focus : null;
         const hidden = this.active ? this.hiddenCollections : new Set();
+        // The surroundings, which are no collection's: shown or not by the
+        // scope itself — and left out with a floor or a room in focus.
+        const scope = this.world.scope;
+        scope.apply();
+        const within = scope.current;
 
         // three.js skips only `visible === false`, so this must be a boolean.
         for (const part of collections.buildingParts()) {
-            part.object.visible = Boolean(collections.shows(part, focus, hidden));
+            part.object.visible = Boolean(collections.shows(part, focus, hidden, within));
         }
 
+        this.outOfScope.clear();
         for (const editable of this.editables.values()) {
-            // People are drawn or not by People itself, through the filter below.
+            // People are drawn or not by People itself, through the filters below.
             if (!editable.object3d || editable.type === "opening" || editable.type === "person") continue;
+            const member = collections.membership(editable);
+            if (within !== "all" && !collections.inScope(member, within)) this.outOfScope.add(editable);
             // A piece being placed is shown and hidden by its move.
             if (this.session?.editable === editable) continue;
-            let show = Boolean(collections.shows(collections.membership(editable), focus, hidden));
+            let show = Boolean(collections.shows(member, focus, hidden, within));
             // What is selected stays in view, even if it was moved out of the
             // room being worked on.
             if (editable === this.selection) show = true;
@@ -1608,8 +1725,10 @@ export default class Editor extends EventEmitter {
             editable.object3d.visible = show;
         }
 
-        // The people round the property, by where they are, as the furniture.
+        // The people round the property, by where they are, as the furniture;
+        // and those indoors left undrawn while only the surroundings are.
         this.world.people?.setFilter(this.active || this.hiddenPeople.size ? this.personFilter : null);
+        this.world.people?.setUnseen(within === "exterior" ? this.personUnseen : null);
 
         // The visitors are not part of a floor plan: with a floor or room on
         // its own they would stand in mid-air.
@@ -1711,6 +1830,12 @@ export default class Editor extends EventEmitter {
         if (this.focus) {
             const box = this.collections.focusBox(this.focus);
             if (!box.isEmpty()) return this.view.frame(box, 1.1);
+        }
+        // The houses and their yards alone (World/Scope.js): those, not the
+        // street's whole length or the far ground, which are not drawn.
+        if (this.world.scope.current === "house") {
+            const box = this.collections.propertyBox();
+            if (!box.isEmpty()) return this.view.frame(box, 1.05);
         }
         const b = this.builder;
         const box = new THREE.Box3();
@@ -1991,6 +2116,8 @@ export default class Editor extends EventEmitter {
                 return this.ui.toggleSidebar();
             case "l":
                 return this.ui.toggleLightsPanel();
+            case "p":
+                return this.togglePreview();
             case "t":
                 return this.ui.toggleToolbar();
             case "w":
@@ -2044,7 +2171,7 @@ export default class Editor extends EventEmitter {
         event.preventDefault();
         // Into the layout as it is now, not as it was when edit mode opened.
         // Nothing to do unless something has changed since the last step.
-        this.builder.refreshCollision();
+        this.builder.refreshCollision({ wait: false });
         player.setMovementKey(event.code, true);
         this.walked = true;
         return true;
@@ -2057,7 +2184,8 @@ export default class Editor extends EventEmitter {
      */
     showsVisitor() {
         const player = this.world.player;
-        if (!player?.avatar) return false;
+        // (Not at the wheel: the car is drawn, the driver is not.)
+        if (!player?.avatar || player.inVehicle) return false;
         if (!this.active) return player.camera.mode !== "first";
         if (!this.focus) return true;
         const collider = player.player.collider;
@@ -2097,6 +2225,9 @@ export default class Editor extends EventEmitter {
     /** Draw the frame: the scene (outlined selection), then the gizmo. */
     render(renderer, scene, camera) {
         if (!this.active) this.field.beforeRender(camera);
+        // What stands in for the house and the furniture (World/StandIns.js), as they are now — after a move from the
+        // walkthrough has followed the look, so that what rides on the piece moved is drawn where it now stands.
+        this.world.standIns?.update(camera);
         if (this.gizmo.root.visible) {
             const distance = camera.position.distanceTo(this.gizmo.root.position);
             this.gizmo.update(camera, this.worldPerPixel(camera, distance));
@@ -2115,9 +2246,20 @@ export default class Editor extends EventEmitter {
         const outline = this.selection ? this.selection.outlineObjects().filter(isShown) : [];
         if (outline.length) {
             this.ensureOutline();
-            this.outlinePass.renderCamera = camera;
-            this.outlinePass.selectedObjects = outline;
-            this.outlinePass.render(renderer, null, null, 0, false);
+            if (this.outline) {
+                // Of the selection alone, against the depth the frame has just drawn (SelectionOutline.js).
+                this.outline.render(renderer, camera, outline);
+            } else {
+                // three's own pass (`?outline=pass`, for comparing), which draws the scene twice more, for its depth and
+                // its mask: with the shadows as they are, not drawn again for each (three draws every shadow map that
+                // updates by itself at each render).
+                this.outlinePass.renderCamera = camera;
+                this.outlinePass.selectedObjects = outline;
+                const autoUpdate = renderer.shadowMap.autoUpdate;
+                renderer.shadowMap.autoUpdate = false;
+                this.outlinePass.render(renderer, null, null, 0, false);
+                renderer.shadowMap.autoUpdate = autoUpdate;
+            }
         }
 
         renderer.clippingPlanes = [];
@@ -2128,18 +2270,27 @@ export default class Editor extends EventEmitter {
         return true;
     }
 
+    /**
+     * What draws the selection's outline, made when something is first
+     * selected: amber where the selection is seen, dim where it is hidden,
+     * added to the screen as they are, as display colours, at four times
+     * their strength.
+     */
     ensureOutline() {
-        if (this.outlinePass) return;
+        if (this.outline || this.outlinePass) return;
         const sizes = this.experience.sizes;
-        this.outlinePass = new OutlinePass(new THREE.Vector2(sizes.width, sizes.height), this.scene, this.view.camera);
-        this.outlinePass.edgeStrength = 4;
-        this.outlinePass.edgeThickness = 1;
-        this.outlinePass.edgeGlow = 0;
-        // Added to the screen as they are, as display colours, at four times
-        // their strength: amber where the selection is seen, dim where hidden.
-        this.outlinePass.visibleEdgeColor.setRGB(1, 0.62, 0.16).multiplyScalar(1 / 4);
-        this.outlinePass.hiddenEdgeColor.setRGB(0.54, 0.35, 0.11).multiplyScalar(1 / 4);
-        this.onResize(sizes);
+        const pass = outlineWanted() === "pass" ? new OutlinePass(new THREE.Vector2(sizes.width, sizes.height), this.scene, this.view.camera) : new SelectionOutline();
+        pass.edgeStrength = 4;
+        pass.edgeThickness = 1;
+        pass.edgeGlow = 0;
+        pass.visibleEdgeColor.setRGB(1, 0.62, 0.16).multiplyScalar(1 / 4);
+        pass.hiddenEdgeColor.setRGB(0.54, 0.35, 0.11).multiplyScalar(1 / 4);
+        if (pass.isPass) {
+            this.outlinePass = pass;
+            this.onResize(sizes);
+        } else {
+            this.outline = pass;
+        }
     }
 
     onResize(sizes) {
@@ -2162,6 +2313,7 @@ export default class Editor extends EventEmitter {
         this.ghost.dispose();
         this.fit.dispose();
         this.outlinePass?.dispose();
+        this.outline?.dispose();
         this.gardenPanel?.dispose();
         for (const material of this.xrayMaterials.values()) material.dispose();
         this.ui.dispose();
@@ -2187,19 +2339,16 @@ function pickBones(person) {
     return bones;
 }
 
-/** Visible all the way up — a focus hides whole groups. */
-function isShown(object) {
-    for (let node = object; node; node = node.parent) {
-        if (!node.visible) return false;
-    }
-    return true;
-}
-
 export function blockedText(result) {
     const blocker = result.blocker;
     if (!blocker) return "it doesn't fit";
     if (blocker.reason) return `it ${blocker.reason}`;
     return `it would hit the ${blocker.label.toLowerCase()}`;
+}
+
+/** Which outline the link asks for: `?outline=pass` is three's OutlinePass, as before, for comparing; anything else, the editor's own (SelectionOutline.js). */
+function outlineWanted() {
+    return new URL(window.location.href).searchParams.get("outline") === "pass" ? "pass" : "own";
 }
 
 function readPreference(key, fallback) {

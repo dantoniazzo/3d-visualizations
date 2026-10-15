@@ -200,6 +200,9 @@ async function rebuildManifest(sceneId, version) {
             samples: bake.samples,
             size: bake.size,
             texel: bake.texel,
+            ...(bake.margin && { margin: bake.margin }),
+            // Baked for a view drawn fully static alone (scripts/bake-public.mjs): the view must not ask it for more.
+            ...(bake.only && { only: bake.only }),
             meshes: bake.meshes,
             triangles: bake.triangles,
             ...(bake.view && { view: bake.view }),
@@ -219,6 +222,18 @@ async function rebuildManifest(sceneId, version) {
                 ])
             )
         );
+        // ...and the lightmaps with each room's part held its own way, as a bake records them.
+        const rooms = Object.entries(bake.variants).filter(([, variant]) => variant.rooms);
+        if (rooms.length) {
+            manifest.sizes.roomLightmaps = Object.fromEntries(
+                await Promise.all(
+                    rooms.map(async ([name, variant]) => [name, (await size(`${entry}/${variant.rooms.lightmap}`)) + (await size(`${entry}/${variant.rooms.chroma}`))])
+                )
+            );
+        }
+        for (const [key, file] of [["probes", bake.probes?.file], ["doorStates", bake.doorStates?.file]]) {
+            if (file) manifest.sizes[key] = await size(`${entry}/${file}`);
+        }
     }
     return manifest;
 }

@@ -19,6 +19,17 @@ export default class Time {
         }
     }
 
+    /**
+     * After a pause in the frames — the editor draws only when something
+     * changes (Pace.js): the frame about to be drawn takes `delta` seconds
+     * to have passed, not the pause. None, for a frame drawn only to see
+     * that nothing has changed: whatever moves by itself stays where it is.
+     */
+    resume(delta = 1 / 60) {
+        this.current = Date.now();
+        this.delta = delta;
+    }
+
     getDelta() {
         return this.delta;
     }

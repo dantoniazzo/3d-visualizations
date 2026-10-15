@@ -33,10 +33,56 @@ import { QUALITY, onQualityChange } from "../Utils/device.js";
  * walks (three builds them for a number of lights); the slider changing
  * the numbers builds them once more. Handed over, a light fades in.
  *
+ * While no fitting whose light the visitor can see is on — by day, as a
+ * rule — the pool is out of the scene's light altogether (hidden): six
+ * lights at nothing cost every lit pixel as much as six that shone, 3 to 8
+ * ms of a frame at the top step. As the first such fitting is lit it comes
+ * in, all of it at once — after the shaders for the scene with it in have
+ * been built ahead (Renderer.prepareLights), which the first time takes a
+ * moment and then never again — and once none has been in sight for a
+ * while it goes out again. In, or out: two states, each one's shaders
+ * built once.
+ *
+ * In sight (sees): a fitting in the visitor's own room; one in a room that
+ * opens into it, through what joins the two as it stands — a doorway, a
+ * stairwell, no wall at all, a door with glass in it, a door not shut;
+ * and, from out of doors, one in a room whose light gets out — any but a
+ * room daylight does not reach (shared/daylight.js: no window, no doorway
+ * out), which shows only through a door of its own to the outdoors that
+ * stands open. A lit bathroom behind its shut door, or a villa's
+ * windowless rooms from its terrace, light nothing that is seen, and by
+ * day — when theirs are the only lights on — kept the pool in from the
+ * hall beside one and from the pool's edge. Which fittings are handed the
+ * lights is as it was: sight only says whether the pool is in.
+ *
+ * So that it comes in at once when such a door opens, the shaders are
+ * built ahead as well while a lit fitting is only near (warm): the first
+ * visit's seconds of building are spent before the door is reached, not
+ * with the room standing dark behind it.
+ *
  * A light's shadow is drawn again only when it is handed to another
  * fitting, or when something near it moves — a door, a drawer, a car,
  * anyone, the visitor too — at most one a frame, each at most ten times a
  * second.
+ *
+ * Under the editor's plain light (World/PlainLight.js) there is no pool
+ * until its realistic preview first draws (World.relight), and then its
+ * lights are out of three's light state, unmoved, while the plain light is
+ * on.
+ *
+ * From above (the bird's-eye view of a version lit live, World/BirdView.js)
+ * no fitting is given a light, so none is lit and no lamp's shadow is
+ * drawn: the lit rooms glow (World/RoomGlow.js), as they do from the garden.
+ *
+ * Over a bake (`whole`: a room of a view drawn from its bake drawn live in
+ * the bake's own light, World/RoomBakeLight.js) the lamps are the bake's
+ * own: a switch's lights are lit all together or not at all — the bake
+ * holds a switch's light, and what its lamps bounce, as one — each a point
+ * light where the bake's lamp hung, shining every way as it did, with a
+ * shadow of its own on every side (six maps: what the bake's lamp lit,
+ * this lights); and only as many as there are lights with shadows: a
+ * switch the pool has none for is drawn from the bake, all of its light,
+ * with the bake's own soft shadows. None without a shadow.
  */
 
 /** How far a light's shadow, and so its light, reaches, in metres. */
@@ -51,6 +97,8 @@ const FADE = 0.25;
 const SHADOW_EVERY = 0.1;
 /** A fitting that is lit keeps its light unless another would light the visitor this many times more. */
 const HOLD = 1.5;
+/** How long, in seconds, with no fitting to light before the pool goes out of the scene's light. */
+const LEAVE_AFTER = 3;
 /** A downlight's beam: a recessed one's narrower, anything else's all but the half below it. */
 const BEAM = { recessed: { angle: 1.1, penumbra: 0.7 }, other: { angle: 1.48, penumbra: 0.9 } };
 /** How far a lamp's light is kept from its room's walls, in metres: a wall light's tube is 2.5 cm off its wall. */
@@ -64,6 +112,13 @@ const OFF_WALL = 0.12;
 const TUBE = { radius: 0.1, offWall: 0.25, share: 0.35 };
 /** Less movement than this, in metres (or, turned, in a matrix's units), is none: a visitor standing still settles by a few millimetres. */
 const STILL = { move: 0.01, turn: 0.002 };
+/** Over a bake (`whole`), a lamp's shadow map, per side of its cube: six of them — three times the texels of the step's 1024 a side at 512. */
+const POINT_SHADOW_SIZE = 512;
+/**
+ * Over a bake, how far a lamp's light and its shadow reach, in metres: a point light's shadow lets everything
+ * past its far plane through — walls too — so its light ends there, at the inverse square to within 1% at 5 m.
+ */
+const POINT_REACH = 20;
 
 const _here = new THREE.Vector3();
 const _at = new THREE.Vector3();
@@ -72,36 +127,66 @@ export default class LampPool {
     /**
      * @param {World} world  drawing a view lit live
      * @param {LiveSwitches} switches  its switches
+     * @param {object} [options]  for a room of a view drawn from its bake that is drawn as a view lit live draws it (World/LiveRoom.js):
+     * @param {number|number[]} [options.layer]  the layer, or layers, its lights are on — the room's own calls' — in place of the scene's
+     * @param {(lights: THREE.Light[]) => Promise} [options.prepare]  what builds the shaders ahead of the pool coming in (enter, warm), in place of Renderer.prepareLights
+     * @param {(lights: THREE.Light[]) => Promise} [options.prepareOut]  what builds the shaders for the pool gone out of the light again, before it goes (exit): a room may never have been drawn without it
+     * @param {(where: object) => object} [options.where]  where the lights are handed round from, given where the visitor is (where)
+     * @param {boolean} [options.warm]  false: nothing built ahead while a lit fitting is only near (warm) — whoever made it builds for both ahead itself
+     * @param {(entry: object) => object[]|null} [options.whole]  over a bake: a switch's lights as the bake has them —
+     *        each `{ position, power, color, size, index, share }`, the same objects each time — to be lit all together, as
+     *        point lights with shadows where they hang; or null where it is not to be lit live (its light is the bake's)
      */
-    constructor(world, switches) {
+    constructor(world, switches, { layer = null, prepare = null, prepareOut = null, where = null, warm = true, whole = null } = {}) {
         this.experience = new Experience();
         this.scene = this.experience.scene;
         this.renderer = this.experience.renderer;
         this.world = world;
         this.builder = world.sceneBuilder;
         this.switches = switches;
+        this.layer = layer;
+        this.prepare = prepare ?? ((lights) => this.renderer.prepareLights(lights));
+        this.prepareOut = prepareOut;
+        this.warms = warm;
+        this.whereFrom = where;
+        this.whole = whole;
         this.key = null;
         this.timer = 0;
         this.tracked = new Map();
         this.queue = [];
-        this.build(QUALITY.lamps);
+        this.build(this.budgetOf(QUALITY));
         this.onEdited = () => this.redrawAll();
         world.on?.("scene-edited", this.onEdited);
         // The slider: as many lights as its step asks for.
         this.stopQuality = onQualityChange((quality) => this.applyQuality(quality));
     }
 
-    /** Whether every light has faded to where it is going. */
+    /** Whether every light has faded to where it is going — out of the scene's light, whether none is on its way in. */
     get settled() {
+        if (!this.lit) return !this.wanted;
         return this.slots.every((slot) => Math.abs(slot.level - (slot.fitting ? slot.target : 0)) <= 1e-6 * Math.max(1, slot.target));
     }
 
-    /** The lights, as many of each as the step asks for. */
+    /** How many lights the step asks for — over a bake (`whole`), its lights with shadows alone, each a cube of maps. */
+    budgetOf(quality) {
+        const lamps = quality.lamps ?? { shadowed: 0, unshadowed: 0, size: 512 };
+        return this.whole ? { shadowed: lamps.shadowed, unshadowed: 0, size: POINT_SHADOW_SIZE } : lamps;
+    }
+
+    /** The lights, as many of each as the step asks for: out of the scene's light until one is wanted (enter). */
     build(budget = { shadowed: 0, unshadowed: 0, size: 512 }) {
         this.budget = { ...budget };
         this.slots = [];
+        this.lit = false;
+        this.entering = null;
+        this.idle = 0;
+        /** The fittings whose light the visitor can see (assign), whether one of them has a light (update), and whether any lit fitting is near. */
+        this.sighted = new Set();
+        this.wanted = false;
+        this.near = false;
         for (let k = 0; k < budget.shadowed; k++) {
-            const light = new THREE.SpotLight(0xffffff, 0, SHADOW_REACH, BEAM.other.angle, BEAM.other.penumbra, 2);
+            // (Over a bake, the bake's lamp: shining every way, falling off as the square of the distance, as far as its shadow reaches.)
+            const light = this.whole ? new THREE.PointLight(0xffffff, 0, POINT_REACH, 2) : new THREE.SpotLight(0xffffff, 0, SHADOW_REACH, BEAM.other.angle, BEAM.other.penumbra, 2);
             light.name = `lamp-pool:shadowed:${k}`;
             light.castShadow = true;
             light.shadow.mapSize.set(budget.size, budget.size);
@@ -110,7 +195,13 @@ export default class LampPool {
             light.shadow.bias = -0.0006;
             light.shadow.normalBias = 0.02;
             light.shadow.autoUpdate = false;
-            this.scene.add(light, light.target);
+            // (A cube's depth is its distance over its reach: a centimetre or so, as live lamps over a bake have it — LiveLamps.)
+            if (this.whole) {
+                light.shadow.bias = -0.001;
+                light.shadow.camera.far = POINT_REACH;
+            }
+            this.scene.add(light);
+            if (light.target) this.scene.add(light.target);
             this.slots.push({ light, shadowed: true, fitting: null, level: 0, target: 0, cooldown: 0 });
         }
         for (let k = 0; k < budget.unshadowed; k++) {
@@ -119,25 +210,160 @@ export default class LampPool {
             this.scene.add(light, light.target);
             this.slots.push({ light, shadowed: false, fitting: null, level: 0, target: 0, cooldown: 0 });
         }
+        // Made again by the slider under the editor's plain light: out of three's light state with the rest.
+        for (const { light } of this.slots) {
+            light.visible = false;
+            if (this.layer !== null) [].concat(this.layer).forEach((layer, k) => (k ? light.layers.enable(layer) : light.layers.set(layer)));
+            this.world.plainLight?.keepOut(light);
+        }
         this.key = null;
+    }
+
+    /**
+     * The pool into the scene's light, for its first fitting: once the
+     * shaders for the scene with it in are built (Renderer.prepareLights) —
+     * until then its fittings wait, unlit, their rooms glowing.
+     */
+    enter() {
+        if (this.lit || this.entering) return;
+        const slots = this.slots;
+        this.entering = this.prepare(slots.map((slot) => slot.light)).then(() => {
+            // (The slider has made other lights meanwhile: theirs to bring in.)
+            if (this.slots !== slots) return;
+            this.entering = null;
+            for (const { light } of slots) light.visible = true;
+            this.lit = true;
+            // Each fades in from nothing, its shadow drawn first.
+            for (const slot of slots) {
+                slot.level = 0;
+                if (slot.shadowed && slot.fitting) this.requestShadow(slot, true);
+            }
+        });
+    }
+
+    /**
+     * The shaders for the scene with the pool in it, built ahead while it
+     * is out (Renderer.prepareLights, the lights left hidden): a lit
+     * fitting is near, out of sight. Once for the lights there are, and
+     * again when the view has built shaders since — for what has come
+     * into it — which finds the rest built and costs one pass over the
+     * scene.
+     */
+    warm() {
+        if (this.lit || this.entering || this.warming || !this.slots.length) return;
+        const info = this.renderer.renderer.info;
+        if (this.warmed?.slots === this.slots && this.warmed.programs === info.programs?.length) return;
+        const slots = this.slots;
+        this.warming = this.prepare(slots.map((slot) => slot.light)).then(() => {
+            this.warming = null;
+            this.warmed = { slots, programs: info.programs?.length };
+        });
+    }
+
+    /**
+     * The pool on its way out of the scene's light: at once (leave), or —
+     * where what it lights may never have been drawn without it (a room of
+     * a baked view first shown with its lamps lit: World/LiveRoom.js) —
+     * once the shaders for that are built.
+     */
+    exit() {
+        if (!this.prepareOut) return this.leave();
+        if (this.leaving) return;
+        const slots = this.slots;
+        this.leaving = this.prepareOut(slots.map((slot) => slot.light)).then(
+            () => {
+                this.leaving = null;
+                if (this.slots === slots && this.lit && !this.wanted) this.leave();
+            },
+            () => (this.leaving = null)
+        );
+    }
+
+    /**
+     * The lights handed round and lit as they will stand, at once — no
+     * fade, each shadow drawn in the next frame: for a room that is shown
+     * from one frame to the next (World/LiveRoom.js), where lamps fading in
+     * were a room dark for a quarter of a second. `built`: whether what
+     * they light has its shaders for the pool in the scene's light — then
+     * it is in from now on, lit or not; else it comes in as ever (enter).
+     *
+     * @returns {boolean} whether a fitting it lights is in sight
+     */
+    snap(built = false) {
+        const where = this.where();
+        this.key = `${where.room ?? ""}|${where.above ? "above" : ""}|${this.switches.version}|${this.doorsMark()}`;
+        this.timer = REASSIGN;
+        this.assign(where);
+        const wanted = this.slots.some((slot) => slot.fitting && this.sighted.has(slot.fitting));
+        this.wanted = wanted;
+        this.idle = 0;
+        if (built && !this.lit && !this.entering) {
+            for (const { light } of this.slots) light.visible = true;
+            this.lit = true;
+        }
+        if (!this.lit) return wanted;
+        for (const slot of this.slots) {
+            slot.level = slot.fitting ? slot.target : 0;
+            slot.light.intensity = slot.level;
+            if (slot.shadowed && slot.fitting) this.requestShadow(slot, true);
+        }
+        return wanted;
+    }
+
+    /**
+     * Whether a fitting that is on would be in sight of a visitor standing
+     * in `room` (assign): its own, or one whose light reaches it — as its
+     * doors stand, or (`anyDoor`) whatever they do.
+     */
+    wouldLight(room, anyDoor = false) {
+        if (!room) return false;
+        const weights = this.switches.weights;
+        this.doorsById = new Map((this.builder.doors || []).map((door) => [door.spec.id, door]));
+        const inside = this.switches.indoor?.has(room);
+        return this.switches.entries.some((entry, index) => {
+            if (!(weights[index] > 0)) return false;
+            return entry.lights.some((fitting) => fitting.room === room || (inside && entry.zones.includes(room) && (anyDoor || this.sees(entry, fitting, room, inside))));
+        });
+    }
+
+    /** The pool out of the scene's light again: nothing the visitor can see is lit. */
+    leave() {
+        for (const slot of this.slots) {
+            slot.light.visible = false;
+            slot.light.intensity = 0;
+            slot.level = 0;
+        }
+        this.lit = false;
     }
 
     /** The slider has moved: as many lights as its step asks for (shaders are built again once). */
     applyQuality(quality) {
-        const next = quality.lamps;
+        const next = this.budgetOf(quality);
         if (!next || (next.shadowed === this.budget.shadowed && next.unshadowed === this.budget.unshadowed && next.size === this.budget.size)) return;
         this.removeLights();
         this.build(next);
     }
 
-    update(delta) {
+    /** @param {THREE.Vector3[]} [moved]  where whatever moves has moved since the last frame, if whoever calls has asked already (moved) */
+    update(delta, moved = null) {
         this.timer -= delta;
         const where = this.where();
-        const key = `${where.room ?? ""}|${where.level ?? ""}|${this.switches.version}`;
+        const key = `${where.room ?? ""}|${where.above ? "above" : ""}|${this.switches.version}|${this.doorsMark()}`;
         if (key !== this.key || this.timer <= 0) {
             this.key = key;
             this.timer = REASSIGN;
             this.assign(where);
+        }
+        // In the scene's light only while a fitting that has one of its lights can be seen to shine.
+        const wanted = this.slots.some((slot) => slot.fitting && this.sighted.has(slot.fitting));
+        this.wanted = wanted;
+        this.idle = wanted ? 0 : this.idle + delta;
+        if (wanted && !this.lit) this.enter();
+        else if (!wanted && this.lit && this.idle > LEAVE_AFTER && this.settled) this.exit();
+        if (!this.lit) {
+            // Out, a lit fitting near: ready to come in the moment it is seen.
+            if (!wanted && this.near && this.warms) this.warm();
+            return;
         }
         // Fade.
         const step = Math.min(1, delta / FADE);
@@ -148,38 +374,56 @@ export default class LampPool {
             slot.light.intensity = slot.level;
             slot.cooldown -= delta;
         }
-        this.redrawShadows(this.moved());
+        this.redrawShadows(moved ?? this.moved());
     }
 
     /**
      * Where the visitor is: the room they stand in (or drive through), the
-     * editor's camera, or — looking down on a floor from above — that floor
-     * and the point looked at.
+     * editor's camera, or — looking down on a floor — `above`, from where
+     * no fitting is lit.
      */
     where() {
+        const where = this.whereNow();
+        return this.whereFrom ? this.whereFrom(where) : where;
+    }
+
+    whereNow() {
         const world = this.world;
         const bird = world.birdView;
-        if (bird?.active) return { room: null, level: bird.level, point: _here.copy(bird.target) };
+        if (bird?.active) return { room: null, point: _here.copy(bird.target), above: true };
         const editor = world.editor;
         if (editor?.active) {
             // What is being worked on: where the view looks (its camera hangs high over it).
             if (editor.view?.target) _here.copy(editor.view.target);
             else _here.copy(this.experience.camera.activeCamera.position);
             const room = this.builder.roomAt(_here.x, _here.y + 0.05, _here.z) ?? this.builder.roomAt(_here.x, _here.y - 1.2, _here.z);
-            return { room: room?.id ?? null, level: null, point: _here, feet: false };
+            return { room: room?.id ?? null, point: _here, feet: false };
         }
         const player = world.player;
         if (player?.inVehicle && player.currentCar) _here.copy(player.currentCar.group.position);
         else if (player?.player?.collider) _here.copy(player.player.collider.start);
         else _here.copy(this.experience.camera.activeCamera.position);
         const room = this.builder.roomAt(_here.x, _here.y, _here.z);
-        return { room: room?.id ?? null, level: null, point: _here, feet: true };
+        return { room: room?.id ?? null, point: _here, feet: true };
     }
 
-    /** Hand the lights to the fittings that are on nearest the visitor. */
-    assign({ room, level, point, feet = true }) {
+    /**
+     * Hand the lights to the fittings that are on nearest the visitor —
+     * from above, to none — and note which of them the visitor can see the
+     * light of (`sighted`), and whether any that is lit is near (`near`).
+     */
+    assign({ room, point, feet = true, above = false }) {
+        if (this.whole) return this.assignWhole({ room, point, feet, above });
         this.rebind();
+        this.sighted = new Set();
+        this.near = false;
+        if (above) {
+            this.fill(this.slots.filter((slot) => slot.shadowed), []);
+            this.fill(this.slots.filter((slot) => !slot.shadowed), []);
+            return;
+        }
         const weights = this.switches.weights;
+        this.doorsById = new Map((this.builder.doors || []).map((door) => [door.spec.id, door]));
         // Indoors, the lights whose light comes through to this room; out
         // on a path, a terrace or the lawn, any lit nearby on this storey.
         const inside = room !== null && this.switches.indoor?.has(room);
@@ -187,19 +431,20 @@ export default class LampPool {
         const near = [];
         this.switches.entries.forEach((entry, index) => {
             if (!(weights[index] > 0)) return;
-            const item = this.switches.list[index];
             for (const fitting of entry.lights) {
                 const distance = point.distanceTo(_at.set(...fitting.position));
+                if (distance < SHADOW_REACH) this.near = true;
                 // How much of its light reaches the visitor: the room's main light before a bedside lamp.
                 const score = fitting.power / (1 + distance * distance);
-                if (level !== null) {
-                    if (item.level === level) near.push({ fitting, distance, score });
-                } else if (room && fitting.room === room) {
+                if (room && fitting.room === room) {
                     own.push({ fitting, distance, score });
+                    this.sighted.add(fitting);
                 } else if (inside ? entry.zones.includes(room) : distance < SHADOW_REACH && within(fitting.position[1] - point.y, feet)) {
                     // (Out of doors, what hangs over the visitor's feet: not
                     // the ceiling light of the room under the deck they stand on.)
                     near.push({ fitting, distance, score });
+                    this.near = true;
+                    if (this.sees(entry, fitting, room, inside)) this.sighted.add(fitting);
                 }
             }
         });
@@ -218,6 +463,96 @@ export default class LampPool {
             .map((fitting) => ({ fitting, share: 1 }));
         this.fill(shadowed, spotted.map((fitting) => ({ fitting, share: 1 })));
         this.fill(unshadowed, extras);
+    }
+
+    /**
+     * Over a bake (`whole`): the lights handed to switches, a switch's all
+     * together or none of them — the visitor's own room's first, then those
+     * whose light they can see from it (sees), the more light a switch
+     * throws on the visitor the sooner (a switch lit now counts HOLD times
+     * its own, so lights are not handed back and forth as they walk) — as
+     * many as there are lights. A switch whose lights do not all find one —
+     * a living room's ceiling light and its ten spots on one switch — keeps
+     * the bake's light, all of it. Whether one is near, as assign has it.
+     */
+    assignWhole({ room, point, feet = true, above = false }) {
+        this.sighted = new Set();
+        this.near = false;
+        const slots = this.slots.filter((slot) => slot.shadowed);
+        if (above) return this.fill(slots, []);
+        const weights = this.switches.weights;
+        this.doorsById = new Map((this.builder.doors || []).map((door) => [door.spec.id, door]));
+        const inside = room !== null && this.switches.indoor?.has(room);
+        const lit = new Set(slots.map((slot) => slot.fitting?.index).filter((index) => index !== undefined));
+        const candidates = [];
+        this.switches.entries.forEach((entry, index) => {
+            if (!(weights[index] > 0)) return;
+            let own = false;
+            let seen = false;
+            let reaches = false;
+            let score = 0;
+            for (const fitting of entry.lights) {
+                const distance = point.distanceTo(_at.set(...fitting.position));
+                if (distance < SHADOW_REACH) this.near = true;
+                score += fitting.power / (1 + distance * distance);
+                if (room && fitting.room === room) {
+                    own = seen = reaches = true;
+                } else if (inside ? entry.zones.includes(room) : distance < SHADOW_REACH && within(fitting.position[1] - point.y, feet)) {
+                    this.near = true;
+                    reaches = true;
+                    if (this.sees(entry, fitting, room, inside)) seen = true;
+                }
+            }
+            // (Only a switch whose light is seen: one behind a shut door would light nothing in sight live.)
+            const lights = reaches && seen ? this.whole(entry) : null;
+            if (!lights?.length) return;
+            for (const light of lights) this.sighted.add(light);
+            candidates.push({ lights, own, score: score * (lit.has(lights[0].index) ? HOLD : 1) });
+        });
+        candidates.sort((a, b) => Number(b.own) - Number(a.own) || b.score - a.score);
+        const wanted = [];
+        for (const { lights } of candidates) {
+            if (wanted.length + lights.length > slots.length) continue;
+            for (const fitting of lights) wanted.push({ fitting, share: 1 });
+        }
+        this.fill(slots, wanted);
+    }
+
+    /**
+     * Whether the visitor can see the light of a fitting that is not in
+     * their own room: from the room it opens into, through whatever joins
+     * the two that lets light by as it stands; from out of doors, unless
+     * its room is one daylight does not reach — sealed, but for a door of
+     * its own to the outdoors standing open.
+     *
+     * @param {object} entry  the fitting's switch (LiveSwitches' `entries`)
+     * @param {object} fitting
+     * @param {string|null} room  where the visitor is
+     * @param {boolean} inside  whether that is a room lights reach others from (LiveSwitches' `indoor`)
+     */
+    sees(entry, fitting, room, inside) {
+        const switches = this.switches;
+        if (inside) {
+            const ways = switches.between?.(entry.room, room) ?? [];
+            return !ways.length || ways.some((id) => id === null || this.passes(id));
+        }
+        if (!switches.dark?.has(fitting.room)) return true;
+        return (switches.doorsOut?.get(fitting.room) ?? []).some((id) => this.passes(id));
+    }
+
+    /** Whether a door lets light by as it stands: one with glass in it, or one that is not shut (or is on its way open). */
+    passes(id) {
+        if (this.switches.glazed?.has(id)) return true;
+        const door = this.doorsById?.get(id);
+        return !door || ajar(door);
+    }
+
+    /** The doors that are not shut, as a number that changes when one opens or shuts: what is in sight changes with them. */
+    doorsMark() {
+        const doors = this.builder.doors || [];
+        let mark = 0;
+        for (let i = 0; i < doors.length; i++) if (ajar(doors[i])) mark = (mark * 31 + i + 1) | 0;
+        return mark;
     }
 
     /**
@@ -251,7 +586,12 @@ export default class LampPool {
         const fittings = wanted.map((w) => w.fitting);
         // Dark ones first: one still fading out goes on fading if it can.
         const free = slots.filter((slot) => !fittings.includes(slot.fitting)).sort((a, b) => a.level - b.level);
-        for (const slot of slots) if (!fittings.includes(slot.fitting)) slot.fitting = null;
+        for (const slot of slots) {
+            if (fittings.includes(slot.fitting)) continue;
+            // (The one it fades out from, for whoever adds up what is lit: World/RoomBakeLight.js.)
+            if (slot.fitting) slot.gone = slot.fitting;
+            slot.fitting = null;
+        }
         for (const { fitting, share } of wanted) {
             const held = slots.find((slot) => slot.fitting === fitting);
             if (held) {
@@ -288,6 +628,7 @@ export default class LampPool {
     /** A light on a fitting: where it hangs, its colour, its power — W over 4π, as the bake has it — or a share of it. */
     place(slot, fitting, share = 1) {
         slot.fitting = fitting;
+        slot.gone = null;
         slot.level = 0;
         slot.target = this.power(fitting, share);
         this.aim(slot, fitting, true);
@@ -295,6 +636,7 @@ export default class LampPool {
 
     /** A light's intensity for a fitting: W over 4π, as the bake has it — a share of it, and half a wall light's tube's. */
     power(fitting, share = 1) {
+        if (this.whole) return (fitting.power * share) / (4 * Math.PI);
         return (fitting.power * share * (this.wallTube(fitting) ? TUBE.share : 1)) / (4 * Math.PI);
     }
 
@@ -310,6 +652,15 @@ export default class LampPool {
     aim(slot, fitting, now = false) {
         const { light } = slot;
         light.color.set(fitting.color);
+        if (this.whole) {
+            // The bake's lamp, where it hung — its glass and bulbs, which block none of its light there, cast nothing here
+            // (World/LiveRoom.js's casters) — its shadow as soft as the lamp is big: its radius, in metres, negative, for
+            // the rooms' shaders to filter by (World/RoomBakeLight.js's SOFT_LAMP_GLSL).
+            light.position.set(...fitting.position);
+            light.shadow.radius = -(fitting.size ?? 0.03);
+            if (slot.shadowed) this.requestShadow(slot, now);
+            return;
+        }
         let [x, y, z] = fitting.position;
         // How far its glass reaches below the light — a lamp's capped: a
         // wall light's diffuser runs the length of its tube, and a light
@@ -440,6 +791,9 @@ export default class LampPool {
         for (const part of this.builder.openables?.parts || []) objects.push(part.node);
         for (const car of this.builder.cars || []) objects.push(car.group);
         for (const other of Object.values(this.world.player?.otherPlayers || {})) if (other.model?.avatar) objects.push(other.model.avatar);
+        // Over a bake, the people round the property too, as they come, go or walk (not as they breathe: their figure's
+        // root stands still) — the lamps' light is the room's own there, and nothing else shades it.
+        if (this.whole) for (const person of this.world.people?.list ?? []) objects.push(person.group);
         const seen = new Set(objects);
         for (const object of this.tracked.keys()) if (!seen.has(object)) this.tracked.delete(object);
         return objects.map((object) => {
@@ -463,6 +817,11 @@ export default class LampPool {
         this.world.off?.("scene-edited", this.onEdited);
         this.removeLights();
     }
+}
+
+/** Whether a door is not shut: open at all, or on its way. */
+function ajar(door) {
+    return door.open > 0.001 || door.target > 0.5;
 }
 
 /** Whether a fitting `dy` above (or below) the visitor's feet lights them: over their feet; for the editor's view, within a storey either way. */

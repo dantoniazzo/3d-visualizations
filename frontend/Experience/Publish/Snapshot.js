@@ -253,6 +253,8 @@ async function findVisible(experience, parts, table, seen, samples, timing, onPr
     const world = experience.world;
     const builder = world.sceneBuilder;
     const options = builder.staticOptions();
+    // (The collision as it was last brought up to date, whole: not one still being built a slice a frame.)
+    builder.settleCollision();
     const walk = walkViewpoints(builder.spec, world.collision);
     const birds = birdViewpoints(builder.spec, options.levels);
     const random = seeded(7);
@@ -262,7 +264,9 @@ async function findVisible(experience, parts, table, seen, samples, timing, onPr
     const pass = new IdPass(renderer, idGeometry(parts, table), table);
     const total = walk.length + birds.length + checkWalk.length + checkBirds.length;
     // The live scene would be drawn between batches for nobody; the GPU
-    // has better things to do meanwhile.
+    // has better things to do meanwhile. (Not drawn already, if the editor's
+    // plain view is held as it is for this: World.holdRealistic.)
+    const suspended = experience.suspended;
     experience.suspended = true;
     let done = 0;
     let insideSamples = 0;
@@ -296,7 +300,7 @@ async function findVisible(experience, parts, table, seen, samples, timing, onPr
         await run(checkWalk, (point) => pass.cube(point, check), "Checking for holes", "check");
         await run(checkBirds, (view) => pass.bird(view, check), "Checking for holes", "check");
     } finally {
-        experience.suspended = false;
+        experience.suspended = suspended;
         pass.dispose();
     }
     const keep = dilate(seen, parts, table);

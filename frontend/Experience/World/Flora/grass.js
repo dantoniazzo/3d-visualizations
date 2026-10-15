@@ -260,6 +260,8 @@ export function planterGrasses(planters) {
             }
         }
     }
+    // Lowest first, so that those up to a height are the first so many (showUpTo).
+    clumps.sort((a, b) => a.y - b.y);
     const mesh = new THREE.InstancedMesh(geometry, material, Math.max(1, clumps.length));
     mesh.name = "planter-grasses";
     mesh.castShadow = true;
@@ -274,7 +276,20 @@ export function planterGrasses(planters) {
     mesh.count = clumps.length;
     mesh.instanceMatrix.needsUpdate = true;
     mesh.computeBoundingSphere();
-    return { mesh, count: clumps.length, dispose: () => [geometry, material].forEach((x) => x.dispose()) };
+    return {
+        mesh,
+        count: clumps.length,
+        /**
+         * Only the clumps on the floors a view from above shows
+         * (Flora.showUpTo): `shows` says whether one growing at a height
+         * is — floors going up with height, the first so many of them.
+         */
+        showUpTo: (shows) => {
+            const shown = shows ? clumps.findIndex((c) => !shows(c.y)) : -1;
+            mesh.count = shown < 0 ? clumps.length : shown;
+        },
+        dispose: () => [geometry, material].forEach((x) => x.dispose()),
+    };
 }
 
 /**

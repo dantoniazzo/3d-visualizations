@@ -1,8 +1,9 @@
-# Reference: the generator, the spec, the landscape and the people
+# Reference: the generator, the spec, the landscape, the people and the view
 
 This covers the code as it stands for Ladonia (`scripts/spaces/ladonia/`, seeded as
 `kosinozici-villas`). `scripts/spaces/kosinozici.js` is the old first attempt. Nothing imports it.
 The people set round a space (SKILL.md §4b) are not the generator's: their data is in "People", below the landscape.
+What a test tab, a publish or a bake meets of the app itself — a link's words, the keys a browser keeps, the slider's steps, the publish and bake options, the manifest's lighting — is in "The view", below the people; it is the same for every space.
 
 ## Files
 
@@ -408,7 +409,7 @@ The method is SKILL.md §4b; how the app draws, lights and edits them, and what 
 | `… --out <file.json>` | The plan to a file, `{ scene, seed, people }`; the scene is not written. |
 | `… --png <file.png>` | Also a picture from above, a panel a floor: standing red, sitting blue, lying orange, each with a tick the way it faces, groups ringed. It stops no write: without `--dry-run` or `--out` the scene is still written. |
 
-- After `props`, `people` or `seats` has written into `public/`, `npm run build`: the servers serve `dist/`.
+- After `props`, `people` or `seats` has written into `public/`, build: a server serves the `dist` of the folder it runs in — the scratch build for a test server, the repo's `dist/` (`npm run build`) for the user's own (SKILL.md §0).
 - `people:place` prints the plan in the spec's order: who, clip, what is held and in which hand, where; for a sitter, the feet off the floor (+ hanging, − under it), how far the seat gives and how far forward they sit, and a solid base; then who the first 4 and the first 8 drawn are. It stops if the validator would change the plan.
 - A plan is the same for the same seed only while the scene, `seats.json`, `index.json` and `shared/people.js` are the same. Ladonia's seed 12 gives another first group since the planner's last fixes (`COPING`, `GRASSES`, `LEFT_OUT`). Keep a vetted plan as a file, not as its seed.
 - To write an edited plan file — the list `__people.patch` returns, or `--out`'s `{ people }` — run from the repo (the scene diff is then `people` alone, the record's `updated_at` aside):
@@ -620,8 +621,140 @@ At most `most` are drawn; each is animated every `every` frames within `near` of
 - `readBack(id)`: after the group itself was moved or turned (a gizmo drag), writes the entry's `position` and `rotation` from it.
 - `get(id)` (the record), `list` (the records built, in the spec's order), `count` (as many as the spec has), `objectFor(id)` (its group), `personOf(object)` (the id of the person a ray's hit is part of).
 - `show(on)`: all of them and their collision boxes, the "people" scenery. `setFilter(fn | null)`: only those `fn(entry)` is true for. Hide through these, never `group.visible`, which People overwrites.
-- `index()`: a promise of the index as the app reads it (`characters`, `clips`, `props`). `tick(delta)` is the world's per-frame call; `update` is the editor's.
+- `index()`: a promise of the index as the app reads it (`characters`, `clips`, `props`). `tick(delta, hold)` is the world's per-frame call (`hold`: a frame of an editor at rest, drawn only to look, in which nobody's clip moves on); `update` is the editor's.
 - A person's group is `person:<id>` with `userData { kind: "person", id, label }`, under the root `people`. A record carries `entry`, `group`, `model`, `meshes`, `character`, `clipEntry`, `info` (measured at the clip's start: seat, soles, back, head), `sphere` (culling) and `collisionBox`.
+
+## The view: links, stored keys, the slider's steps, publish options, the bake's options and the manifest
+
+The same for every space, as the code stood on 2026-10-12 (`frontend/Experience/Utils/device.js`, `frontend/index.js`, `World/World.js`, `World/Scope.js`, `shared/publishOptions.js`, `scripts/bake-public.mjs`, `blender/bake_public.py`) — the editor's three words of 2026-10-13, the live room's and "What a test tab can ask the page" read again on 2026-10-14 (`World/StandIns.js`, `Pace.js`, `Editor/Editor.js`, `World/RoomLight.js`, `Utils/rays.js`, `World/Collision.js`). What each thing does, and why, is `app-notes.md`.
+
+### A link's words
+
+`/?scene=<id>` is the editor (and its walkthrough); `/view/<id>` a public view. A word with no `=` is read by its presence alone.
+
+| word | where | what |
+|---|---|---|
+| `?scene=<id>` | editor | The space. The app writes it into the address itself. |
+| `?preview=1` | editor | The walkthrough's realistic preview on, for this page: sun, shadows, lamps, lit rooms, post-processing, everything shown. `0` or `false`: off. Without it, as the browser last left it (`editor-preview`), off at first. Edit mode is drawn plain whatever it says. |
+| `?scope=house\|exterior\|all` | editor | How much is drawn under the plain light, for this page. Without it, as the browser last left it (`editor-scope`), `house` at first. |
+| `?standins=0` | editor | The house and the furniture drawn mesh by mesh, as they are built, in place of the merged and instanced stand-ins the plain light draws (`World/StandIns.js`; `app-notes.md`, The editor's plain light and view scope): for comparing a frame or a time with and without them. Also `world.standIns.setEnabled(false)` in a page. Nothing is kept in the browser. |
+| `?frames=always` | editor | Every frame drawn, as before 2026-10-13, where the editor under its plain light otherwise draws only when something has changed (`Experience/Pace.js`; `app-notes.md`, When the editor draws): for a test or a tool that counts on frames. Also `experience.pace.set("always")` in a page, `set(null)` to give it back. Nothing is kept in the browser. |
+| `?outline=pass` | editor | The selection's outline drawn by three's OutlinePass, which draws the scene a second time, in place of the editor's own (`Editor/SelectionOutline.js`): for comparing a frame or a time. Read as the page opens. |
+| `?version=<v>` | public | That published version, not the latest. |
+| `?live` | public | No published version: the space as it stands, built and merged in the page, lit live. |
+| `?lighting=baked\|static\|live` | public, baked | The mode, over the version's and the visitor's: `baked` and `static` on any device at any step; `live` (the whole house lit live over its bake) only where the bake has the light apart, not on touch and not at steps 0–1. A bake made for a fully static view (`lighting.only`) is drawn `static` whatever is asked. |
+| `?quality=0…4\|low\|high\|max` | both | The slider's step for this page (`low` 1, `high` 3, `max` 4), over a stored step and a version's own — never above the device's ceiling. Moving the slider takes it out of the address. |
+| `?uncapped` | both | A developer's: no ceiling (not on touch), to see a step on a device not rated for it. |
+| `?rated=0…4` | both | A developer's: the device rated that low — never higher than it is — to see what such a device is given. Leaves a stored step as it is. |
+| `?guard=off\|report` | public | The frame-rate guard left out (to time anything), or saying in the console what it does. |
+| `?stats` | both | Frame rate, draw calls, triangles, bytes; in a public view the version and its options. |
+| `?lightmap=rooms\|one` | public, baked | A developer's: `rooms`, each room's own materials as before the light was resolved into one lightmap; `one`, the one-scale lightmap and layers drawn through the resolver, not those held each room's own way. |
+| `?merge=off\|<metres>\|own\|tint` | public, baked | A developer's, comma-separated: the house left a mesh a room; another side for the squares it is merged by (`0`: none); `own`, no materials shared; `tint`, no colours in the vertices. |
+| `?roomlight=on\|off` | public, baked | A developer's, for the live room (K): `off` (not offered), `on` (asked for as the view opens, which a visitor's never is). The other words it once took went with the lamps-over-the-bake drawing. |
+| `?night=meter\|lift\|asis` | public, baked | A developer's: how a lamplit room is exposed at night (`meter` is what is on). |
+
+### What a browser keeps
+
+`localStorage` of the page's origin, unless said: a test server on another port has its own. Remove what a test set. The link's words above keep nothing; a control clicked does.
+
+| key | value | written by |
+|---|---|---|
+| `render-quality` | the slider's step, `0`…`4` | the slider; brought down to the device's ceiling when a page loads; a lost graphics context (`0` in a public view on show, else one under the visitor's step) |
+| `view-lighting` | `static`, or absent for "as published" | the public view's menu (*Fastest* / *Auto*); a graphics context lost in a public view on show |
+| `view-scenery` | a JSON list of the scenery ids hidden | the public view's menu |
+| `view-lost-graphics` | `1` until the next visit has said so | a graphics context lost in a public view on show |
+| `editor-preview` | `1` or `0` | **P**, the HUD's and the header's button, the View menu (not `setPreview(…, { remember: false })`) |
+| `editor-scope` | `house`, `exterior` or `all` | the *Show* menu (not `scope.set(…, { remember: false })`) |
+| `publish-options` | the Publish panel's options, JSON | a publish |
+| `editor.trackpad` | `true` or `false` | *View → Trackpad* |
+| `view-reloaded-at` (`sessionStorage`) | a time in ms | a public view loading itself again after its graphics came back, at most once a minute a tab |
+
+### The slider's steps (`QUALITY_STEPS`)
+
+| step | name | pixel ratio, pixels at most | post, MSAA, AO samples | sun's shadow map | `lamps` (live, shadowed + not) | `garden` (spots + points) | room probe, grade | live room (K) |
+|---|---|---|---|---|---|---|---|---|
+| 0 | Fastest | 1, 2.1 M | no | 1024, hard, to 35 m | 0 + 2 | 0 + 1 | no | — |
+| 1 | Fast | 1.5, 2.1 M | no | 1024, hard, to 50 m | 1 + 1 | 0 + 1 | no | — |
+| 2 | Balanced | 1.5, 3.7 M | yes, 2, 8 | 2048, soft, to 60 m | 1 + 2 | 1 + 1 | grade | yes |
+| 3 | High | 2, 5 M | yes, 4, 12 | 4096, soft, to 90 m, every 2nd frame | 2 + 2 | 2 + 2 | both | yes |
+| 4 | Maximum realism | 2, 5 M | yes, 4, 16 | 8192, sun-soft, to 120 m, every 3rd frame | 2 + 4 | 3 + 2 | both | yes |
+
+- A device is rated (`deviceDefaultStep`) by touch (1) or by its graphics' name: a software renderer 0, integrated Intel and AMD 2, other Apple chips and discrete cards 3, Apple Pro/Max/Ultra and RTX 4. The rating is its ceiling (`stepCeiling`): the slider's top, and the most a link, a stored step or a version's *Always high* gives.
+- The step drawn is, in order: `?quality=`, the stored step, the version's `quality` (`low` 1, `high` 3), the device's rating — then capped. Steps 0–1 are "low power": a baked version is drawn "static" and from its 2048 copies; that much is chosen as the page opens and waits for a reload when the slider crosses the line (`needsReloadFor`).
+- The live room (K, `World/RoomLight.js`): the rooms round the visitor drawn unbaked over a view drawn "baked", when they ask — eight groups of rooms at most at each of those steps (`LIVE_MOST`), on a device rated for step 2 or more and not driven by touch; at steps 0–1 the view is "static" and has none.
+- Post-processing, the room probe and the grade apply only under a site's own sky (a space with a `landscape`); elsewhere a step sets the pixels, the shadows' filter and the texture filtering. The people's column is in "People", above. The sun's shadow map as the table has it — that size, fitted to the view out to that reach, drawn again every so many frames — is a view lit live under a site's own sky (`Realism.js`'s fit; not a baked view, nor a space without a sky): the filter alone is the step's everywhere. A view drawn "baked" has a map of what moves alone, 2048 a side at steps 2–4 (`SHADOW_MAP_SIZE` in `World/Environment.js`; twice that for `?lighting=live`'s whole house), and "static" has none. `lamps` is a view lit live. `garden` is every view of a site at night: over a bake those few lights go on lighting what is drawn live — the trees, the people, the cars, the glass — the house's and the ground's share of them being the bake's, where the bake has it.
+
+### Publish options (`shared/publishOptions.js`; a version's `manifest.options`)
+
+| option | values (default first) | what |
+|---|---|---|
+| `cull` | `true`, `false` | Faces no visitor can see removed, the rest turned to draw single-sided. |
+| `merge` | `true`, `false` | One mesh a material and floor. |
+| `compress` | `true`, `false` | Draco. The bake compresses its view by it too. |
+| `glass` | `true`, `false` | Plain see-through glass (never set it off: SKILL.md §7). |
+| `bake` | `final`, `draft`, `off` | The bake the Publish panel starts after the publish: 512 samples at 4096, 128 at 2048, or none — lit live, as in the editor. A bake from the terminal rewrites it (`final` from 256 samples up). |
+| `quality` | `auto`, `low`, `high` | The step for everyone who has not chosen: the device's own, 1 or 3 — under the device's ceiling. |
+| `lighting` | `auto`, `static` (`phones`: retired, read as `auto`) | Once baked: `auto` is "baked" at steps 2–4 and "static" at 0–1; `static` is "static" on every device, and its bake is made for that alone. |
+| `scenery`, `sceneryKnown` | lists of ids (`shared/scenery.js`) | The pieces the version has, and the pieces there were to choose from when it was published. |
+
+The one preset, "Lit live — as in the editor" (`PUBLISH_PRESETS`): everything on, `bake: "off"`, `quality: "auto"`, all the scenery. `/view/<id>` opens the latest version published, baked or not.
+
+### The bake's options
+
+`npm run bake -- <id> […]` is `node scripts/bake-public.mjs`, which the Publish panel runs too.
+
+| word | what |
+|---|---|
+| `--samples <n>` | Cycles samples (512). |
+| `--size <n>` | The lightmap's side (4096); phones get a 2048 copy. |
+| `--version <v>` | That version, not the latest published. |
+| `--margin <n>` | Empty texels round every island, as at 4096 (8; the packer narrows them itself when the islands would not fit). What a bake ended with is `lighting.margin`. |
+| `--static` | Only what a fully static view reads, whatever the version says. A version whose `lighting` option is `static` is baked so without it. |
+| `--full` | Everything, for such a version too. |
+| `--variants day,night` | A developer's: only those. A bake without a day opens unlit by day. |
+| `--no-switches`, `--no-doors` | A developer's: no switch's light, no doors baked shut. |
+| `--dry <file>` | A developer's: the settings written to `<file>`, nothing baked, no lock taken. |
+| `--debug` | Also keeps the raw and denoised lightmaps (EXR), and a stopped bake's folder. |
+
+- Environment: `PUBLISH_DIR` (where versions live: `published/` in the repo unless set — the bake **rewrites the version there in place** and removes that version's earlier `bake-*` folders), `BLENDER` (its path, if not found), and on the server `BAKE=off` (the panel offers no bake).
+- A developer's, none for a bake to keep (`blender/bake_public.py`'s own comments say what each does): `BAKE_CUT=zones,edges,covered,lids,sun,vertices,switches` (parts left out), `BAKE_BOX=x0,z0,x1,z1` (only that part of the site), `BAKE_APART=switches,doors,probes,tops,fill` (each done as before 2026-10-12, to hold the two together), `BAKE_PASSES=parts|rooms|loose` (switches lit several to a pass: it changes their light), `BAKE_SEED=<n>`, `BAKE_ONLY=<switch ids>`, `BAKE_CLAMP=<n>`, `BAKE_KEEP=masks`, `BAKE_ROOM_QUALITY` and `BAKE_ROOM_CHROMA_QUALITY` (80 and 90), `BAKE_CHECKPOINT_UNWRAP=<file.blend>` with `BAKE_STOP=1`, `BAKE_CHECKPOINT=<file.blend>` (`bake-replay.py`).
+- `node scripts/test-bake-batches.mjs`, `node scripts/test-light-regions.mjs` (needs `python3`) and `node scripts/test-frame-guard.mjs` hold the bake's passes, the rooms' texels as the bake and the view each work them out, and the guard's decisions; all three passed on 2026-10-12, and again on 2026-10-14 after the editor's and the live room's work (40 made-up sites; 55 atlases, none differing; 27 of 27). `node scripts/test-collision-tree.mjs` holds the collision trees (`World/Collision.js`): `buildOctree`'s split against the committed one, a `TreeKeeper`'s tree after edits against a tree built from scratch, and the tree walked against while another is built a slice a frame (64 of 64 on 2026-10-14).
+
+### A baked version's manifest (`published/<id>/<version>/manifest.json`, and the scene's own copy of the latest)
+
+Beside `id`, `version`, `publishedAt`, `options`, `spec`, `view`, `snapshot`, `runtime`, `levels`, `birdView`, `stats`, `collision` and `sizes` (`snapshot`, `view`, `runtime`, and once baked `lightmaps` and `roomLightmaps` by variant, `probes`, `doorStates`, in bytes), a bake adds `lighting`. Every file it names is served from beside the manifest, in the bake's own folder (`<version>/bake-<stamp>/`).
+
+| field | what |
+|---|---|
+| `bakedAt`, `samples`, `size`, `texel`, `meshes`, `triangles` | When and how: `texel` is the house's, in metres. |
+| `margin` | The texels left round every island, as the bake ended. Since 2026-10-12. |
+| `only` | `"static"` for a bake made for a fully static view alone: it has no `probes`, no `doorStates`, no `indirect` and no sun mask, and the view draws it static whatever is asked. Since 2026-10-12. |
+| `view` | How the light is drawn: `{ transform, look, exposure }`. |
+| `zones` | Each room's rectangle of the lightmap, `{ <room id> \| "outside": [x, y, w, h] }` in 0…1. |
+| `probes` | The light probes: `{ file, layout, origin, step, size, zoneIds, zones, variants, switches }` — a grid a metre apart (0.8 up), each probe's room, and where in `probes.bin` each variant's and each switch's light is. |
+| `doorStates` | `{ file, filePhone, size, doors: { <door id>: { <room>: { rect, at, share } } } }`: how much of each room's light stays with each of its doors shut, texel by texel in `doors.webp` and for the room all told (`share`). |
+| `switches[]` | `{ id, label, scale, encoding, storage, attribute, doors, doorSides, lights, through, layers, indirect }`. `layers`: `{ <room>: { lightmap, chroma, lightmapPhone, chromaPhone, strength, rect, own? } }`, the switch's light in each room it reaches, at the switch's one `scale`; `own` (since 2026-10-12) is the same crop held by a curve of its own, `{ lightmap, chroma, lightmapPhone, chromaPhone, encoding: "log", curve: [knee, top, gain] }`, where the light only spills in. `lights`: its lamps as baked (`kind`, `position`, `power` in watts, `color`, `size`). `through`: the doors its light reaches each other room by. `indirect`: what its lamps bounce (`scale`, `attribute`, `doors`, `doorSides`, `layers`), read only where the whole house is lit live over its bake (`?lighting=live`) — the live room (K) draws its rooms unbaked and reads none of the bake's light. `attribute` (`_S<n>`): its light on the thin faces, in the view's vertices. |
+| `variants.day`, `variants.night` | `{ lightmap, chroma, lightmapPhone, chromaPhone, storage: "ycocg", encoding: "reinhard", scale, attribute, doors, doorSides, sun, indirect, rooms?, garden? }`. `sun`: `{ position, color, strength, angle, mask, maskScale, maskPhone }` — the mask is the sun's share of each texel's light. `indirect`: all of the light but the sun's straight light (lit live alone). `rooms` (since 2026-10-12): the lightmap again with each room's part held by a curve of its own, `{ lightmap, chroma, lightmapPhone, chromaPhone, encoding: "log", zones: { <room>: [knee, top, gain] } }` — what a view that resolves the house's light fetches in the other's place. `garden` (night, a site with garden lights): how many of them are in the bake. `doors`, `doorSides`: the light at each door leaf, and on each of its sides. |
+
+A version baked before 2026-10-12 has no `margin`, `rooms`, `own` or `garden`, and is drawn from its one-scale files exactly as before; the view asks for nothing it lacks.
+
+### What a test tab can ask the page
+
+`window.experience` (`e`), its world (`w = e.world`) and builder (`sb = w.sceneBuilder`). Each is what the app itself uses; why, and what to watch for, is `app-notes.md`.
+
+| handle | where | what |
+|---|---|---|
+| `w.plain`, `w.setPreview(on, { remember: false })` | editor | Whether the plain light is what is drawn; the realistic preview (a promise: await it). |
+| `w.scope.current`, `w.scope.set("all", { remember: false })` | editor | What the view's scope draws. |
+| `w.standIns.stats()` | editor | The stand-ins now: `active`, `units`, `meshes`, `merged`, `instanced`, `alone` (the only one of its kind, drawing itself), `asThemselves`, `hidden`, `buckets`, `batches`, `bucketTriangles`, `instances`, `waiting`, and what `update` has done and taken. |
+| `w.standIns.hear()`, `.settle()`, `.setEnabled(on)` | editor | Every mesh looked at on the next frame (after a change by hand that emits nothing); what was just built again merged now; the stand-ins off or on (as `?standins=0`). Their meshes carry `userData.standIn`, under `e.scene.getObjectByName("stand-ins")`; a real mesh a stand-in draws has `layers.mask === 4096` (layer 12). |
+| `w.rays.cast(raycaster, roots)`, `.touch()`, `.stats` | both | A ray as `raycaster.intersectObjects(roots, true)` answers it, from the index — in the editor the raycaster needs `layers.enable(12)`; every unit looked through before the next ray; `casts`, `looks` (roots looked over), `lists` (a root's children taken again), `scans` (units looked through), `entered` (units a ray went into), `trees` (triangle trees made), `triangles` (found along rays by those trees) — `units` is among them and is never counted. |
+| `e.pace.state`, `.stats`, `.set("always" \| null)` | editor | `"always"`, `"awake"`, `"rest"` or `"idle"`; frames drawn and why (`frames`, `awake`, `rest`, `beat`, `always`, `skipped`, `wakes`, `busy`); every frame drawn, for a tool that counts on them, and given back. A public view has no `pace`. |
+| `e.wake(why)`, `e.update()`, `e.renderer.frames` | both | A frame asked for (nothing, in a public view); one frame by hand — at rest in the editor, one in which no time passes; frames drawn. |
+| `sb.refreshCollision({ wait })`, `sb.settleCollision()` | editor | The collision trees brought in step with the scene (waiting for them unless `wait: false`); a tree being built a slice a frame finished now. |
+| `sb.dynamicKeeper.last`, `.job`, `.low`, `.high` | editor | What the furniture's tree last did (`how`: same, mended, built, building; `why`: bounds, order, share, long, empty, begun, finished; `ms`; `sources`, `changed`, `triangles`, `total`), whether it is still being built, and the box it is cut from. `sb.staticKeeper` likewise for the building's. `w.collision.static`, `.dynamic`, `.outdoor`, `.people` are the trees. |
+| `w.roomLight.status()`, `.set(on)`, `.toggle()`, `.end(why)`, `.most` | public, baked | The live room: `state` (off, withheld, step, above, outdoors, coming, lit), `groups`, `zones`, `sight`, `lamps`, `exposure`, `stats`; asked for or not; turned off with a word; a ceiling on the groups shown, for a test. |
+| `w.lightingMode`, `sb.resolver`, `sb.merged`, `e.guard` | public | "baked", "static" or "live" (null for a version with no bake); the resolved lightmap and the merged house (null lit live or unbaked); the frame-rate guard (`feed(ms)`, `status()`). |
 
 ## Numbers that worked (as in the code)
 

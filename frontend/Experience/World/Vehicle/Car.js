@@ -184,7 +184,7 @@ export default class Car {
         const hit = this.octree.rayIntersect(new THREE.Ray(
             _ray.copy(point).setY(point.y + 1.2),
             _down
-        ));
+        ), { far: reach + 1.2 });
         if (!hit || hit.distance > reach + 1.2) return null;
 
         const normal = new THREE.Vector3(0, 1, 0);

@@ -5,6 +5,9 @@ import nipplejs from "nipplejs";
 import Experience from "../../Experience.js";
 import elements from "../../Utils/functions/elements.js";
 import Avatar from "./Avatar.js";
+import { isShown } from "../Scope.js";
+import { seeReal } from "../../Utils/layers.js";
+import rays from "../../Utils/rays.js";
 
 const _joystick = new THREE.Vector3();
 /** How far behind the first solid thing a light's box may be met and still be the one aimed at. */
@@ -68,7 +71,8 @@ export default class Player {
         this.player.speedMultiplier = 0.35;
         this.player.directionOffset = 0;
 
-        this.player.raycaster = new THREE.Raycaster();
+        // (The crosshair meets the editor's scene as it is built, whichever of it stand-ins draw: World/StandIns.js.)
+        this.player.raycaster = seeReal(new THREE.Raycaster());
         this.player.raycaster.far = 4;
         this.player.interactionObjects = [];
 
@@ -131,6 +135,7 @@ export default class Player {
             this.player.avatarSkin = avatarSkin;
             this.avatar = new Avatar(source, this.scene);
             this.updatePlayerSocket();
+            this.experience.wake("avatar");
         });
 
         this.socket.on("playerData", (playerData) => {
@@ -149,9 +154,30 @@ export default class Player {
                         player.id
                     );
                     this.otherPlayers[player.id] = player;
+                    this.experience.wake("visitor");
                 }
 
                 const entry = this.otherPlayers[player.id];
+                // (Sent many times a second whether anyone moved or not: the editor, which draws only when something has
+                // changed, is told when one has — Pace.js. Not for the last digits: someone standing still is pressed to
+                // the floor and lifted off it again at every frame of theirs. Against where they were when last told of,
+                // so that a drift too slow to count in one message still adds up to a move.)
+                const told = entry.told;
+                const far = (a, b) => Math.abs(a - b) > 1e-4;
+                if (
+                    !told ||
+                    far(told[0], player.position_x) ||
+                    far(told[1], player.position_y) ||
+                    far(told[2], player.position_z) ||
+                    far(told[3], player.quaternion_x) ||
+                    far(told[4], player.quaternion_y) ||
+                    far(told[5], player.quaternion_z) ||
+                    far(told[6], player.quaternion_w) ||
+                    told[7] !== player.animation
+                ) {
+                    entry.told = [player.position_x, player.position_y, player.position_z, player.quaternion_x, player.quaternion_y, player.quaternion_z, player.quaternion_w, player.animation];
+                    this.experience.wake("visitor");
+                }
                 entry.position = {
                     x: player.position_x,
                     y: player.position_y,
@@ -173,6 +199,7 @@ export default class Player {
 
             entry.model.dispose();
             delete this.otherPlayers[id];
+            this.experience.wake("visitor");
         });
     }
 
@@ -539,6 +566,23 @@ export default class Player {
         );
     }
 
+    /**
+     * Whether the visitor is being moved at all this frame — walking,
+     * coasting to a stop, jumping, falling or driving — and so must meet
+     * whatever is in the way as it stands now (World.update: a collision
+     * tree an edit left half built, with the one walked against meanwhile
+     * still of the pieces as they stood, is finished first). Standing still
+     * they meet nothing new. By the body's speed, not `onFloor`: standing, it is
+     * pressed to the floor and lifted off it again every frame, a frame of
+     * gravity at most.
+     */
+    underWay() {
+        if (!this.avatar || (!this.enabled && !this.remote)) return false;
+        if (this.inVehicle || this.isMoving() || this.actions.jump) return true;
+        const { x, y, z } = this.player.velocity;
+        return x * x + z * z > 0.01 || Math.abs(y) > 2.5;
+    }
+
     updateAvatarPosition() {
         this.avatar.avatar.position.copy(this.player.collider.end);
         this.avatar.avatar.position.y -= 1.56;
@@ -865,10 +909,12 @@ export default class Player {
         this.player.raycaster.ray.origin.copy(this.player.collider.end);
         this.player.raycaster.ray.direction.copy(this.getLookDirection());
 
-        const intersects = this.player.raycaster.intersectObjects(
-            this.player.interactionObjects,
-            true
-        );
+        // (three's own answer, from the scene's index: Utils/rays.js.)
+        const intersects = rays.cast(this.player.raycaster, this.player.interactionObjects);
+        // What the editor's view leaves out (World/Scope.js) is not there to be looked at.
+        if (this.experience.world.scope && this.experience.world.scope.current !== "all") {
+            while (intersects.length && !isShown(intersects[0].object)) intersects.shift();
+        }
 
         let target = null;
         this.lookedAtDoor = null;
@@ -881,10 +927,12 @@ export default class Player {
         // collision tree, each triangle saying what it is part of.
         if (builder?.runtime) {
             const collision = this.experience.world.collision;
-            const hit = collision.rayIntersect(this.player.raycaster.ray);
+            // (No further than the crosshair reaches: every use of either below is of a hit within it.)
+            const far = this.player.raycaster.far;
+            const hit = collision.rayIntersect(this.player.raycaster.ray, { far });
             // Its floors have tops and no undersides: seen from below, sight
             // stops at the floor above all the same.
-            const seen = collision.rayIntersect(this.player.raycaster.ray, { twoSided: true });
+            const seen = collision.rayIntersect(this.player.raycaster.ray, { twoSided: true, far });
             if (seen && seen.distance <= this.player.raycaster.far) sight = Math.min(sight, seen.distance);
             // A piece with doors or drawers collides as its box, shut, which
             // stands a handle's depth proud of them: its own doors and
@@ -955,7 +1003,11 @@ export default class Player {
         // A light, or its switch, in sight: what is aimed at, before any
         // door. Its box stands a little proud of it, so it is met first.
         if (this.experience.world.switches) {
-            const light = builder?.pickLight(this.player.raycaster.ray, { far: this.player.raycaster.far });
+            // In the editor's view of the surroundings alone (World/Scope.js),
+            // only a lamp whose piece is drawn: the rooms' lights are not there.
+            const scope = this.experience.world.scope;
+            const accept = scope && !scope.interior ? ({ fixture }) => Boolean(fixture && builder.furniture.get(fixture)?.group.visible) : undefined;
+            const light = builder?.pickLight(this.player.raycaster.ray, { far: this.player.raycaster.far, accept });
             if (light && light.distance <= sight + LIGHT_SLACK) {
                 this.lookedAtLight = light;
                 this.lookedAtDoor = null;

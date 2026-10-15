@@ -2,6 +2,7 @@ import { EventEmitter } from "events";
 import * as THREE from "three";
 
 import Loaders from "./Loaders.js";
+import { loadBakedTexture } from "./bakedTexture.js";
 
 export default class Resources extends EventEmitter {
     constructor(assets) {
@@ -44,6 +45,12 @@ export default class Resources extends EventEmitter {
                     asset.path,
                     (file) => this.singleAssetLoaded(asset, file),
                     undefined,
+                    (error) => this.assetFailed(asset, error)
+                );
+            } else if (asset.type === "bakedTexture") {
+                // A lightmap: decoded off the main thread (Utils/bakedTexture.js).
+                loadBakedTexture(asset.path).then(
+                    (file) => this.singleAssetLoaded(asset, file),
                     (error) => this.assetFailed(asset, error)
                 );
             } else if (asset.type === "cubeTexture") {

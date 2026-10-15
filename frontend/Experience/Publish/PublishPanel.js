@@ -135,7 +135,8 @@ export default class PublishPanel {
                 continue;
             }
             const field = this.dom.form.elements[option.id];
-            if (option.choices) field.value = options[option.id];
+            // (A choice no longer offered — remembered from when it was — as the default.)
+            if (option.choices) field.value = option.choices.some((choice) => choice.value === options[option.id] && !choice.retired) ? options[option.id] : option.default;
             else field.checked = options[option.id];
         }
     }
@@ -174,10 +175,16 @@ export default class PublishPanel {
         }
         this.show("progress");
         this.dom.stage.classList.remove("is-bad");
-        // The hills are the house's own ground: left out, the ground is
-        // published whole without them, and nothing walks on them.
-        const restoreHills = this.leaveHills(!options.scenery.includes("hills"));
+        // Both given back whatever happens, a failure in either included.
+        let restoreLight = () => {};
+        let restoreHills = () => {};
         try {
+            // Lit as a visitor will see it, whatever the editor is showing: its
+            // plain light is no part of what is published (World.holdRealistic).
+            restoreLight = await this.experience.world.holdRealistic();
+            // The hills are the house's own ground: left out, the ground is
+            // published whole without them, and nothing walks on them.
+            restoreHills = this.leaveHills(!options.scenery.includes("hills"));
             const { glb, stats, shadow } = await buildSnapshot(this.experience, {
                 onProgress: (fraction, label) => this.progress(fraction, label),
                 cull: options.cull,
@@ -203,6 +210,7 @@ export default class PublishPanel {
             setTimeout(() => this.show("options"), 4000);
         } finally {
             restoreHills();
+            restoreLight();
         }
     }
 
@@ -217,11 +225,20 @@ export default class PublishPanel {
         const spec = builder.spec;
         spec.garden ??= {};
         const saved = spec.garden.hills;
-        spec.garden.hills = { ...(saved || {}), enabled: false };
-        builder.rebuildHills();
-        return () => {
+        const putBack = () => {
             if (saved === undefined) delete spec.garden.hills;
             else spec.garden.hills = saved;
+        };
+        spec.garden.hills = { ...(saved || {}), enabled: false };
+        try {
+            builder.rebuildHills();
+        } catch (error) {
+            // Not left out after all: the scene says what it said, at least.
+            putBack();
+            throw error;
+        }
+        return () => {
+            putBack();
             builder.rebuildHills();
         };
     }
@@ -484,6 +501,7 @@ function optionField(option) {
             <fieldset class="publish-choice">
                 <legend>${option.label}<small>${option.hint}</small></legend>
                 <div class="publish-segments">${option.choices
+                    .filter((choice) => !choice.retired)
                     .map(
                         (choice) => `
                             <label>

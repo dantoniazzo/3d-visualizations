@@ -3,13 +3,15 @@ import * as THREE from "three";
 import Sizes from "./Utils/Sizes.js";
 import Time from "./Utils/Time.js";
 import Resources from "./Utils/Resources.js";
-import { chromaURL, lightingMode, lightmapURL } from "./Utils/device.js";
+import { chromaURL, guardOptions, lightingMode, lightmapURL, roomLightmap, roomLightmapsLikely } from "./Utils/device.js";
 import { hiddenScenery } from "./Utils/viewerChoices.js";
 import assets from "./Utils/assets.js";
 
 import Camera from "./Camera.js";
 import Renderer from "./Renderer.js";
 import Preloader from "./Preloader.js";
+import FrameGuard from "./FrameGuard.js";
+import Pace from "./Pace.js";
 
 import World from "./World/World.js";
 import CarModels from "./World/Vehicle/CarModels.js";
@@ -44,6 +46,8 @@ export default class Experience {
 
         this.sizes = new Sizes();
         this.time = new Time();
+        // The editor draws a frame only when something may have changed (Pace.js); a public view, every frame.
+        this.pace = publicView ? null : new Pace(this);
 
         this.setScene();
         this.setCamera();
@@ -51,6 +55,7 @@ export default class Experience {
         this.setResources();
         this.setPreloader();
         this.setWorld();
+        this.setGuard();
 
         this.sizes.on("resize", () => this.onResize());
 
@@ -107,14 +112,22 @@ export default class Experience {
         if (this.published?.view) extra.push({ name: "publishedView", type: "glbModel", path: this.published.view });
         if (runtime) extra.push({ name: "publishedRuntime", type: "glbModel", path: runtime });
         const day = this.published?.lighting?.variants?.day;
-        if (day) extra.push({ name: "lightmap:day", type: "imageTexture", path: lightmapURL(day) });
-        if (day && chromaURL(day)) extra.push({ name: "lightmap:day:chroma", type: "imageTexture", path: chromaURL(day) });
+        // (The one with each room's part held its own way, where the bake wrote one and the view will most likely
+        // resolve the house's light: World.drawLighting takes whichever it then needs.)
+        const rooms = day && roomLightmapsLikely(this.published.lighting) ? roomLightmap(day) : null;
+        if (rooms) {
+            extra.push({ name: "lightmap:day:rooms", type: "bakedTexture", path: lightmapURL(rooms) });
+            extra.push({ name: "lightmap:day:rooms:chroma", type: "bakedTexture", path: chromaURL(rooms) });
+        } else if (day) {
+            extra.push({ name: "lightmap:day", type: "bakedTexture", path: lightmapURL(day) });
+            if (chromaURL(day)) extra.push({ name: "lightmap:day:chroma", type: "bakedTexture", path: chromaURL(day) });
+        }
         // Lit live, the house takes all but the sun's straight light from a
         // lightmap of its own; the grass still takes all of it from the other.
         if (day && lightingMode(this.published.lighting) === "live") {
-            extra.push({ name: "lightmap:day:indirect", type: "imageTexture", path: lightmapURL(day.indirect) });
+            extra.push({ name: "lightmap:day:indirect", type: "bakedTexture", path: lightmapURL(day.indirect) });
             if (chromaURL(day.indirect)) {
-                extra.push({ name: "lightmap:day:indirect:chroma", type: "imageTexture", path: chromaURL(day.indirect) });
+                extra.push({ name: "lightmap:day:indirect:chroma", type: "bakedTexture", path: chromaURL(day.indirect) });
             }
         }
 
@@ -130,12 +143,62 @@ export default class Experience {
         this.world = new World();
     }
 
+    /**
+     * A public view watches its own frame rate, and makes itself lighter
+     * when it runs slowly (FrameGuard.js). Not the editor, whose plain light
+     * has nothing to take; `?guard=off` in the link leaves it out.
+     */
+    setGuard() {
+        const options = guardOptions();
+        this.guard = this.publicView && !options.off ? new FrameGuard(this, options) : null;
+        this.guard?.bind(this.world);
+    }
+
     onResize() {
         this.camera.onResize();
         this.renderer.onResize();
     }
 
-    update() {
+    /**
+     * Something happened that the next frame should show. The editor draws
+     * only then (Pace.js); in a public view, which draws every frame, this
+     * does nothing. Free to call from anywhere, as often as anything likes.
+     *
+     * @param {string} [why]  for measuring
+     * @param {number} [ms]  how long frames go on after it, if not a moment
+     */
+    wake(why, ms) {
+        this.pace?.wake(why, ms);
+    }
+
+    /** A frame asked of the browser — one at a time, whoever asks, however often. */
+    request() {
+        if (this.queued) return;
+        const asked = (this.queued = this.asked = (this.asked ?? 0) + 1);
+        window.requestAnimationFrame((next) => {
+            // (Not one that a frame drawn by hand has overtaken: update.)
+            if (this.queued !== asked) return;
+            this.update(next);
+        });
+    }
+
+    /**
+     * A frame: the world, the camera and the picture, and the next one asked
+     * for. The browser's, each time it offers one — or called by hand (a
+     * test in a tab the browser gives no frames): a frame already asked for
+     * is then dropped for the one asked after this, so there is never more
+     * than one loop.
+     *
+     * @param {number} [time]  when the frame began (requestAnimationFrame's)
+     */
+    update(time) {
+        this.queued = 0;
+        // The editor at rest: not this turn (Pace.js) — it asks for the next itself.
+        const pace = this.pace;
+        if (pace && !pace.begin(performance.now())) return;
+
+        // How long the last frame took, judged (a public view's guard).
+        if (this.guard) this.guard.frame(time ?? performance.now());
         if (this.preloader) this.preloader.update();
 
         // World before camera: under pointer lock the camera places itself
@@ -147,6 +210,8 @@ export default class Experience {
         if (this.renderer && !this.suspended) this.renderer.update();
         if (this.time) this.time.update();
 
-        window.requestAnimationFrame(() => this.update());
+        // The next: at once in a public view; in the editor, when there is something to draw (Pace.end).
+        if (pace) pace.end();
+        else this.request();
     }
 }

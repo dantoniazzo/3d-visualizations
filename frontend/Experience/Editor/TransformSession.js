@@ -2,6 +2,7 @@ import * as THREE from "three";
 
 import { AXES, DEG, PLANE_AXES, yawQuaternion } from "./axes.js";
 import Snapper, { STEP_UP } from "./Snapper.js";
+import { seeReal } from "../Utils/layers.js";
 
 /**
  * One move, turn or scale, from the moment it starts to the moment it is
@@ -41,7 +42,7 @@ const FIELD_TURN = 2;
 /** From the walkthrough: scale doubles for about 25 degrees looked up. */
 const FIELD_SCALE = 1.6;
 
-const _ray = new THREE.Raycaster();
+const _ray = seeReal(new THREE.Raycaster());
 const _plane = new THREE.Plane();
 const _point = new THREE.Vector3();
 const _v = new THREE.Vector3();
@@ -410,20 +411,28 @@ export default class TransformSession {
             }
         }
 
-        if (this.kind === "move" && snap && this.typedValue === null) {
-            if (this.gravity && !vertical) {
-                this.rest(candidate);
-            } else if (vertical && editable.caps.gravity) {
-                // Lifting: settle onto a surface within reach.
-                const bottom = editable.bottom(candidate);
-                const support = this.editor.snapper.supportUnder(editable.footprint(candidate), bottom - 0.1, this.exclude, editable.caps.gravity === "floor");
-                if (support !== null && Math.abs(support - bottom) < 0.1) {
-                    candidate.position.y += support - bottom;
+        // Nothing moves until an option is taken: what the piece could stand on is looked over once for all of them.
+        const snapper = this.editor.snapper;
+        snapper.hold();
+        let options;
+        try {
+            if (this.kind === "move" && snap && this.typedValue === null) {
+                if (this.gravity && !vertical) {
+                    this.rest(candidate);
+                } else if (vertical && editable.caps.gravity) {
+                    // Lifting: settle onto a surface within reach.
+                    const bottom = editable.bottom(candidate);
+                    const support = snapper.supportUnder(editable.footprint(candidate), bottom - 0.1, this.exclude, editable.caps.gravity === "floor");
+                    if (support !== null && Math.abs(support - bottom) < 0.1) {
+                        candidate.position.y += support - bottom;
+                    }
                 }
             }
-        }
 
-        const options = this.flushOptions(candidate, snap, vertical);
+            options = this.flushOptions(candidate, snap, vertical);
+        } finally {
+            snapper.release();
+        }
         for (const option of options) {
             const result = this.check(option);
             if (result.ok) {

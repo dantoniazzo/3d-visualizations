@@ -75,6 +75,54 @@ export function applyReflections(root, options = {}) {
     });
 }
 
+/** The copies of clear glass that draw their reflections alone (reflectionsOnly), by the glass each was made from. */
+const REFLECTING_ONLY = new WeakMap();
+/** ...and the glass each was made from, by the copy (wholeGlass). */
+const WHOLE = new WeakMap();
+
+/**
+ * A copy of a clear, see-through glass that draws only what it reflects:
+ * its own colour takes no light at all — neither what its environment map
+ * would give it, nor the scene's lights' — and only how see-through it is
+ * stays. For glass standing in a room of a view drawn from its bake
+ * (SceneBuilder.clearGlassIndoors), where nothing lights it as its room is
+ * lit: its map there is the studio's, as bright in a bathroom without a
+ * window as in the garden, and plain glass is a white sheet a third
+ * opaque (plainGlass) — a shower's screen drew as a milky white panel by
+ * day, all of it the studio's light on that white. Without it the glass is
+ * clear, a shade darker than what stands behind it, with its reflections.
+ * Null for anything that is not such a glass.
+ */
+export function reflectionsOnly(material) {
+    if (!material?.transparent || kindOf(material) !== "glass") return null;
+    if (REFLECTING_ONLY.has(material)) return REFLECTING_ONLY.get(material);
+    const copy = material.clone();
+    const previous = material.onBeforeCompile;
+    const previousKey = material.customProgramCacheKey;
+    const lit = "#include <lights_physical_fragment>";
+    copy.onBeforeCompile = (shader, renderer) => {
+        previous.call(copy, shader, renderer);
+        if (!shader.fragmentShader.includes(lit)) console.warn("Glass indoors not kept to its reflections: three's shader has changed");
+        shader.fragmentShader = shader.fragmentShader.replace(lit, `${lit}\n\tmaterial.diffuseColor = vec3( 0.0 );`);
+    };
+    copy.customProgramCacheKey = () => `${previousKey.call(copy)}|reflections-only`;
+    REFLECTING_ONLY.set(material, copy);
+    // (A copy of the copy is itself.)
+    REFLECTING_ONLY.set(copy, copy);
+    WHOLE.set(copy, material);
+    return copy;
+}
+
+/**
+ * The glass a copy that draws its reflections alone was made from
+ * (reflectionsOnly) — all of it, as a view lit live draws it: for a room of
+ * a view drawn from its bake that is drawn so again (World/LiveRoom.js),
+ * where the room's own lights light it. Any other material is itself.
+ */
+export function wholeGlass(material) {
+    return WHOLE.get(material) ?? material;
+}
+
 /**
  * Refractive glass swapped for plain see-through glass, under `root`.
  *

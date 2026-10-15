@@ -2,10 +2,21 @@ import "./index.scss";
 import { io } from "socket.io-client";
 
 import Experience from "./Experience/Experience.js";
-import BirdView from "./Experience/World/BirdView.js";
 import elements from "./Experience/Utils/functions/elements.js";
-import { QUALITY, QUALITY_STEP, QUALITY_STEPS, deviceDefaultStep, needsReloadFor, setLighting, setQuality, setQualityStep } from "./Experience/Utils/device.js";
-import { chooseLighting, chosenLighting } from "./Experience/Utils/viewerChoices.js";
+import {
+    QUALITY,
+    QUALITY_STEP,
+    QUALITY_STEPS,
+    ROOM_LIGHT_STEP,
+    deviceDefaultStep,
+    lighterLighting,
+    needsReloadFor,
+    setLighting,
+    setQuality,
+    setQualityStep,
+    stepCeiling,
+} from "./Experience/Utils/device.js";
+import { chooseLighting, chosenLighting, lostGraphics } from "./Experience/Utils/viewerChoices.js";
 import { finishesFor, FINISHES } from "../shared/catalog.js";
 import { publishOptions } from "../shared/publishOptions.js";
 import { publishedSpec } from "../shared/neighbourhood.js";
@@ -33,6 +44,7 @@ const dom = elements({
     birdToggle: "#bird-toggle",
     floorPicker: "#floor-picker",
     editorToggle: "#editor-toggle",
+    previewToggle: "#preview-toggle",
     viewToggleLabel: "#view-toggle-label",
     lightingToggle: "#lighting-toggle",
     lightingToggleLabel: "#lighting-toggle-label",
@@ -41,16 +53,22 @@ const dom = elements({
     lightsList: "#lights-list",
     lightsAllOff: "#lights-all-off",
     lightsAllOn: "#lights-all-on",
+    roomLight: "#room-light",
+    roomLightToggle: "#room-light-toggle",
+    roomLightNote: "#room-light-note",
+    roomLightHint: "#room-light-hint",
     lightingSection: "#lighting-section",
     lightingChoices: "#lighting-choices",
     lightingNote: "#lighting-note",
     qualityRange: "#quality-range",
+    qualityTicks: ".quality-ticks",
     qualityName: "#quality-name",
     qualityNote: "#quality-note",
     qualityReload: "#quality-reload",
     scenerySection: "#scenery-section",
     sceneryList: "#scenery-list",
     pickLabel: "#pick-label",
+    viewNotice: "#view-notice",
     menuPanel: "#menu-panel",
     menuSceneName: "#menu-scene-name",
     menuSceneSummary: "#menu-scene-summary",
@@ -253,6 +271,7 @@ function enterScene(sceneId, spec, options = {}) {
     world.on("ready", () => {
         setupHud(spec);
         setupQuality();
+        if (publicView) tellLostGraphics();
     });
     world.on("room", updateRoomReadout);
     world.on("look", onLook);
@@ -265,12 +284,16 @@ function enterScene(sceneId, spec, options = {}) {
     world.on("mode", onModeChange);
     world.on("publish", () => startPublish());
     world.on("lighting", updateLightingToggle);
+    world.on("preview", updatePreviewToggle);
+    updatePreviewToggle(world.preview);
     world.on("switches-ready", setupLights);
     world.on("scenery-ready", setupViewOptions);
     world.on("switches", renderLights);
     world.on("bird-hover", showPickLabel);
     world.on("bird-ready", setupFloorPicker);
     world.on("bird", updateBirdView);
+    // A public view's own watch on its frame rate (Experience/FrameGuard.js): what it changes, shown and said.
+    experience.guard?.on("change", onGuardChange);
 
     // Desktop looks with the mouse via pointer lock; touch keeps drag-to-orbit.
     if (experience.camera.scheme === "pointerLock") {
@@ -636,8 +659,8 @@ function setupFloorPicker(count) {
     const birdView = experience.world.birdView;
     dom.floorPicker.innerHTML = birdView.floors
         .map(({ level }) => {
-            const name = birdView.constructor.floorName(level, birdView.levels);
-            // Short: "Ground", "First"… — or, named by height, the height.
+            const name = birdView.floorName(level);
+            // Short: "Ground", "First", "Roof"… — or, named by height, the height.
             const short = name.startsWith("Level ") ? name.split(" ")[1] : name.split(" ")[0];
             return `<button data-level="${level}"><span class="floor-long">${name}</span><span class="floor-short">${short}</span></button>`;
         })
@@ -659,6 +682,8 @@ function updateBirdView({ active, level }) {
     } else {
         updateViewToggle(experience.camera.mode);
     }
+    // The live room has no switch from above (renderRoomLight).
+    if (roomLightBound?.supported) renderRoomLight(roomLightBound.status());
 }
 
 dom.birdToggle.addEventListener("click", (event) => {
@@ -676,6 +701,26 @@ dom.editorToggle.addEventListener("click", (event) => {
     editor()?.enter();
 });
 
+/**
+ * The editor's realistic preview (World.setPreview): its walkthrough lit as
+ * visitors will see it, or — off, as it starts — plainly, as edit mode is.
+ */
+function updatePreviewToggle(on) {
+    dom.previewToggle.classList.toggle("is-on", Boolean(on));
+    dom.previewToggle.setAttribute("aria-pressed", String(Boolean(on)));
+}
+
+function togglePreview() {
+    const world = experience?.world;
+    if (!world || publicView) return;
+    world.setPreview(!world.preview);
+}
+
+dom.previewToggle.addEventListener("click", (event) => {
+    event.stopPropagation();
+    togglePreview();
+});
+
 /** Day and night, when the published view has both baked — or the view is lit live, under a sky of its own or with its lights switched live. */
 function updateLightingToggle(variant) {
     const variants = Object.keys(experience?.published?.lighting?.variants || {});
@@ -687,6 +732,8 @@ function updateLightingToggle(variant) {
 function toggleLighting() {
     const world = experience?.world;
     if (!world?.lighting) return;
+    // (The other sky, its light and the lamps coming in take frames of their own, from before the world says it has changed.)
+    experience.guard?.settle();
     world.setLighting(world.lighting === "night" ? "day" : "night");
 }
 
@@ -718,13 +765,128 @@ function setupLights(switches) {
                 )
                 .join("");
             // One floor needs no heading.
-            const levels = switches.levels ?? experience.world.birdView?.levels ?? [];
-            const heading = floors.length > 1 ? `<h5>${escapeHtml(switches.floorName?.(level) ?? BirdView.floorName(level, levels))}</h5>` : "";
+            const heading = floors.length > 1 ? `<h5>${escapeHtml(switches.floorName(level))}</h5>` : "";
             return `<div class="hud-panel-section">${heading}<div class="light-switches">${rows}</div></div>`;
         })
         .join("");
     renderLights(switches);
+    setupRoomLight();
 }
+
+/**
+ * The live room (World/RoomLight.js): over a baked view, the room the
+ * visitor is in drawn as it really is — its own materials, the sun through
+ * its windows, its lamps, real shadows — while they ask for it: a switch at
+ * the head of the lights panel, and K. Shown only where the view can do it;
+ * where it could but for the visitor's own settings, shown with why not.
+ * What it says under the switch, by where it has got to:
+ */
+const ROOM_LIGHT_NOTES = {
+    off: "Draws the room you are in as it really is: its own materials, the sun through its windows, its lamps, real shadows. Everywhere else keeps its fixed (baked) light.",
+    step: "Needs the Balanced step or higher: the slider is in the menu (M).",
+    above: "The live room waits while you look from above, where everything keeps its fixed light.",
+    outdoors: "On. It draws the room you are in: step indoors.",
+    coming: "Getting the room ready…",
+    lit: "On: this room is drawn live. Everywhere else keeps its fixed light.",
+};
+/**
+ * ...and where the view was opened in a way that leaves it out, though this
+ * device could have it: `step`, at one of the slider's two lowest steps —
+ * said as it stands now, the slider still there or raised since (what the
+ * view is lit by was chosen as it opened: Utils/device.js's needsReloadFor).
+ */
+const ROOM_LIGHT_WITHHELD = {
+    step: () =>
+        QUALITY_STEP >= ROOM_LIGHT_STEP
+            ? "Reload to have it: the view opened at one of its two fastest steps, with fixed light only."
+            : "Not at this step: the view opened at one of its two fastest, with fixed light only. Raise the slider to Balanced (menu, M) and reload.",
+    chosen: () => "Not while Lighting is set to Fastest: fixed light only. Pick Auto in the menu (M) to have it.",
+};
+let roomLightBound = null;
+
+function setupRoomLight() {
+    const roomLight = experience?.world?.roomLight ?? null;
+    if (roomLight === roomLightBound) return;
+    roomLightBound = roomLight;
+    dom.roomLight.hidden = !roomLight || !(roomLight.supported || roomLight.withheld);
+    if (dom.roomLight.hidden) return;
+    roomLight.on("change", renderRoomLight);
+    roomLight.on("hint", hintRoomLight);
+    roomLight.on("ended", (why) => tellView(why, 12000));
+    renderRoomLight(roomLight.status());
+}
+
+function renderRoomLight(status) {
+    const on = Boolean(status.on);
+    // From above there is nothing for it to light: no switch there — only, if it is on, a word that it waits.
+    const above = Boolean(experience?.world?.birdView?.active);
+    dom.roomLight.hidden = above && !on;
+    dom.roomLightToggle.hidden = above;
+    dom.roomLightToggle.classList.toggle("is-on", on);
+    dom.roomLightToggle.setAttribute("aria-pressed", String(on));
+    // Where the view leaves it out, the switch is there to say so, not to press.
+    dom.roomLightToggle.disabled = !status.supported || (status.state === "step" && !on);
+    dom.roomLightNote.textContent = status.supported ? ROOM_LIGHT_NOTES[status.state] ?? "" : ROOM_LIGHT_WITHHELD[status.withheld]?.() ?? "";
+    // In the view itself, where K was pressed with the panel shut: that it is coming, at once; that it is on; that it is off.
+    const was = roomLightSaid;
+    roomLightSaid = { on, state: status.state };
+    if (above || !status.supported) dom.roomLightHint.hidden = true;
+    else if (status.state === "coming") sayRoomLight("Getting the live room ready…", 0);
+    else if (on && status.state === "lit" && was.state !== "lit") sayRoomLight("Live room on", 2500);
+    else if (on && status.state === "outdoors" && !was.on) sayRoomLight("Live room on: step indoors", 4000);
+    else if (!on && was.on) sayRoomLight("Live room off", 2000);
+    else if (was.state === "coming") dom.roomLightHint.hidden = true;
+}
+
+/** A word in the view about the live room, by its key: for `lasts` milliseconds, or (0) until the next. */
+let roomLightSaid = { on: false, state: "off" };
+function sayRoomLight(text, lasts) {
+    dom.roomLightHint.replaceChildren(Object.assign(document.createElement("kbd"), { textContent: "K" }), ` ${text}`);
+    dom.roomLightHint.hidden = false;
+    clearTimeout(roomLightHintTimer);
+    if (lasts) roomLightHintTimer = setTimeout(() => (dom.roomLightHint.hidden = true), lasts);
+}
+
+function toggleRoomLight() {
+    const roomLight = experience?.world?.roomLight;
+    if (!roomLight?.supported) {
+        // Left out as the view was opened, though this device could have it: K says what the panel's row says.
+        const why = ROOM_LIGHT_WITHHELD[roomLight?.withheld]?.();
+        if (why) tellView(`The live room: ${why.charAt(0).toLowerCase()}${why.slice(1)}`, 8000);
+        return;
+    }
+    // From above there is nothing to light: said, not switched on — and, on, switched off with a word (its switch is not on show there).
+    if (experience.world.birdView?.active) {
+        if (roomLight.wanted) {
+            roomLight.toggle();
+            tellView("The live room is off.", 5000);
+        } else tellView("The live room is for walking through: from above everything keeps its fixed light.", 6000);
+        return;
+    }
+    if (!roomLight.wanted && !roomLight.allowed) {
+        tellView("The live room needs the Balanced step or higher: the slider is in the menu (M).", 8000);
+        return;
+    }
+    roomLight.toggle();
+}
+
+/** Said once a visit: the key, at the first room it would draw live. */
+let roomLightHintTimer = null;
+function hintRoomLight() {
+    sayRoomLight("See this room live", 9000);
+}
+
+/** A line at the top of the view (the notice's own place), gone by itself or at a click. */
+let viewNoticeTimer = null;
+function tellView(text, lasts = 10000) {
+    dom.viewNotice.textContent = text;
+    dom.viewNotice.hidden = false;
+    clearTimeout(viewNoticeTimer);
+    viewNoticeTimer = setTimeout(() => (dom.viewNotice.hidden = true), lasts);
+    dom.viewNotice.addEventListener("click", () => (dom.viewNotice.hidden = true), { once: true });
+}
+
+dom.roomLightToggle.addEventListener("click", () => toggleRoomLight());
 
 /** Each switch as it is — the list itself is only built once, so it keeps its focus. */
 function renderLights(switches) {
@@ -770,24 +932,33 @@ dom.lightsAllOn.addEventListener("click", () => experience?.world?.switches?.all
 // The view's options: lighting and scenery, for a slow phone
 // ---------------------------------------------------------------------
 
-/** The lighting a visitor can pick (Utils/device.js's lightingMode), "auto" as published. */
+/**
+ * How a baked view is lit (Utils/device.js's lightingMode), by name. A
+ * visitor is offered "auto" — as published — and whatever is lighter than
+ * that gives them (lighterLighting), never anything heavier; the whole
+ * house lit live is a link's to ask for (`?lighting=live`), and only named.
+ */
 const LIGHTING_CHOICES = [
     { id: "auto", label: "Auto", note: "as this version is published, for this device" },
-    { id: "live", label: "Best", note: "the sun and the lamps live, with shadows" },
-    { id: "baked", label: "Balanced", note: "baked light; people and the car shade the sun" },
+    { id: "baked", label: "Balanced", note: "baked light; people, cars and doors still shade the sun" },
     { id: "static", label: "Fastest", note: "baked light alone, nothing live" },
+    { id: "live", label: "Live", note: "the sun and the lamps live over the whole house, as the link asks, to compare" },
 ];
 
 /**
  * The menu's lighting and scenery, once a public view is up: how it is lit
- * — only once baked, and "Best" only where the bake has its light apart —
- * and what of the scenery (World/Scenery.js) it has to hide.
+ * — only once baked, and only where there is something lighter to pick
+ * than this device is given — and what of the scenery (World/Scenery.js)
+ * it has to hide.
  */
 function setupViewOptions(scenery) {
-    const lighting = experience.published?.lighting;
-    if (lighting?.variants) {
-        const choices = LIGHTING_CHOICES.filter((choice) => choice.id !== "live" || lighting.variants.day?.indirect);
-        const chosen = chosenLighting() ?? "auto";
+    const lighter = experience.published?.lighting?.variants ? lighterLighting() : [];
+    if (lighter.length) {
+        const choices = LIGHTING_CHOICES.filter((choice) => choice.id === "auto" || lighter.includes(choice.id));
+        // While the link itself says how it is lit (`?lighting=`), none of
+        // them is what is on: picking any — Auto too — takes it out of the link.
+        const linked = ["live", "baked", "static"].includes(new URL(window.location.href).searchParams.get("lighting"));
+        const chosen = linked ? null : chosenLighting() ?? "auto";
         dom.lightingChoices.innerHTML = choices
             .map(
                 (choice) =>
@@ -795,7 +966,9 @@ function setupViewOptions(scenery) {
             )
             .join("");
         const now = LIGHTING_CHOICES.find((choice) => choice.id === experience.world.lightingMode);
-        dom.lightingNote.textContent = `${now ? `Now ${now.label.toLowerCase()}: ${now.note}. ` : ""}Changing it reloads the view.`;
+        // (Where a room can be lit live, that is not here: said, with where it is.)
+        const room = experience.world.roomLight?.supported ? " The room you are in can be drawn live: with the Lights (L), or K." : "";
+        dom.lightingNote.textContent = `${now ? `Now ${now.label.toLowerCase()}: ${now.note}. ` : ""}Changing it reloads the view.${room}`;
         dom.lightingSection.hidden = false;
     }
     renderScenery(scenery);
@@ -838,8 +1011,17 @@ const QUALITY_NOTES = [
     "Sun-soft 8K shadows, the light bounced and reflected in each room, finer occlusion, trees in full further off.",
 ];
 
-/** The slider, as the view is drawn now; kept on this device for every space. */
+/**
+ * The slider, as the view is drawn now; kept on this device for every
+ * space. It goes no higher than the device is rated for (Utils/device.js's
+ * stepCeiling): a step it cannot keep up with is not there to pick.
+ */
 function setupQuality() {
+    const ceiling = stepCeiling();
+    dom.qualityRange.max = String(ceiling);
+    // A device with one step has nothing to slide between.
+    dom.qualityRange.disabled = ceiling === 0;
+    dom.qualityTicks.innerHTML = "<span></span>".repeat(ceiling + 1);
     dom.qualityRange.value = String(QUALITY_STEP);
     renderQuality();
 }
@@ -847,7 +1029,17 @@ function setupQuality() {
 function renderQuality() {
     const step = QUALITY_STEP;
     const best = deviceDefaultStep();
-    dom.qualityName.textContent = `${QUALITY.name}${step === best ? " · this device's default" : ""}`;
+    // Brought down by the view itself, because it ran slowly (Experience/FrameGuard.js): said, with what happens next.
+    const guard = experience?.guard;
+    if (guard?.lowered) {
+        dom.qualityName.textContent = `${QUALITY.name} · brought down from ${QUALITY_STEPS[guard.chosen].name}`;
+        dom.qualityNote.textContent = `${QUALITY_NOTES[step]} The view was running slowly, so it is drawn lighter for now: it goes back up by itself when there is room, and your next visit opens as you set it. Move the slider to choose for yourself.`;
+        dom.qualityReload.hidden = true;
+        return;
+    }
+    // (Why a room cannot be lit live, where that is the step the view opened at: said as the slider stands now.)
+    if (roomLightBound && !roomLightBound.supported) renderRoomLight(roomLightBound.status());
+    dom.qualityName.textContent = `${QUALITY.name}${step === best ? " · the most this device is given" : ""}`;
     // Across the phone line, what was chosen as the view was built — a
     // published view's lighting and lightmaps, how densely the grass and
     // hedges were grown — waits for a reload.
@@ -859,7 +1051,9 @@ function renderQuality() {
 }
 
 dom.qualityRange.addEventListener("input", () => {
-    const step = Math.max(0, Math.min(QUALITY_STEPS.length - 1, Number(dom.qualityRange.value)));
+    const step = Math.max(0, Math.min(stepCeiling(), Number(dom.qualityRange.value)));
+    // The visitor's own choice: the view's guard on its frame rate stands back from it (told first: the step is drawn whole).
+    experience?.guard?.chose(step);
     setQualityStep(step);
     // A link's own ?quality= would overrule it next time.
     const url = new URL(window.location.href);
@@ -872,10 +1066,69 @@ dom.qualityRange.addEventListener("input", () => {
 
 dom.qualityReload.addEventListener("click", () => window.location.reload());
 
+/**
+ * The view has made itself lighter, or given something back
+ * (Experience/FrameGuard.js). Its resolution goes unsaid — it is hardly
+ * seen —, the room's live light says for itself that it was turned off
+ * (setupRoomLight's "ended"); a step taken is shown on the slider and said,
+ * since the picture changes with it; one given back when there is room is
+ * only shown, and one put back because it made nothing faster is said. That
+ * nothing it can take helps ("stuck") goes unsaid: the view is as its
+ * visitor set it.
+ */
+function onGuardChange({ act }) {
+    if (act.startsWith("step-")) {
+        dom.qualityRange.value = String(QUALITY_STEP);
+        renderQuality();
+    }
+    if (act === "step-down") {
+        tellView(`The view was running slowly, so it is now drawn at "${QUALITY.name}". It goes back up by itself when there is room; the slider is in the menu (M).`, 9000);
+    } else if (act === "step-back") {
+        // Taken, and no faster for it: back as it was, said so that the picture changing twice is not a puzzle.
+        tellView(`Drawing it lighter did not make this view faster, so it is back at "${QUALITY.name}".`, 9000);
+    } else if (act === "floor") {
+        // Nothing left to take: said once, with the one thing a visitor can still do.
+        // (Where the menu offers it: a view drawn "baked" still has what moves shading the sun, and its light probes.)
+        const lighter = experience.world.lightingMode === "baked" && !dom.lightingSection.hidden;
+        tellView(
+            `This view is heavy for this device, and is now drawn at its lightest.${lighter ? " Lighting: Fastest, in the menu (M), reloads it lighter still." : ""}`,
+            12000
+        );
+    }
+}
+
+/**
+ * The graphics gave up on the last visit to a public view (Utils/device.js's
+ * guardContextLoss), so this one has started at the lowest step, fully
+ * baked: said once, in a public view, where it is seen, until it is
+ * clicked away or the visitor has been walking a while — the name and the
+ * avatar are asked for over it first.
+ */
+function tellLostGraphics() {
+    if (!lostGraphics()) return;
+    dom.viewNotice.textContent =
+        "This device's graphics gave up last time, so the view has started at its lightest: the fastest step, fully baked. The menu (M) can bring more back.";
+    dom.viewNotice.hidden = false;
+    const hide = () => {
+        dom.viewNotice.hidden = true;
+        clearInterval(walking);
+    };
+    dom.viewNotice.addEventListener("click", hide, { once: true });
+    const walking = setInterval(() => {
+        if (!document.body.classList.contains("walkthrough-active")) return;
+        clearInterval(walking);
+        setTimeout(hide, 20000);
+    }, 1000);
+}
+
 dom.sceneryList.addEventListener("click", (event) => {
     const button = event.target.closest("[data-scenery]");
     const scenery = experience?.world?.scenery;
-    if (button && scenery) scenery.set(button.dataset.scenery, button.getAttribute("aria-pressed") !== "true");
+    if (button && scenery) {
+        // (Loading and making what was hidden takes frames of its own.)
+        experience.guard?.settle();
+        scenery.set(button.dataset.scenery, button.getAttribute("aria-pressed") !== "true");
+    }
 });
 
 /** From above, the light under the mouse and what a click will do to it. */
@@ -901,6 +1154,8 @@ dom.jumpList.addEventListener("click", (event) => {
 
     const room = event.target.closest("[data-room]");
     if (room) experience?.world.goToRoom(room.dataset.room);
+    // (A first look at somewhere else takes frames of its own.)
+    if (spawn || room) experience?.guard?.settle();
 
     // Teleporting means you want to be looking around, not reading a panel.
     if (spawn || room) {
@@ -955,6 +1210,17 @@ document.addEventListener("keydown", (event) => {
 
     if ((event.key === "l" || event.key === "L") && !typingElsewhere && !isChatOpen()) {
         toggleLights();
+        return;
+    }
+
+    if ((event.key === "p" || event.key === "P") && !event.repeat && !typingElsewhere && !isChatOpen() && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        togglePreview();
+        return;
+    }
+
+    // The live room, over a baked view (K: next to the lights' own L).
+    if ((event.key === "k" || event.key === "K") && !event.repeat && !typingElsewhere && !isChatOpen() && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        toggleRoomLight();
         return;
     }
 

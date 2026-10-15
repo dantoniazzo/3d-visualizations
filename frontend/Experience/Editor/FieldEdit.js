@@ -1,6 +1,8 @@
 import * as THREE from "three";
 
 import { blockedText } from "./Editor.js";
+import { seeReal } from "../Utils/layers.js";
+import rays from "../Utils/rays.js";
 
 /**
  * Editing from the walkthrough, with the crosshair as the cursor.
@@ -32,7 +34,7 @@ const DRAG_START = 6;
 /** How often the aim is re-read while the view is still, in ms. */
 const AIM_INTERVAL = 150;
 
-const _ray = new THREE.Raycaster();
+const _ray = seeReal(new THREE.Raycaster());
 const _centre = new THREE.Vector2(0, 0);
 
 export default class FieldEdit {
@@ -105,7 +107,7 @@ export default class FieldEdit {
     aim() {
         const ray = this.centreRay();
         ray.far = REACH;
-        const hits = ray.intersectObjects(this.editor.pickTargets(), true);
+        const hits = rays.cast(ray, this.editor.pickTargets());
         ray.far = Infinity;
         for (const hit of hits) {
             if (!isShown(hit.object) || hit.object.userData?.helper) continue;
@@ -270,7 +272,7 @@ export default class FieldEdit {
 
         if (!editor.selection && !editor.session) return;
         // Looking stays the walkthrough's, and so do the menu and chat.
-        if (!editor.session && (event.code === "KeyV" || event.code === "KeyM" || event.key === "Enter")) return;
+        if (!editor.session && (event.code === "KeyV" || event.code === "KeyM" || event.code === "KeyP" || event.key === "Enter")) return;
         // Everything else belongs to the selection now — including W A S D,
         // so the visitor stands still while it is being worked on.
         event.stopPropagation();
@@ -374,7 +376,7 @@ export default class FieldEdit {
         if (this.editor.selection || this.settling) return;
         this.settling = setTimeout(() => {
             this.settling = null;
-            if (!this.editor.selection) this.editor.builder.refreshCollision();
+            if (!this.editor.selection) this.editor.builder.refreshCollision({ wait: false });
         }, 0);
     }
 

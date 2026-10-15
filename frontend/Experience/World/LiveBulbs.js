@@ -30,10 +30,14 @@ export default class LiveBulbs {
     /**
      * @param {World} world  drawing a view lit live
      * @param {LiveSwitches} switches  its switches
+     * @param {object} [options]
+     * @param {THREE.Object3D} [options.root]  where its glass and bulbs are looked for, in place of the whole scene: a room of a view drawn from its bake that is drawn as a view lit live draws it (World/LiveRoom.js)
+     * @param {{ adopt: Function }} [options.sky]  what lights a copy as its source, in place of the world's sky
      */
-    constructor(world, switches) {
+    constructor(world, switches, { root = null, sky = null } = {}) {
         this.experience = new Experience();
         this.world = world;
+        this.sky = sky;
         this.switches = switches;
         /** switch id -> its bulbs' materials */
         this.bySwitch = new Map();
@@ -42,7 +46,7 @@ export default class LiveBulbs {
         this.colours = new Map();
         this.onChange = () => this.apply();
         switches.on("change", this.onChange);
-        this.collect(this.experience.scene);
+        this.collect(root ?? this.experience.scene);
     }
 
     /** Every glass and bulb in `root` (again, after the editor rebuilt some), each given its switch's own material. */
@@ -70,7 +74,7 @@ export default class LiveBulbs {
                 const copy = this.copies.get(key);
                 // The sky's light on it as on its source — again after an
                 // edit, which may have lit the source afresh (Sky.applyIndoor).
-                this.world.sky?.adopt(copy, material);
+                (this.sky ?? this.world.sky)?.adopt(copy, material);
                 return copy;
             };
             node.material = Array.isArray(node.material) ? node.material.map(swap) : swap(node.material);

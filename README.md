@@ -211,9 +211,10 @@ lamp is listed for each car in `LAMPS` (a material, at the nose or the tail,
 at a height, lit by its red or its clear parts); a car not listed lights its
 lamp materials at its nose white and the red ones at its tail. At night each
 lamp has a glow round it as well. The beam: where the view takes live light
-(the editor, a public view lit live), a dipped spotlight that lights the
-road, the garage, the house; drawn from the bake, a pool of light on the
-road ahead. Parked, everything is off.
+(the editor's realistic preview, a public view lit live), a dipped
+spotlight that lights the road, the garage, the house; drawn from the bake,
+a pool of light on the road ahead; under the editor's plain light only the
+lamps' glass. Parked, everything is off.
 
 The X6 was also modelled, and that is kept to take further:
 `blender/export_car.py` builds an X6 M as a quad cage the way a car
@@ -243,6 +244,15 @@ Development with hot reload (Vite on 5173, API proxied to 3000):
 ```bash
 npm run dev
 ```
+
+The server serves the build, the scenes and the published versions of the
+folder it is started in — `dist/`, `scenes/`, `published/` — and
+`SCENES_DIR` and `PUBLISH_DIR` move the last two. So a second copy of the
+app can run beside the one in use without touching it: build somewhere
+else (`npx vite build --outDir /abs/path/dist-work --emptyOutDir`), and
+start `node /path/to/repo/server/index.js` with another `PORT` from a
+folder whose `dist` is, or links to, that build, with `SCENES_DIR` at a
+copy of `scenes/`.
 
 ---
 
@@ -318,6 +328,7 @@ Click once to capture the pointer, then look with the mouse.
 | `F` | get in / out of the car you're at |
 | `T` | change the finish of the surface under the crosshair |
 | `V` | first / third person |
+| `P` | realistic preview on / off (see Edit mode) |
 | `Tab` | edit mode |
 | `M` | menu (jump-to-room) |
 | `Enter` | chat |
@@ -352,6 +363,45 @@ Down**, shows another floor; walking again brings the view back to yours.
 **V** or *Walk* goes back to walking. The view stays within the distances
 (6–24 m) and angles (30° and steeper) the publish looked from, so no face it
 threw away can come into sight (`frontend/Experience/World/BirdView.js`).
+
+A floor is a storey as a visitor counts them (`shared/storeys.js`): every
+building's ground floor together, with the terraces and the street round
+them, then their first floors, then their roof terraces — whatever heights
+the buildings stand at. (Ladonia's villas stand on nine floor levels, some a
+centimetre apart; they list as *Ground floor*, *First floor*, *Roof
+terrace*, and so do the lights in the *Lights* panel.) The garden goes by
+the floor it grows on, as the house does: a roof terrace's planters go with
+the roof.
+
+The view is always drawn from the bake, with nothing live: no live sun or
+lamps on the house, no shadow map drawn again while it is open, nothing
+kept for its shadow — whichever way the walkthrough is lit, which comes
+back as it was when the view is left (`World.lightFromAbove`). By day a
+baked room holds a tenth to a hundredth of the garden's light, and one
+exposure cannot show both: from above, the floor shown is exposed as its
+rooms would be, by bringing up the rooms' own baked light short of burning
+out (`Realism.js`'s `LightMeter.above`, `SceneBuilder`'s `INDOOR_LIFT`),
+while the garden keeps the outside's exposure. A version that was not
+baked has no bake to draw from: its view from above is drawn flat, the sun
+unshadowed and none of its lamps lit (the lit rooms still glow).
+
+Walking, a baked room by day is exposed for what the camera sees in it, as
+a photographer meters a room (`Realism.js`'s `LightMeter`): a glazed living
+room a few times over the garden's exposure, a bedroom with one window ten
+to thirty. The meter reads the frame that was just drawn — its light before
+any exposure, which the post-processing has — brought down to a few pixels
+and read back a frame or two later, without waiting for the GPU; nothing is
+drawn a second time for it. Where the view is drawn straight to the screen
+(the two lowest steps, and a space without a sky of its own at any step) it
+takes the room's own light from the bake's probes instead, and a fully
+baked view at the lowest steps one exposure for every room. A space
+without its own sky is metered the same way: its baked rooms used to be
+left as dark as the bake has them beside the day outside. At night the
+outside keeps the night's exposure, and a room whose own lamps are on is
+metered for the part of the frame they light — up to twice the night's
+exposure: drawn from its bake at the exposure that suits the dusk, a
+lamplit room came out a quarter darker than the same room lit live. A
+room open to the air, a loggia, counts as out of doors.
 
 **Publishing** makes the public view lighter still. *Publish* in the editor
 (or *Publish public view…* in its menu) takes a snapshot of the space as a
@@ -413,25 +463,56 @@ Blender — started by the Publish panel when a publish asks for it (or with
 npm run bake -- <id>     # the latest version: 4096², 512 samples
                          # --size 2048 --samples 128 for a quicker, noisier draft
                          # --version <version> for an earlier one
+                         # --margin 4 for narrower margins round the lightmap's islands
+                         # --full for everything, of a version published "Fully baked" too
+                         # --static for only what a fully baked view reads, whatever the version says
                          # --debug also keeps the raw and denoised lightmaps (EXR)
 ```
 
+A version published *Fully baked* is drawn from the bake alone on every
+device, so its bake leaves out what such a view never reads: the rooms
+baked again with each door shut, the light probes, the sun's share of the
+light, and the lightmaps and vertex light without the sun's or the lamps'
+straight light — a quarter less to bake, and two fifths less of the house
+to download. Its view is then drawn fully baked whatever its link asks
+(`lighting.only` in the manifest); `--full` bakes all of it.
+
 The panel only offers baking to a browser on the same machine as the
 server, and only where Blender is installed (`BLENDER=/path/to/blender` if
-it is not found; `BAKE=off` turns it off). One bake runs at a time.
+it is not found; `BAKE=off` turns it off). One bake runs at a time, and it
+rewrites its version in place: the version's earlier bake is deleted. On
+an M4 Pro a final bake of Wrenfield — nineteen rooms, 22 switches, 17
+doors — takes 28 minutes (35 before the work described below), 20
+published *Fully baked*, and a draft 7; Ladonia's three villas took 3 h
+22 min before it, and 1 h 52 min in the one final bake run since (its
+bake folder's stamp to its manifest's `bakedAt`, 12 October).
 
 `blender/bake_public.py` bakes the published snapshot by day (sun and
 sky) and by night (moonlight), then the light of each light switch on its
-own, with every bounce between surfaces, and denoises it. Wide surfaces get a
-4096² lightmap for a final bake (about 2 cm a texel on the house; gardens,
-the roof and the ground far coarser; skirting boards, door casings and
+own, with every bounce between surfaces, and denoises it. Every object
+baked hands the whole scene to the renderer again, which was most of a big
+site's bake: so the thin faces' light is baked on one object a pass, not
+one a room, and doors in parts of the site that no opening joins — a flat
+and the flat next door, two buildings — are shut in one pass, taken apart
+room by room afterwards (`blender/lib/batches.py`;
+`node scripts/test-bake-batches.mjs`). Switches stay one to a pass:
+lit together, each lamp is chosen less often for its own room and its
+bounced light clamped more, and their light came out changed.
+
+Wide surfaces get a 4096² lightmap for a final bake (about 2 cm a texel on
+the house; gardens, the roof and the ground far coarser; skirting boards,
+door casings and
 window frames finer), and phones a 2048² copy of it; only thin and small
 surfaces — a moulding's curve, balusters, handrails — are lit through their
-vertices instead. The lightmap is unwrapped the way one should be: cut
-only along sharp edges (and where a curved surface has to be opened to lie
-flat), each piece relaxed with Blender's minimum-stretch unwrap so a texel
-covers the same area everywhere, walls made whole across the joins between
-their pieces first. Portals in every outside window and door send the
+vertices instead, and so is any narrow strip that would be under three of
+its own texels across (a casing or a skirting top at a big site's coarser
+texels, a fence's pickets: on the lightmap they came out black). The
+lightmap is unwrapped the way one should be: cut only along sharp edges
+(and where a curved surface has to be opened to lie flat), each piece
+unwrapped by its angles (Blender's minimum-stretch unwrap failed pieces on
+a big site, differently at each run) and scaled so a texel covers the same
+area everywhere, walls made whole across the joins between their pieces
+first. Portals in every outside window and door send the
 sky's samples through the openings; texels hidden behind frames and
 skirting boards, or inside the walls themselves (every wall runs on into
 the next at a corner, and outside walls carry on up past the ceiling),
@@ -443,14 +524,37 @@ millimetres apart, so the lamps inside don't glow through to its outside at
 night. The top of a ceiling is only ever seen from above, in the
 bird's-eye view of the floor over it, so it is baked as it is seen there,
 with the roof lifted off. That makes it the floor of an open doll's house
-rather than of a pitch-dark roof space. Door leaves,
-which move, are tinted from light probes baked either side of each. On a
-phone the public view then draws the house unlit, from what was baked: no
-live lights and no shadow map, which is most of what a phone was spending
-its frame on. Elsewhere the sun and the lamps are live (*Live light*,
-below). **N**, or the sun and moon button, switches between day and
-night; the night lightmap is only downloaded the first time it is asked
-for.
+rather than of a pitch-dark roof space. Each surface is the room's it is
+seen from, so that a switch lights its own room's and a door dims them:
+a wall that runs on behind a partition is cut along the room's edge, and
+what lies in a wall's thickness at a doorway — the lining, the head, the
+threshold — along the wall's middle, each half the room's on its side.
+Door leaves,
+which move, are tinted from light probes baked either side of each. A
+site's own garden lights — uplights, the pergolas' downlights, the pool's
+lamp — are part of the night's light, no visitor's to switch.
+
+Each lightmap is written twice. Once at one scale for the whole of it,
+which is the sunlit garden's: a room lit through its windows has a tenth
+to a hundredth of that, a dozen or two of the file's 255 levels, and at
+the exposure a room is shown at the compression's blocks then show as
+tinted rectangles on its walls and ceilings — sixteen trial bakes of
+Wrenfield showed it was this, not too few samples. So it is written again
+with each room's part of it held by a curve of its own, the logarithm of
+its light up to the room's brightest texel, so that a level is two or
+three hundredths of the light everywhere in the room
+(`blender/lib/lightzones.py`; `shared/lightRegions.js` is the view's side
+of which texels are whose). A view that resolves the house's light (below)
+fetches that one; anything else, and a build from before it, the first.
+
+The
+public view then draws the house unlit, from what was baked, on every
+device: no live lights on it, which is most of what a frame was spent on
+(*Drawn from the bake*, below). **N**, or the sun and moon button,
+switches between day and night; the night lightmap is only downloaded the
+first time it is asked for. Lightmaps, the switches' layers, the sun's mask
+and the doors' atlas are decoded off the main thread
+(`Utils/bakedTexture.js`).
 
 **Light switches.** Every indoor room has a ceiling light — an opal globe
 on a cord, or a dome flat to the ceiling in a small, low or tiled room —
@@ -463,7 +567,11 @@ move with the doors; publishing gathers them into the published spec,
 and the bake lights each switch on its own, from inside its glass or
 bulb, in its room and the rooms next door. The lightmap is laid out room
 by room, so each switch's light is a small crop of it for each room it
-reaches, a few kilobytes.
+reaches, a few kilobytes. A room the light only spills into — up a
+stair, through a doorway — has a hundredth of what the switch's own room
+has, too little for the 8 bits at the switch's one scale: its crop is
+written a second time held its own way, as each room's part of the
+lightmap is, for the view that adds the light up itself.
 
 In the public view, **L**, or the *Lights* button, lists the switches
 floor by floor. A light can also be turned on and off by pointing the
@@ -471,93 +579,212 @@ crosshair at it, or at its switch on the wall, and pressing **E** (the
 button under the thumb on a touch screen), or by clicking it — tapping
 it — in the bird's-eye view. The view adds the light of each switch that
 is on to the day's or the night's (`World/Switches.js`), and lights its
-glass or bulb. By day every light starts off, and at night every ceiling
-light starts on; each keeps its own switches, so the two can be compared
-as they were left. A switch's light is only downloaded the first time it
-is turned on. A room's surfaces add up to six switches' light (four, lit
-live; five on a phone, drawn from a bake with the sun's share apart): where
-more reach it, the faintest (spill through a doorway) is left out.
+glass or bulb. At night every ceiling light starts on. By day every light
+starts off but those of the rooms daylight does not reach — a bathroom, a
+lobby, a utility room with no window, nor open to a room that has one
+(`shared/daylight.js`, told from the published spec's walls and openings):
+with every light off those were black to walk into and black patches from
+above. Ladonia has twenty such rooms, Wrenfield four, Ashgrove two. They
+are switched off like any other light, and day and night each keep their
+own switches, so the two can be compared as they were left. The same holds
+in a view lit live and in the editor's realistic preview
+(`World/LiveSwitches.js`), not under the editor's plain light. A switch's light is only downloaded the first time it
+is turned on.
 
-**Live light.** The bake also keeps the sun's straight light apart from
-the rest — the sky's through the windows and everything bounced — and
-each switch's lamps' straight light apart from what they bounce. Except
-on a phone, the public view draws the house lit, as matt surfaces the way
-Blender baked them, with that rest of the light from the bake as all of
-their ambient light, and the sun and the lamps as live lights with
-shadows: the bake's own sun, at its strength (a Blender sun's W/m² is a
-DirectionalLight's intensity as it is; a lamp's watts over 4π a
-PointLight's). So shadows follow what moves. A shut door keeps the sun
-and the hall light out of a room (the bake has no door leaves, so baked
-light comes through a shut door), opening it lets them in, and the
-visitor and the car cast shadows by day and under the lamps at night. The four lamps
-that are on nearest the visitor are lit live, each with a shadow of its
-own (`World/LiveLamps.js`); the rest are drawn from the bake. Shadows are
-drawn again only when something near them moves. What moves has no light
-baked, so the bake also measures the light at a grid of points through
-the house and round it, a metre apart, each from six ways
-(`probes.bin`); the visitors and the car take theirs from the points round
-them, those in the room they are in first, instead of from a sky-coloured
-hemisphere light that lit them the same in the garage as on the lawn. Their
-reflections dim with it (`World/ProbeLight.js`). `?lighting=live` or
-`?lighting=baked` in the link picks either on any device, to compare
-them; a view baked before this is drawn baked until it is baked again.
+**One lightmap for the house.** A switch turned or a door swung does not
+change how anything is drawn: the view works the house's light out again
+on the GPU — the day's or the night's, each room's dimmed by its doors,
+plus every switch that is on — into one lightmap, only over the rooms that
+changed, and every lightmapped surface reads that one map with one shader
+(`World/LightResolver.js`). Any number of switches can light a room, and
+Ladonia's 2,242 materials became 1,064. The sun's straight light alone is
+still worked out a pixel at a time, for what moves to shade it. A device
+that cannot do this, or `?lightmap=rooms` in the link, keeps each room's
+own materials, which add up to six switches' light (five with the sun's
+share apart; four, the whole house lit live): where more reach a room, the
+faintest (spill through a doorway) is left out.
 
-**On a phone.** Drawn from the bake, the house still shows what moves in
-the sun. The bake writes how much of the sun's (or the moon's) straight
-light each texel has (`day-sun.webp`, a grey lightmap); the phone draws a
-shadow map of what moves alone — the visitors, the car, the doors and the
-furniture's doors and drawers, not the house or the trees, whose shade is
-baked — and takes that share of the light away where it falls. So people
-and the car throw shadows in the sun on a phone too, and a shut door keeps
-the sun off the floor behind it; a floor the sun never reached is left
-alone. Each light probe also records how much of the sun reaches it, and
-on a phone the probes light what moves, with the sun on it only as far as
-it reaches: no longer through the walls at half strength. The shadow map
-is drawn again only when something moves. The lamps stay baked on a
-phone: they light what moves through the probes, but it casts no shadow
-from them.
+**One house.** The bake parts the house by room, so that a room's
+surfaces can be lit and dimmed alone: 3,952 meshes for Ladonia. A view
+drawn from its bake merges them again across rooms — whatever has the
+same look, is lit the same way and is on the same floor — with materials
+that look alike shared and plain colours carried in the vertices
+(`World/HouseMerger.js`): Ladonia's 3,952 meshes become 670, Wrenfield's
+618 become 159, and a frame out of doors at the top step went from 29 ms
+to 16. What moves, what is see-through and each lamp's glass
+stay meshes of their own. `?merge=off` keeps the rooms' meshes.
 
-**Fully baked.** For the slowest phones there is a third way to draw it:
-all of the light from the bake and nothing live — no shadow map at all, no
-light probes, no door dimming its rooms — the house unlit, as the view was
-before any of the above. The Publish panel's *Lighting* says who gets it:
-live off a phone and moving shadows on one (the default), live off a phone
-and fully baked on one, or fully baked everywhere. `?lighting=live`,
-`?lighting=baked` or `?lighting=static` in a link overrides it.
+**Drawn from the bake.** Every device draws a baked version's house from
+its bake, and what moves is all that is live. The bake writes how much of
+the sun's (or the moon's) straight light each texel has (`day-sun.webp`, a
+grey lightmap); the view draws a shadow map of what moves alone — the
+visitors, the people, the car, the doors and the furniture's doors and
+drawers, not the house or a garden's trees, whose shade is baked (a site's
+own trees, of which the bake has no shade, are in it too) — and takes that
+share of the light away where it falls. So people and the car throw
+shadows in the sun, and a shut door keeps the sun off the floor behind it;
+a floor the sun never reached is left alone. The shadow map is drawn again
+only when something moves by more than a visitor settles standing still.
+What moves has no light baked, so the bake also measures the light at a
+grid of points through the house and round it, a metre apart, each from
+six ways (`probes.bin`); the visitors, the people and the car take theirs
+from the points round them, those in the room they are in first, instead
+of from a sky-coloured hemisphere light that lit them the same in the
+garage as on the lawn — with the sun on them only as far as the probes say
+it reaches. Their reflections dim with it (`World/ProbeLight.js`). The
+lamps stay baked: they light what moves through the probes, but it casts
+no shadow from them. This is "baked" (`lightingMode` in `Utils/device.js`),
+what a computer is given.
 
-**The visitor's own choices.** The public view's menu (**M**) has the same
-choice for whoever is looking — *Auto* (as published), *Best*, *Balanced*
-or *Fastest*, which reloads the view — and a switch for each piece of
+**Fully baked.** The lightest way to draw it: all of the light from the
+bake and nothing live — no shadow map at all, no light probes, no door
+dimming its rooms. Phones and tablets are given it, and so is any device
+at the slider's two lowest steps. The Publish panel's *Lighting* can give
+it to every device (*Fully baked everywhere*).
+
+**The live room.** Over a view drawn "baked", the visitor can ask to see
+the rooms round them as they really are: a switch at the head of the
+*Lights* panel, or **K**. It is off at every visit and never comes on by
+itself. While it is on, the room they stand in — with the rooms that
+always stand open to it: a hall and the living room it runs into with no
+wall between, a bedroom through a doorway that has no door — and every
+room they can see into from there, through a door that is open or ajar, a
+door with glass in it or a stairwell, is drawn with its own materials —
+the editor's: colour, relief, gloss, reflections — in the bake's own
+light. The sun through its windows is drawn live, with its shadows, and
+so are the lamps nearest the visitor, each where the bake's lamp hung and
+as strong as the bake's own light probes measured it (a ceiling light set
+into the ceiling gives half what one hanging free does), with a shadow of its own that a door's leaf or a person throws
+as it moves, as soft as the bake's lamp is big — sharp by what casts it,
+softer further off; all the rest of its light is the bake's, as the bake traced
+it: the sky through the windows, every bounce off the warm walls and
+floors, the soft shade in the corners and under and behind the furniture,
+and the lamps not drawn live — two at most at the top step, one at
+Balanced, a switch's lamps all together, so a living room whose ceiling
+light, spots and lamps are on one switch keeps the bake's light of them,
+soft shadows and all. Nothing of the editor's light is in it: no share of
+the open sky, no flat glow of a lit room. So a room is as warm, as dark
+in its corners and as bright as the baked view shows it — by day and at
+night, its lamps on or off — and the picture is exposed by the baked
+view's own light meter, which reads the room again once a lamp turned off
+or on has faded; turning a lamp off or on fades its light in and out
+where the bake's light of it falls (`World/RoomBakeLight.js`). A mirror,
+a tap or a steel front reflects the room as it is drawn, by night as by
+day. The
+editor itself, and a version published unbaked, draw as they did; a bake
+without its light apart (an old one) draws its live rooms as before, in
+the editor's light but for a dark room's at night. Its glass is drawn so too — a window's pane,
+a shower's screen, a glazed door: its reflections alone, as the baked view
+draws the glass that stands in a room, for the bake lights no glass; so a
+window at night is dark, the lit room faint in it, not a frosted sheet,
+and by day it is clear — and what
+moves in it: the people round the property, the visitors' figures, door
+leaves, a car in a garage; and so is what stands in the openings of its
+walls and is no room's — a window's frame and reveals, its sill, a door's
+casing — and a flight of stairs, with the room it starts in. A sheer
+curtain is not: the bake has no curtain to light (nothing seen through is
+in what it traced), so it stays as the baked view draws it — its own
+material in the view's own light, with the night's warm glow — by day
+and at night, whenever the live room was first turned on, but over the
+room's glass behind it. Every room
+out of sight, the garden and the bird's-eye view stay exactly as baked:
+what is seen through a window, or through a door to the garden, is the
+bake's. It is drawn
+in calls of its own round the scene's — its surfaces before, its glass
+after — with lights of its own that light nothing else, and its sheer
+curtains last, in the view's own light
+(`World/LiveRoom.js`; `World/RoomLight.js` says which rooms and when).
+Until it is first asked for nothing of it exists; switched off again, its
+lights, materials and shaders are kept for the next time, nothing is
+drawn or worked out for it, and the baked picture is what it was to the
+pixel. Its switches stand as the baked view's do, by day too in a space
+without a sky of its own (Wrenfield), whose editor draws the rooms with
+their lights on.
+
+A room is made ready before it is seen — its textures sent, its shaders
+built and each drawn once out of sight, a little a frame. The first time,
+the view says *Getting the live room ready…* meanwhile, and then shows
+the visitor's room and everything in sight of it in one frame. Walking on,
+the room behind a shut door is made ready as the visitor comes within a
+few steps of the door and is shown in the frame the door starts to open;
+a room stays live for as long as open doors join it to where the visitor
+is, behind them too. So walking from one room into the next changes
+nothing in view. Eight groups of rooms at most are live at once — the
+visitor's own, then the nearest in sight; beyond them a room is the
+bake's until its turn comes. The exposure does not change for it: the
+live rooms are in the bake's light, and the picture is metered as the
+baked view meters it. Stepping out of doors ends it until the visitor
+is back in a room — coming in from the garden, a room is the bake's
+until its visitor is in it — and the view from above suspends it, as a
+change of day and night or of the slider does for a moment. Not on a
+touch device, one rated under Balanced or a version published fully
+baked, where it is not shown at all; nor in a view its visitor has set
+to *Fastest* or opened at the slider's two lowest steps, where its row
+is greyed and K says why. On an M4 Pro, at the top step, it adds
+2.0 to 3.4 ms to a frame standing in a room in the bake's light (it was
+3.0 to 4.2 in the editor's: measured 2026-10-15) — with the lamps'
+shadows as soft as the bake's, 2.5 to 3.4 where lamps are drawn live
+and 1.7 to 2.2 by day without them — and 3 to
+4.2 with a door open onto the next (measured before); a walk at night
+through six of A1's rooms, opening two doors, takes a median 21.6 ms a
+frame, none over 50; an earlier walk through four of Ladonia's
+rooms, opening three doors, takes a median 17.3 ms a frame with it on
+where the bake alone takes 14.3, some twenty of its 1,168 frames over
+25 ms and none over 50 (at Balanced, an earlier walk through six rooms:
+12.5 for 10.8); the first time, with
+shaders the browser has never built, it is five to six seconds in coming,
+some thirty of whose frames are 60 to 160 ms long — one for each new
+shader's first use, which is the graphics card's own time — and the frame
+that shows the rooms is 35 ms.
+
+**The whole house lit live** is no longer given to anyone, nor offered in
+the menu: on Ladonia, at the top step on an M4 Pro, it took 25–49 ms a
+frame by day and 58–97 at night whenever something moved, where the same
+views drawn from the bake now take 13–17, day and night. The bake
+still keeps the sun's straight light apart from the rest, and each
+switch's lamps' straight light apart from what they bounce, and the view
+can still draw the house lit — matt surfaces with the rest of the light as
+their ambient light, the bake's own sun and the four lamps nearest the
+visitor as live lights with shadows (`World/LiveLamps.js`) — but only when
+the link asks for it, `?lighting=live`, to compare; a touch device, or one
+at the two lowest steps, is refused it. (`?lighting=baked` and
+`?lighting=static` in a link pick either of the others on any device.)
+
+**The visitor's own choices.** The public view's menu (**M**) lets whoever
+is looking pick a lighter way than they are given, never a heavier one:
+*Auto* (as published) or *Fastest* (fully baked), where they are not given
+that already, which reloads the view — and a switch for each piece of
 scenery the version has, which hides it at once: the car (not downloaded
 while hidden), the trees and bushes, the hills (laid flat, being ground;
 their trees and grass go with them) and the grass. Both are kept on the
 visitor's device for every space (`Utils/viewerChoices.js`,
-`World/Scenery.js`). What they cost, drawn fully baked on the phone tier:
+`World/Scenery.js`); a choice kept from when the menu offered *Best* is
+read as *Auto*. What they cost, drawn fully baked on the phone tier:
 from the front path, the trees are 0.93 of its 1.45 million triangles and
 the car 0.25 (53 draw calls); the grass and the hills' tufts about 45 draw
 calls each; the house itself about 550 draw calls. A hidden tree's shade
 stays baked on the lawn.
 
 **Doors shut.** The bake has no door leaves, so its light comes through
-every doorway, shut or not: the live sun and lamps are shaded by the leaves,
-and on a phone the sun is too, but the light from the sky and everything
-bounced came through a shut door as through an open one — a windowless WC
-stayed lit with its door shut. So the bake shuts each room door in turn —
+every doorway, shut or not: the sun is shaded by the leaves (above), but
+the light from the sky and everything bounced came through a shut door as
+through an open one — a windowless WC stayed lit with its door shut. So the bake shuts each room door in turn —
 a leaf in the doorway as `World/Door.js` hangs it — and bakes the rooms
 either side of it again, by day, those rooms alone, keeping how much of
 their light stays: texel by texel, in one grey atlas of every door's rooms
 at half the lightmap's texels (`doors.webp`, and a phone's copy), and for
 each room all told. The view dims each room by it as its doors close, eased
 as the leaf swings: the WC goes dark behind its shut door, a bedroom with a
-window hardly changes. It dims only that light, lit live or drawn from the
-bake; two doors of a room shut together each keep their share, and the
-night dims as the day does. A switch's light in a room next door that it
+window hardly changes. It dims only that light (not in a view fully
+baked, which dims no room); two doors of a room shut together each keep
+their share, and the night dims as the day does. A switch's light in a room next door that it
 reaches through doors alone is let in as far as they are open. The thin
 faces and the light probes, which have no texels of it, take the room's
 share of its light all told; and a leaf's two faces are lit apart, each by
 the probe on its own side, so a shut WC door is dark inside and lit by the
 hall light outside. A room with doors reads their atlas as one
-more texture, so lit live it adds three switches' light rather than four.
+more texture. As a door swings, the thin faces' light is added up again
+only in the rooms it changes (`SceneBuilder.mixVertexLight`).
 
 **Doors and drawers.** The furniture's doors and drawers open: the
 wardrobes', the kitchen's cupboards and drawers, the tall units', the
@@ -572,11 +799,10 @@ and a light that comes on as a door opens. The doors and drawers are left
 out of the merged house, the snapshot, the bake and the collision; the
 bake lights the insides as they are seen with the doors open, and shut, a
 door hides it. They are drawn live (`World/Openables.js`); a published
-version's runtime file carries them, shut, and in a view lit live they
-are lit by the light probes and shade the lamps' and the sun's light as
-they move; drawn from the bake, as on a phone, they are lit by the light
-probes too, or, from a bake without them, like the door leaves, from the
-probes of the nearest door on their floor.
+version's runtime file carries them, shut, and in a baked view they are
+lit by the light probes and shade the sun's light as they move — or, from
+a bake without probes or in a view fully baked, like the door leaves, from
+the probes of the nearest door on their floor.
 
 **The garden.** Every lawn is grassed, fenced round, with bushes along
 the fence and trees in the back garden — in the editor, the walkthrough
@@ -673,20 +899,82 @@ light probe captured per room so a room's surfaces and furniture are lit by
 its own bounced light. The AO, grade, probe and the trees' and grass's reach
 apply to a space with its own landscape (Ladonia); elsewhere the slider sets
 the pixel ratio, the shadows' filter and texture filtering. Each device
-starts at the step its graphics keep up with (a phone 1, other discrete cards
-3, Apple Pro/Max/Ultra chips and RTX cards 4); a visitor's own choice is kept
-on their device, and if the GPU gives up (its WebGL context lost) the next
-visit starts a step lower. The shadow map is never bigger than the device
-can make. In Ladonia's street view at 1920 × 1080 on an M-series Pro a frame
-takes about 12 ms at the first step and 24 ms at the last (twice that with
-another 3D page busy on the same GPU).
+starts at the step its graphics are rated for (a phone 1, a software
+renderer 0, integrated graphics 2, other discrete cards and Apple chips 3,
+Apple Pro/Max/Ultra chips and RTX cards 4) — and **that step is its
+ceiling**: the slider goes no higher, a step kept from before is brought
+down to it, and neither `?quality=` in a link nor a version's own *Always
+high* takes a device above it (`stepCeiling` in `Utils/device.js`). A
+visitor's own choice below it is kept on their device. Each step also has
+a budget of pixels, however big the window — 2.1 million at the two lowest
+steps, 3.7 at the middle one, 5 at the top two — met by drawing at a lower
+pixel ratio (`Utils/Sizes.js`): a 5K window at a ratio of 2 was 14.7
+million. If the GPU gives up on a public view its visitor is looking at
+(its WebGL context lost), the next visit starts at the lowest step and fully
+baked, and says so once; both are then the visitor's to raise again in the
+menu — and the view loads itself again when the graphics come back. In the
+editor, or in a tab that is not on show, the next visit starts one step
+lower and nothing else changes. The shadow map is never bigger
+than the device can make. Measured on an M4 Pro in a 1280 × 720 window at a
+pixel ratio of 2 (2026-10-12; nothing here was measured on a phone or on
+integrated graphics): Ladonia's baked view takes 13–17 ms a frame at the
+last step — the living room 12.6, the pool 17.0, the street 16.1, by day
+and at night alike — and 4–8 at the first, where the code before this work
+took 25–64 and 8–26; published unbaked it takes 18–33 ms at the last
+step. Wrenfield's baked view takes 5–6 ms. (Twice that with another 3D
+page busy on the same GPU.)
 
 Phones and tablets draw at a pixel ratio of at most 1.5 with a smaller,
 harder-edged sun shadow, in the public view and the walkthrough alike.
-`?quality=low` or `?quality=high` forces step 1 or 3 on any device
-(`?quality=0`…`4` or `max` any step), and
-`?stats` on any link shows frame rate, draw calls, triangles and the bytes
-downloaded — which is how to compare a change on the device it is for.
+**A view that runs slowly makes itself lighter** (`Experience/FrameGuard.js`,
+public views only; its decisions are `shared/frameGuard.js`, which runs in
+node too: `node scripts/test-frame-guard.mjs`). The ceiling and the pixel
+budget above are what a device is never asked for; this watches what it is
+in fact given — the real time between frames, while the tab is on show and
+the visitor is in the view, not while it loads, nor for the second after a
+toggle, a resize or a jump, nor a frame in which a shader was first built.
+Slow is a frame of more than 36 ms, under 28 a second: a 60 Hz screen shows
+60, 30 or 20, so that is a view fallen off thirty, where the mouse begins
+to lag; one that holds thirty is left alone, since the slider's step is
+what its visitor asked it to look like. Two seconds of slow frames (a
+single stall counts for a quarter of a second, however long) and one thing
+is taken, then the next: first the resolution — 0.85, 0.72 and 0.6 of the
+step's own pixel ratio, not twice within two and a half seconds; then the
+live room, while one is drawn (not while it is only asked for: out of
+doors or from above it costs nothing), with a line to say so; then
+the slider's step, one at a time down to the lowest, shown on the slider
+and said, and not kept — the next visit opens as the visitor set it. Each
+thing taken is judged by what it gave: if two rungs of the resolution, or
+two steps, leave the view no faster by a tenth — a slow processor, a page
+busy with something else — they are given back and that kind is left alone
+for two minutes, then four, eight; a view nothing helps is left as its
+visitor set it. And the resolution taken in a view's first half minute,
+perhaps only for the seconds its trees took to arrive, is given back on
+trial once it has not been slow for half a minute. Under the Balanced step it goes as
+the slider itself does, without a reload: the post-processing is dropped
+and everything drawn follows, while what was chosen as the view loaded —
+its lighting mode, its lightmaps' size — stays as loaded. With half a
+minute of frames of 22 ms or less (45 a second) it gives the last thing
+back, a step first and the resolution after, never the live room and
+never above the visitor's own step; a change up that has to be undone
+within half a minute doubles the wait for the next, up to eight minutes.
+After the visitor moves the slider, or turns the live room on, it takes
+nothing for half a minute — twice as long each time they put back a step it
+had taken. On Ladonia's living room at night on an M4 Pro the whole way
+down takes a still frame from 13.4 ms to 4.3; a change of resolution costs
+about 10 ms once, a change of step one frame of 200–500 ms. Its own work is
+a tenth of a microsecond a frame. `?guard=off` in the link leaves it out,
+`?guard=report` has it say in the console what it does. The editor has
+none: its plain light has nothing to take.
+
+`?quality=low` or `?quality=high` asks for step 1 or 3 (`?quality=0`…`4`
+or `max` for any step), up to the device's ceiling. Two more are a
+developer's: `?uncapped` lifts the ceiling (not on a touch device), to see
+a step on a device not rated for it, and `?rated=0`…`4` pretends a device
+rated that low — never higher than it is — to see what such a device is
+given (it changes nothing kept on the device). `?stats` on any link shows frame rate, draw calls, triangles and
+the bytes downloaded — which is how to compare a change on the device it
+is for.
 
 ### A site of its own: Ladonia Residence, Kosinožići
 
@@ -809,12 +1097,40 @@ fence, hills and neighbourhood are left out:
   dusk sky darkened: the rooms glow warm from within, so the windows show
   lit rooms without lamps that would light the walls' outsides; uplights
   under the olives, downlights under the pergolas, step lights up the
-  outside stairs and the pool lit from under the water; bloom.
+  outside stairs and the pool lit from under the water; bloom. Every
+  fitting glows, but only the few nearest the visitor shine — one to five
+  by the slider's step (`garden` in `Utils/device.js`), handed on with a
+  fade as the visitor walks (`World/Flora/lights.js`): each light there is
+  costs every lit pixel, near it or not, and sixteen cost a view lit live
+  half its frame. In a baked version their light on the house and the
+  ground is the night bake's; the live ones go on lighting what is drawn
+  live — the trees, the people, the cars.
+- **A light that is off is not there.** three builds every lit shader for
+  the lights in the scene, and a light at nothing costs what a lit one
+  does. So the lamps' pool is out of the scene (hidden) until a fitting
+  whose light the visitor can see is on — in their own room, in one that
+  opens into it through a doorway, glass or a door that is not shut, or,
+  from out of doors, in a room with a window: a lit bathroom behind its
+  shut door brings nothing in — a car's beam until its headlamps are, and
+  the garden's lights but for the few that shine. The first time one comes
+  in, the shaders for the scene with it are built ahead, a few milliseconds
+  at a time, and the light waits for them (`Renderer.prepareLights`) — a
+  lamp comes on a moment late once, the view hitching while the GPU builds
+  them, rather than stopping for several seconds; after that each state's
+  shaders are found again. The pool's are built while a lit fitting is
+  only near, so its lamp is there as the door opens.
 - **Post-processing** (`frontend/Experience/PostProcessing.js`), not on
   phones: [N8AO](https://github.com/N8python/n8ao)'s ambient occlusion,
   half-resolution and upsampled by depth, from the depth buffer alone — so
   a leaf card shades as its leaf, not its square — then bloom at night,
-  then tone mapping. Its chunk is only downloaded for such a space.
+  then tone mapping. Its chunk is only downloaded for such a space. The
+  two pictures N8AO takes of what is seen through (glass, the pool) are
+  drawn by the app (`drawTransparency`): the library's own drew every
+  wall made of several materials a second time into them, and the sun's
+  shadow map again with each. A view drawn from its bake keeps the
+  occlusion: over a bake it is still what seats the furniture, the plants
+  and whatever moves, and without it a room is drawn a tenth brighter and
+  flatter.
 
 Its assets are bought in, all CC0 or MIT — Poly Haven textures and skies,
 ambientCG grass, ez-tree's trees — listed with their sources in
@@ -827,9 +1143,15 @@ npx vite scripts/trees           # grow the trees in the browser, "Download all"
 npm run trees -- ~/Downloads     # pack them → public/models/vegetation
 ```
 
-Its live view has not been through publishing and baking yet: open it
-unpublished (`/view/kosinozici-villas`, which is drawn live and merged) or
-with `?live`.
+It is published and baked like any other space. Its first final bake
+took 3 h 22 min on an M4 Pro (512 samples, 4096², 5.5 cm a texel on the
+villas), before the bake was made to hand the scene to the renderer less
+often, to write each room's light its own way, to light narrow strips
+through their vertices and to give doorway faces to the room they are seen
+from: a version shows those only once it is baked again, as the version
+published on 12 October was (1 h 52 min, 5.05 cm a texel). `/view/<id>`
+opens the version published last, baked or not; `?live` draws the space as
+it stands, live and merged.
 
 ### Edit mode
 
@@ -887,6 +1209,121 @@ and window frames and furniture stay solid.
 With `7` for the top view, a floor on its own is the floor plan. **Walk from
 here** drops you onto the floor in the middle of the view.
 
+**A plain light.** Edit mode is drawn under one fixed light
+(`World/PlainLight.js`), the same by day and at night: an ambient and a
+hemisphere light and one unshadowed light from over the camera's shoulder,
+at one exposure, with the day's sky to reflect — no sun, no shadow map, no
+lamps, no room glow, no haze, no post-processing — so everything can be
+seen and worked on, and is cheaper to draw. Day and night change
+only the sky behind and which set of light-switch states is shown; a light
+switched on still shows in its glass. The editor's walkthrough is lit the
+same way until **Realistic preview** is turned on (`P`, the button beside
+*Edit mode* in the walkthrough, or the View menu's entry in edit mode — and
+the header's button): then the
+walkthrough is drawn as visitors of a version lit live will
+see it — sun and shadows, lamps, lit rooms, the room probe, the
+post-processing — and going into edit mode and back keeps it. The choice is
+remembered in the browser; `?preview=1` in the link forces it on for that
+page. What only the preview draws (the sun's shadow map, the lamps' lights,
+the room glow, the probe, the post-processing) is first made when it is
+first turned on. Publishing takes the scene as the preview draws it,
+whatever is on screen — from the plain view without drawing it: the view
+stands still until the publish is done.
+
+On an M4 Pro the plain light and the *House* scope (next) took Ladonia's
+edit mode from 45–48 ms a frame to 18–22, a view of one room from 24.5
+to 6.6, and walking a room from 33 to 10; the space opens furnished and
+walkable in 4.4 s where it took 6.4–8.2.
+
+Under the plain light the house and the furniture are drawn by stand-ins
+(`World/StandIns.js`): the building merged into one mesh a material, the
+furniture instanced, a piece selected or just rebuilt drawn as itself — the
+same picture in a sixth of the draw calls (Ladonia's whole property: 9,541
+→ 1,438; 24.3 ms a frame → 10.9, 41 frames a second → 92; one villa 20.0 →
+10.3; a view of one room is as it was, 6, and a room in focus half a
+millisecond slower, 3.7 → 4.2). The objects the editor
+edits, picks, snaps to, collides with and publishes are untouched — still
+in the scene, on a layer no camera draws — so a console snippet that walks
+the scene meets each surface twice, and a `Raycaster` of its own needs
+that layer (`layers.enable(12)`). `?standins=0` in the link draws them as
+they are built, for comparing.
+
+What the editor asks the scene — what is under a click, what a dragged
+piece stands on, what the crosshair points at, where the camera's boom
+meets a wall — is answered from an index (`Utils/rays.js`): three's own
+answer, hit for hit, without asking every mesh and every triangle. On
+Ladonia a drag's pointer move took 101 ms and takes 2.8; a click's pick 8
+ms and is 0.1; the two rays of every walking frame 7.5–10 ms and are 0.15
+— a whole walking frame by the pool, 36.9 ms, is 12.1. And leaving edit
+mode after an edit no longer builds the collision again (2.4–3.0 s with
+the page frozen): it is mended where the edit touched it, and the
+walkthrough is back in 26–32 ms.
+
+Under the plain light the editor draws a frame only when the picture may
+have changed (`Experience/Pace.js`): on any pointer, wheel or key event, on
+anything the world or the editor says has changed, as a model or a texture
+arrives, while a door, the visitor or the camera is still moving — and
+twice a second regardless, so that nothing it was not told of stays stale.
+An edit view left alone draws those two frames a second (it drew every
+frame the display offered: 22 ms of each on Ladonia, for as long as the tab
+was open); what idles by itself there — the people, the visitor's own
+figure, the pool's ripple, the wind — holds its pose meanwhile and goes on
+whenever frames are drawn, and the people play while one of them is
+selected. The walkthrough standing still is drawn 30 times a second. The
+realistic preview, a publish and every public view draw every frame, as
+before; `?frames=always` in an editor's link does too, for a test.
+
+The selection's outline (`Editor/SelectionOutline.js`) is three's
+OutlinePass to look at, without its second draw of the whole scene: the
+selection alone is drawn again, against the depth the frame has just
+drawn, in the rectangle of the screen it covers. A chair selected on
+Ladonia added 4–13 ms to every frame and adds 1.0–1.6 (a piece selected
+over a villa: 33.9 ms a frame → 11.8). What is seen through
+an X-rayed wall is now outlined as seen, in amber, not as hidden.
+`?outline=pass` draws three's own, for comparing.
+
+All of that was measured on one M4 Pro with the tab not on show (the
+build before against this one, in one sitting, 2026-10-14), and with it a
+Ladonia that opens furnished and walkable in 2.2–4.1 s where it took
+6.5–6.7 (that sitting drove the load flat out, so its 6.5–6.7 is the
+same build as the 4.4 s above: each pair compares, the two do not
+chain). Two things it found slower. Walking indoors in Wrenfield's
+editor (15 ms a frame where it was 10) was its furniture's collision
+tree, cut that day from a box with room round it: mended the same day —
+the tree is the build before's again (below). And the realistic preview,
+by 0.3–2.4 ms a frame inside the renderer: not mended, and not a thing
+that runs each frame (`app-notes.md`, Measuring).
+
+**How much is shown.** The header's **Show** menu (and the View menu) sets
+the view's scope (`World/Scope.js`), remembered in the browser
+(`?scope=house|exterior|all` in the link sets it for that page):
+
+- **House** — as it starts: the houses with their yards and nothing else.
+  The structure, furniture and fittings, the ground near the houses,
+  terraces, garden walls, pergolas, planters, the pool, the fence and the
+  people are drawn; the garden (every tree, hedge and blade of grass, the
+  garden lights), a site's far ground, the neighbourhood and the cars are
+  not, and a flat colour stands in for the sky, light by day and dark at
+  night. (The hills behind a plot stay, bare: they are cut out of the
+  plot's ground, and hidden would leave a hole in it.) The fastest to work
+  in, and the fastest to open: the garden is not even made until something
+  first shows it.
+- **Exterior** — the surroundings on their own: everything out of doors,
+  with the houses as empty shells (roofs and outside walls, their windows
+  and doors; no floors, ceilings, inner walls, stairs, lights or furniture
+  indoors).
+- **All** — everything.
+
+It holds in edit mode and in the walkthrough while that is lit plainly; the
+realistic preview always shows everything, and so does a publish. A floor
+or a room in focus leaves the surroundings out whatever the scope (a car
+standing in it stays). What a scope leaves out is not drawn, picked,
+snapped to or fitted against, but is walked into exactly as before.
+Selecting, adding or focusing on something the scope
+leaves out (a car picked in the outliner while only the houses are drawn)
+switches to **All** and says so; opening the Garden panel shows everything
+while it is open.
+
 What can be done to what:
 
 | | move | rotate | scale | add / duplicate / delete |
@@ -938,8 +1375,9 @@ tiled while the hallway side stays painted.
    ```
 
    `collision` is optional: `mesh` (exact), `box` (its bounding box — cheaper
-   for dense models) or `none`; by default pieces under 6,000 triangles
-   collide as their mesh and heavier ones as a box.
+   for dense models) or `none`; by default pieces of up to 12,000 triangles
+   collide as their mesh, and heavier ones — or any with a part that opens
+   — as a box.
 4. Reload: it is in the Add menu (`Shift` `A`) under its category.
 
 To keep a piece in the generated catalogue instead, write it as a function in
@@ -972,8 +1410,30 @@ server/
 frontend/Experience/World/
   SceneBuilder.js         Spec -> scene graph; rebuilds what the editor
                           changes; surface registry, doors, model parts
-  Collision.js            Static + dynamic octrees the player walks against
+  Collision.js            Static + dynamic octrees the player walks against,
+                          each kept in step with what it is made from
   Door.js                 Openable door: geometry, swing, own collision
+  PlainLight.js, Scope.js The editor's plain light, and how much of the site
+                          it draws (House, Exterior, All)
+  StandIns.js             What the editor draws under that light in place
+                          of the house and the furniture: merged, instanced
+  LiveSwitches.js, LampPool.js, RoomGlow.js
+                          Lights switched live: the editor's preview, an
+                          unbaked public view
+  Switches.js, LightResolver.js, HouseMerger.js
+                          A baked view: its switches, its light resolved
+                          into one lightmap, its rooms' meshes merged
+  RoomLight.js, LiveRoom.js, RoomBakeLight.js
+                          The rooms round a visitor drawn with their own
+                          materials, when they ask (K): which rooms and
+                          when, how, and in the bake's own light — its
+                          lightmap less the sun's and the live lamps'
+                          straight light, the bake's lamps live with
+                          shadows; a bake without its light apart, the
+                          editor's light, at night a dark room's the
+                          bake's measure (RoomGlow's table, rows 1–7)
+  ProbeLight.js           What moves, lit by the bake's light probes
+  BirdView.js             One floor from above
   Builders/
     TextureLibrary.js     Canvas-generated finishes
     MaterialLibrary.js    One material per finish; UV-baked tiling
@@ -981,6 +1441,16 @@ frontend/Experience/World/
                           punched openings, roofs, stairs
     FurnitureLibrary.js   Model catalogue (files, and pieces of the house
                           GLB) and instancing
+frontend/Experience/
+  Pace.js                 When the editor draws a frame: on demand under its
+                          plain light, with a heartbeat
+  Realism.js              Sun shadow fit, room probe, and a baked view's
+                          light meter
+  FrameGuard.js           A public view that runs slowly makes itself lighter
+  Utils/device.js         The slider's steps, a device's ceiling, how a
+                          baked view is lit
+  Utils/rays.js           Rays through the scene as three's Raycaster answers
+                          them, from an index of its units and triangles
 frontend/Experience/Editor/
   Editor.js               Edit mode: selection, keys, undo, add/delete,
                           floor/room focus, X-ray
@@ -988,6 +1458,8 @@ frontend/Experience/Editor/
                           and every piece belongs to
   EditorUI.js             Header, toolbar, outliner, properties, menus
   EditorCamera.js         Turntable viewport camera, axis views, ortho
+  SelectionOutline.js     The outline round what is selected, drawn against
+                          the frame's own depth
   TransformSession.js     One move/turn/scale: constraints, snapping, fit
   Editables.js            What can be edited, and how: furniture, stairs,
                           floor openings, doors/windows, the car
@@ -997,6 +1469,12 @@ frontend/Experience/Editor/
   Gizmo.js                The transform gizmo
 public/models/furniture/  Drop .glb files here + list in catalog.json
 scenes/                   Saved properties (JSON, safe to hand-edit)
+published/                Published versions and their bakes (git-ignored)
+shared/                   What the page, the server and the bake all read:
+                          publishOptions.js, daylight.js, storeys.js,
+                          roomGraph.js, lightRegions.js, frameGuard.js
+scripts/bake-public.mjs   npm run bake: Blender (blender/bake_public.py) on
+                          a published version
 scripts/seed-scenes.js    Writes the bundled examples
 scripts/inspect-glb.mjs   Pre-import report for a GLB
 ```
@@ -1064,9 +1542,45 @@ of heap. `Collision.js` stops a split that no longer separates anything, or
 below a quarter-metre cell; the same house is now about 200 MB.
 
 **Collision is split into what moves and what doesn't.** The building's
-octree is built once (and again only if a door slid along a wall); furniture
-and stair ramps go into a second, small one that is rebuilt on the way back
-to the walkthrough.
+octree is one tree; furniture and stair ramps go into a second.
+
+**Both are kept, not rebuilt.** Each wall, room, ramp and piece is a source
+whose triangles a `TreeKeeper` (`Collision.js`) remembers. Back in the
+walkthrough after an edit, only the sources that changed have their
+triangles made again, and the tree is mended in the cells they left and
+came to — and it is, cell for cell and triangle for triangle in the same
+order, the tree that building from scratch gives, because that order is
+what three's Octree pushes a capsule out by: another order is another walk.
+Ladonia's furniture is 961 thousand triangles; building them into a tree was
+2.4 s, mending it after a piece is moved is a few milliseconds. Every cell
+is cut from the box round everything, to the digit: an edit that changes
+that box (the outermost piece moved, a chair carried out beyond all the
+others), changes the order of what stays or changes more than three
+tenths of the triangles has the tree built again — a slice a frame, half
+a second of Ladonia's, and walked against meanwhile is the tree as it was
+with the pieces that changed put right in it, so nobody walks against
+the pieces as they were (after a great many moved at once it is left as
+it was, and the build finished in the frame the visitor first moves).
+Building from scratch is itself seven times quicker than it was: the same
+split, without asking three's `Box3.intersectsTriangle` of every triangle
+and every cell. A box with room round it, so that a piece carried outside
+would still be a mend, was tried and taken out: a cell is divided only
+while dividing it separates something, and furniture in the middle of a
+box three times its size came out two levels deep with a leaf of eighteen
+thousand triangles — 11 ms of collision a frame indoors. `node
+scripts/test-collision-tree.mjs` holds the keeper's tree to the committed
+split.
+
+**Rays are three's, from an index.** `rays.cast(raycaster, roots)`
+(`Utils/rays.js`) returns what `raycaster.intersectObjects(roots, true)`
+returns — the same hits in the same order, with three's own numbers. Each
+child of a root (a wall, a piece) is a unit with a box round it, looked
+over before every ray — where it stands, its children, what moves inside
+it — so nothing has to tell the index what an edit changed; a mesh of many
+triangles is asked through a tree of them, by three's own triangle test
+over the runs the tree finds. The terrain alone was four fifths of every
+ray: its sphere holds the visitor wherever they stand, and three then asks
+all fifty thousand of its triangles.
 
 **A wall is built centred on its line.** A 0.35 m external wall drawn along
 x = 0 therefore has its inner face at 0.175, not 0.35 — so room polygons and
@@ -1105,10 +1619,10 @@ lifted clear of the road on purpose — one wide enough to span the car has a
 lower hemisphere that otherwise ploughs the floor slab and brakes it to a
 standstill on flat tarmac.
 
-**Doors are not in the collision octree.** That octree is built once and is
-static, so a leaf baked into it would either block a doorway forever or never
-block it at all. Doors attach to the scene graph *after* the octree is closed
-and collide through their own capsule-vs-oriented-box resolve each frame.
+**Doors are not in the collision octree.** That octree holds what stands
+still, so a leaf in it would either block a doorway forever or never block
+it at all. Doors are left out of it (`isTransient`) and collide through
+their own capsule-vs-oriented-box resolve each frame.
 
 **Openings are cut by splitting, not CSG.** A wall becomes solid panels around
 each hole, so every panel stays a box and the octree stays cheap. The cost is

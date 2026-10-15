@@ -9,6 +9,10 @@
 //                               returns how many frames ran (yields between frames, so
 //                               fetches, workers and timers carry on)
 //   __driveOff()                give requestAnimationFrame back (a frame still queued runs once)
+// An editor tab at rest asks for no frames (it draws only when something has
+// changed: app-notes.md, When the editor draws): __drive then returns its
+// turns, not frames. experience.pace.set("always") has it draw every frame,
+// as a public view does; set(null) gives it back.
 // A javascript_tool call can wait about 40 s: drive in steps of 20–40 s and
 // check progress between them. Driven, a publish runs ~2.5x faster than
 // waiting on a hidden pane's throttled timers.

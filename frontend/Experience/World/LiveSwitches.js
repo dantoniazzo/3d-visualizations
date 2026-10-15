@@ -2,7 +2,9 @@ import { EventEmitter } from "events";
 
 import { FINISHES } from "../../../shared/catalog.js";
 import { roomLinks } from "../../../shared/roomGraph.js";
-import { floorName, levelOf } from "./Switches.js";
+import { darkRooms, doorsOut } from "../../../shared/daylight.js";
+import { planStoreys, storeyName } from "../../../shared/storeys.js";
+import { levelOf } from "./Switches.js";
 
 /**
  * The light switches of a view lit live — the editor, its walkthrough, and
@@ -15,15 +17,23 @@ import { floorName, levelOf } from "./Switches.js";
  * `list`, `byId`, `floors`, `isOn`, `set`, `toggle`, `allOff`, a "change"
  * event — so the lights panel, pointing at a light and the bird's-eye view
  * work alike. Besides those, `entries` (each switch's fittings and the
- * rooms its light reaches) and `weights` (1 on, 0 off, by index).
+ * rooms its light reaches), `weights` (1 on, 0 off, by index), and what a
+ * lamp's light is seen through (World/LampPool.js): what joins two rooms
+ * (`between`), the doors with glass in them (`glazed`) and each room's doors
+ * to the outdoors (`doorsOut`).
  *
  * Day and night each keep switches of their own, as a baked view's do: at
  * night every room's light starts on (its ceiling light, and the lamps on
  * the same switch), lamps with switches of their own off; by day
- * everything starts off — or the rooms' lights on, for a space that has
- * always been drawn with its room lights on by day (`dayOn`). A visitor's
- * switching is theirs alone: it is never part of the scene, nor saved with
- * it.
+ * everything starts off — but for the rooms daylight does not reach
+ * (shared/daylight.js: a bathroom, a lobby, a utility room without a
+ * window), whose light starts on wherever the view is lit as a visitor sees
+ * it (`daylight`: not under the editor's plain light, which lights every
+ * room alike) — or every room's light on, for a space that has always been
+ * drawn with its room lights on by day (`dayOn`). What starts on is how a
+ * switch stands until it is turned by hand; from then on it is as it was
+ * left. A visitor's switching is theirs alone: it is never part of the
+ * scene, nor saved with it.
  *
  * Emits "change" whenever a switch, or the set shown, changes.
  */
@@ -34,11 +44,13 @@ export default class LiveSwitches extends EventEmitter {
      * @param {object} [options]
      * @param {number[]} [options.levels]  the floors' elevations, lowest first
      * @param {boolean} [options.dayOn]  the rooms' lights on by day to start with
+     * @param {boolean} [options.daylight]  by day, the lights of the rooms daylight does not reach on to start with (setDaylight)
      */
-    constructor(spec, lights, { levels = null, dayOn = false } = {}) {
+    constructor(spec, lights, { levels = null, dayOn = false, daylight = true } = {}) {
         super();
         this.dayOn = dayOn;
-        /** variant -> the ids of the switches on. */
+        this.daylight = daylight;
+        /** variant -> switch id -> on or off, for each switch turned by hand: the others are as they start (startsOn). */
         this.states = new Map();
         this.variant = null;
         this.version = 0;
@@ -55,11 +67,25 @@ export default class LiveSwitches extends EventEmitter {
         this.lights = lights || [];
         this.spec = spec;
         this.levels = levels?.length ? levels : [...new Set(spec.rooms.map((room) => room.elevation))].sort((a, b) => a - b);
+        /** The storeys those levels make up (shared/storeys.js): the floors the switches are listed by. */
+        this.storeys = planStoreys(spec.rooms, this.levels);
         const rooms = new Map(spec.rooms.map((room, order) => [room.id, { room, order }]));
         const indoor = spec.rooms.filter((room) => FINISHES[room.floor_finish]?.kind !== "ground");
-        const { neighbours } = roomLinks(spec, indoor);
+        const { neighbours, links, linkKey } = roomLinks(spec, indoor);
         /** The rooms whose lights reach others through doors (what `zones` are made of). */
         this.indoor = new Set(indoor.map((room) => room.id));
+        /** What joins each two of them that open into one another (between). */
+        this.links = links;
+        this.linkKey = linkKey;
+        /** The rooms daylight does not reach, as the walls and windows stand now. */
+        this.dark = darkRooms(spec);
+        /** The doors with glass in them: light passes them shut. */
+        this.glazed = new Set();
+        for (const wall of spec.walls || []) {
+            for (const opening of wall.openings || []) if (opening.type === "door" && opening.door?.glazed) this.glazed.add(opening.id);
+        }
+        /** Each room's doors with the outdoors behind them, by the room's id (shared/daylight.js). */
+        this.doorsOut = doorsOut(spec);
 
         const bySwitch = new Map();
         for (const light of lights || []) {
@@ -88,16 +114,13 @@ export default class LiveSwitches extends EventEmitter {
                 label: entry.label,
                 room: room?.id ?? null,
                 roomOrder: order,
-                level: room ? levelOf(room.elevation, this.levels) : 0,
+                level: room ? this.storeys.ofLevel[levelOf(room.elevation, this.levels)] ?? 0 : 0,
             };
         });
         this.byId = new Map(this.list.map((item) => [item.id, item]));
         // A switch that is gone is forgotten; one that is new starts as its variant starts.
-        for (const [variant, state] of this.states) {
-            const known = state.known;
-            for (const id of [...state]) if (!this.byId.has(id)) state.delete(id);
-            for (const item of this.list) if (!known.has(item.id) && this.startsOn(variant, item)) state.add(item.id);
-            state.known = new Set(this.list.map((item) => item.id));
+        for (const state of this.states.values()) {
+            for (const id of [...state.keys()]) if (!this.byId.has(id)) state.delete(id);
         }
         this.apply();
     }
@@ -114,30 +137,58 @@ export default class LiveSwitches extends EventEmitter {
     }
 
     /**
-     * A floor's name for the lights panel: "Ground floor", "First floor"…
-     * for one house; where buildings stand at different heights (a floor
-     * of one is not the same floor of another), its height instead.
+     * A floor's name for the lights panel: "Ground floor", "First floor",
+     * "Roof terrace"… — the storeys of all its buildings together, whatever
+     * heights they stand at (shared/storeys.js).
      */
     floorName(level) {
-        return floorName(level, this.levels);
+        return storeyName(this.storeys, level);
     }
 
-    /** Whether a switch starts on: a room's light at night, or by day where the rooms were always lit. */
+    /**
+     * What joins two rooms that open into one another, way by way: a
+     * door's id, or null for what always stands open — a doorway, a
+     * stairwell, no wall at all (shared/roomGraph.js).
+     *
+     * @returns {(string|null)[]} none for two rooms that do not open into one another
+     */
+    between(a, b) {
+        return this.links.get(this.linkKey(a, b)) ?? [];
+    }
+
+    /**
+     * Whether a switch starts on: a room's light at night; by day where the
+     * rooms were always lit, and — lit as a visitor sees it — in a room
+     * daylight does not reach.
+     */
     startsOn(variant, item) {
-        return item.kind === "ceiling" && (variant === "night" || this.dayOn);
+        if (item.kind !== "ceiling") return false;
+        return variant === "night" || this.dayOn || (this.daylight && this.dark.has(item.room));
+    }
+
+    /**
+     * Whether the view is lit as a visitor sees it, where a room without
+     * daylight is dark by day — its light then starts on — or evenly, as
+     * the editor's plain light draws every room: they start off. Only the
+     * switches nobody has turned follow.
+     */
+    setDaylight(on) {
+        on = Boolean(on);
+        if (on === this.daylight) return;
+        this.daylight = on;
+        this.apply();
     }
 
     isOn(id) {
-        return Boolean(this.states.get(this.variant)?.has(id));
+        const state = this.states.get(this.variant);
+        const item = this.byId.get(id);
+        if (!state || !item) return false;
+        return state.get(id) ?? this.startsOn(this.variant, item);
     }
 
     /** Get ready to show `variant`: its switches as they were left, or as it starts. */
     async prepare(variant) {
-        if (!this.states.has(variant)) {
-            const state = new Set(this.list.filter((item) => this.startsOn(variant, item)).map((item) => item.id));
-            state.known = new Set(this.list.map((item) => item.id));
-            this.states.set(variant, state);
-        }
+        if (!this.states.has(variant)) this.states.set(variant, new Map());
     }
 
     /** Show `variant`'s switches (after prepare). */
@@ -151,8 +202,7 @@ export default class LiveSwitches extends EventEmitter {
     async set(id, on) {
         const state = this.states.get(this.variant);
         if (!state || !this.byId.has(id)) return;
-        if (on) state.add(id);
-        else state.delete(id);
+        state.set(id, Boolean(on));
         this.apply();
     }
 
@@ -162,7 +212,9 @@ export default class LiveSwitches extends EventEmitter {
 
     /** Every switch off. */
     allOff() {
-        this.states.get(this.variant)?.clear();
+        const state = this.states.get(this.variant);
+        if (!state) return;
+        for (const item of this.list) state.set(item.id, false);
         this.apply();
     }
 
@@ -170,13 +222,12 @@ export default class LiveSwitches extends EventEmitter {
     allOn() {
         const state = this.states.get(this.variant);
         if (!state) return;
-        for (const item of this.list) state.add(item.id);
+        for (const item of this.list) state.set(item.id, true);
         this.apply();
     }
 
     apply() {
-        const state = this.states.get(this.variant) ?? new Set();
-        this.weights = this.list.map((item) => (state.has(item.id) ? 1 : 0));
+        this.weights = this.list.map((item) => (this.isOn(item.id) ? 1 : 0));
         this.version++;
         this.emit("change");
     }

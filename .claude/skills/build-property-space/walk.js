@@ -22,6 +22,9 @@
     const r2 = (v) => Math.round(v * 100) / 100;
 
     const place = ([x, y, z], lift) => {
+        // After an edit that has the furniture's tree built again a slice a frame (app-notes.md, Rays and the
+        // collision trees), the walk would be against the pieces as they stood before it: finished first.
+        sb.settleCollision?.();
         pl.collider.start.set(x, y + lift, z);
         pl.collider.end.copy(pl.collider.start);
         pl.collider.end.y += pl.height;

@@ -18,6 +18,10 @@ import * as THREE from "three";
  * back — near plane and field of view restored — when the walkthrough
  * resumes.
  */
+/** The perspective view's near plane, in metres: close in, and at most — it goes out with the view's distance (update). */
+const NEAR = 0.05;
+const NEAR_MOST = 0.5;
+
 const _offset = new THREE.Vector3();
 const _right = new THREE.Vector3();
 const _up = new THREE.Vector3();
@@ -60,7 +64,7 @@ export default class EditorCamera {
     activate(initial) {
         this.saved = { fov: this.persp.fov, near: this.persp.near, far: this.persp.far };
         this.persp.fov = this.FOV;
-        this.persp.near = 0.05;
+        this.persp.near = NEAR;
         this.persp.far = 3000;
         this.persp.updateProjectionMatrix();
 
@@ -87,6 +91,12 @@ export default class EditorCamera {
         this.radius = Math.max(0.5, _offset.length());
         this.theta = Math.atan2(_offset.x, _offset.z);
         this.phi = Math.acos(THREE.MathUtils.clamp(_offset.y / this.radius, -1, 1));
+        this.moved();
+    }
+
+    /** The view has been turned, slid, zoomed or changed: a frame is due (the editor draws only when something changes, Pace.js). */
+    moved() {
+        this.rig.experience?.wake("view");
     }
 
     // ------------------------------------------------------------------
@@ -98,6 +108,7 @@ export default class EditorCamera {
         this.theta -= dx * 0.0065;
         this.phi = THREE.MathUtils.clamp(this.phi - dy * 0.0065, 0, Math.PI);
         this.leaveAxisView();
+        this.moved();
     }
 
     pan(dx, dy) {
@@ -106,17 +117,20 @@ export default class EditorCamera {
         _up.setFromMatrixColumn(this.camera.matrixWorld, 1);
         this.target.addScaledVector(_right, -dx * perPixel);
         this.target.addScaledVector(_up, dy * perPixel);
+        this.moved();
     }
 
     /** factor > 1 moves away. */
     zoom(factor) {
         this.radius = THREE.MathUtils.clamp(this.radius * factor, 0.3, 800);
+        this.moved();
     }
 
     orbitStep(dTheta, dPhi) {
         this.theta += dTheta;
         this.phi = THREE.MathUtils.clamp(this.phi + dPhi, 0, Math.PI);
         this.leaveAxisView();
+        this.moved();
     }
 
     setView(name) {
@@ -129,6 +143,7 @@ export default class EditorCamera {
             this.isOrtho = true;
             this.autoOrtho = true;
         }
+        this.moved();
     }
 
     leaveAxisView() {
@@ -143,6 +158,7 @@ export default class EditorCamera {
     toggleOrtho() {
         this.isOrtho = !this.isOrtho;
         this.autoOrtho = false;
+        this.moved();
     }
 
     /** Fit a box in view, keeping the current angle. */
@@ -156,6 +172,7 @@ export default class EditorCamera {
             0.5,
             800
         );
+        this.moved();
     }
 
     /** Metres per screen pixel at the pivot's depth. */
@@ -193,6 +210,16 @@ export default class EditorCamera {
             camera.position.copy(this.target).addScaledVector(_offset, this.radius);
             camera.quaternion.setFromEuler(_euler);
             camera.updateMatrixWorld(true);
+        }
+        // The near plane further out the further off the view is: the depth buffer's step grows with the square of
+        // the distance and shrinks with the near plane — 2 mm at 40 m with it at 5 cm, which is how far a threshold
+        // lies under its floor and a tread over a slab: seen from high over the property, which of the two showed
+        // was chance (and another chance for a merged mesh than for the two apart). Half a millimetre there now;
+        // close in, 5 cm as ever.
+        const near = THREE.MathUtils.clamp(this.radius / 200, NEAR, NEAR_MOST);
+        if (near !== this.persp.near) {
+            this.persp.near = near;
+            this.persp.updateProjectionMatrix();
         }
 
         const halfHeight = this.radius * Math.tan(THREE.MathUtils.degToRad(this.FOV / 2));

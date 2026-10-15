@@ -23,27 +23,29 @@ const LOCAL = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
 
 /**
  * The steps of a bake as its log shows them: the line that ends each, what
- * to call it meanwhile, and roughly how long it takes on an M-series Mac
- * for a final bake — the lighting passes in proportion to the samples and
- * texels for a draft.
+ * to call it meanwhile, and how long it takes on an M-series Mac for a
+ * final bake of a house of twenty rooms (Wrenfield, 2026-10-12: 28 min) —
+ * for a draft, `fixed` of it whatever the samples and the texels (handing
+ * the scene to the renderer, a pass at a time) and the rest in proportion
+ * to them: fitted to that final bake and to its draft (7 min). Only lines
+ * every bake prints: one of a version published "Fully baked" skips its
+ * doors and writes no "-indirect" lightmaps.
  */
 const STEPS = [
     { until: "house texels", label: "Unwrapping the house", seconds: 25 },
-    { until: "vertex probes placed", label: "Placing light probes", seconds: 15 },
-    { until: "guides baked", label: "Baking surface guides", seconds: 5 },
-    { until: "coverage baked", label: "Finding covered texels", seconds: 8 },
-    { until: "hidden texels found", label: "Finding texels inside walls", seconds: 17 },
-    { until: "seams to stitch", label: "Finding seams", seconds: 3 },
-    { until: "day lightmap baked", label: "Baking daylight", seconds: 380, work: true },
-    { until: "day seams stitched", label: "Denoising daylight, lighting the ceiling tops", seconds: 120 },
-    { until: "wrote day-indirect", label: "Stitching seams", seconds: 15 },
-    { until: "door states baked", label: "Baking the rooms with their doors shut", seconds: 300, work: true },
-    { until: "night lightmap baked", label: "Baking the night", seconds: 380, work: true },
-    { until: "night seams stitched", label: "Denoising the night, lighting the ceiling tops", seconds: 120 },
-    { until: "wrote night-indirect", label: "Stitching seams", seconds: 15 },
-    { until: "joined for drawing", label: "Baking the light switches", seconds: 420, work: true },
-    { until: "compressing the view", label: "Exporting", seconds: 20 },
-    { until: "Baked in", label: "Compressing", seconds: 15 },
+    { until: "vertex probes placed", label: "Placing light probes", seconds: 22 },
+    { until: "guides baked", label: "Baking surface guides", seconds: 2 },
+    { until: "coverage baked", label: "Finding covered texels", seconds: 3 },
+    { until: "hidden texels found", label: "Finding texels inside walls", seconds: 14, fixed: 3, work: true },
+    { until: "seams to stitch", label: "Finding seams", seconds: 9 },
+    { until: "day lightmap baked", label: "Baking daylight", seconds: 80, fixed: 10, work: true },
+    { until: "day seams stitched", label: "Denoising daylight, lighting the ceiling tops and the thin faces", seconds: 100, fixed: 28, work: true },
+    { until: "door states baked", label: "Baking the rooms with their doors shut", seconds: 440, fixed: 67, work: true },
+    { until: "night lightmap baked", label: "Baking the night", seconds: 30, fixed: 6, work: true },
+    { until: "night seams stitched", label: "Denoising the night, lighting the ceiling tops and the thin faces", seconds: 70, fixed: 26, work: true },
+    { until: "joined for drawing", label: "Baking the light switches", seconds: 870, fixed: 138, work: true },
+    { until: "compressing the view", label: "Exporting", seconds: 2 },
+    { until: "Baked in", label: "Compressing", seconds: 2 },
 ];
 
 let blender;
@@ -160,7 +162,7 @@ function progress(job) {
     if (job.state === "failed") return { fraction: 0, label: "Failed" };
     const final = BAKE_QUALITY.final;
     const work = (job.samples / final.samples) * (job.size / final.size) ** 2;
-    const length = (step) => step.seconds * (step.work ? work : 1);
+    const length = (step) => (step.work ? (step.fixed ?? 0) + (step.seconds - (step.fixed ?? 0)) * work : step.seconds);
     const total = STEPS.reduce((sum, step) => sum + length(step), 0);
     const done = STEPS.slice(0, job.step).reduce((sum, step) => sum + length(step), 0);
     const current = STEPS[job.step];

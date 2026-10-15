@@ -2,6 +2,16 @@
 // wall, slab and piece its own mesh, so the walkthrough names them best):
 //   await eval(await (await fetch("http://127.0.0.1:3199/zfight.js")).text());
 //   const found = window.__zfight({ minArea: 0.004 });
+// In an editor tab it first sets the view's scope to All for the page: the
+// editor opens with the houses alone drawn (World/Scope.js), the cars, a
+// site's far ground and the neighbourhood hidden, and a hidden mesh is not
+// tested. (Light does not matter to it: the plain light will do.)
+// Under that plain light the editor draws the house and the furniture by
+// stand-ins (World/StandIns.js: merged and instanced copies under the
+// scene's "stand-ins" group), the real meshes still `visible` on a layer no
+// camera draws. This reads the real meshes, as before, and passes the
+// stand-ins over: left in, every surface is found fighting its own copy
+// (Wrenfield, 2026-10-14: 552 of 615 clusters, 4,948 m²).
 // Every visible mesh's triangles (trees, grass, hedges, the sky left out)
 // are hashed by their plane — facing the same way, within `gap` metres —
 // and pairs from different surfaces (another mesh, or another material)
@@ -54,12 +64,16 @@
     const ccw = (poly) => (area2(poly) < 0 ? poly.slice().reverse() : poly);
 
     window.__zfight = ({ minArea = 0.004, gap = 0.004, root = window.experience.scene, skip = SKIP, limit = 400, sameLook = true } = {}) => {
+        // Everything shown, whatever the editor's scope leaves out (World/Scope.js); a public view has no scope.
+        window.experience.world?.scope?.set("all", { remember: false });
         const tris = [];
         const p = [v(0, 0, 0), v(0, 0, 0), v(0, 0, 0)];
         let meshIndex = 0;
         root.updateMatrixWorld(true);
         root.traverse((node) => {
             if (!node.isMesh || node.isInstancedMesh || node.isSkinnedMesh) return;
+            // The editor's stand-ins are copies of what is tested already (World/StandIns.js marks each).
+            if (node.userData?.standIn) return;
             for (let q = node; q; q = q.parent) if (!q.visible) return;
             const materials = Array.isArray(node.material) ? node.material : [node.material];
             const names = materials.map((m) => m?.name || "");

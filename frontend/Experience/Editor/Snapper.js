@@ -2,6 +2,8 @@ import * as THREE from "three";
 
 import { FINISHES } from "../../../shared/catalog.js";
 import { signedArea } from "../Utils/geometry.js";
+import { seeReal } from "../Utils/layers.js";
+import rays from "../Utils/rays.js";
 
 /**
  * The editor's snapping, all of which Shift turns off while held:
@@ -16,6 +18,10 @@ import { signedArea } from "../Utils/geometry.js";
  *
  * Faces only snap when the piece is square to them (to within a degree
  * and a half); anything at an angle moves freely.
+ *
+ * The pieces the view's scope leaves out (World/Scope.js, Editor.outOfScope)
+ * are snapped to in none of these ways; the building is, whatever of it is
+ * drawn — it is fixed, and what stands on it has to.
  */
 
 const FACE_REACH = 0.2;
@@ -23,7 +29,7 @@ const ALIGN_REACH = 0.08;
 const SQUARE = Math.cos(THREE.MathUtils.degToRad(1.5));
 export const STEP_UP = 0.25;
 
-const _ray = new THREE.Raycaster();
+const _ray = seeReal(new THREE.Raycaster());
 const _down = new THREE.Vector3(0, -1, 0);
 const _origin = new THREE.Vector3();
 const _normal = new THREE.Vector3();
@@ -33,6 +39,33 @@ export default class Snapper {
         this.editor = editor;
         this.builder = editor.builder;
         this.buildingFaces = null;
+        /** What `supportUnder` looks down through, placed and looked over once for a run of calls (`hold`). */
+        this.held = null;
+    }
+
+    /**
+     * From here to `release`, nothing in the scene moves: what
+     * `supportUnder` looks down through is placed and looked over once for
+     * all its calls, not at each (a step of a drag asks up to four times,
+     * and the placing alone is half a millisecond of a big house).
+     */
+    hold() {
+        this.held = { all: null, floor: null };
+    }
+
+    release() {
+        this.held = null;
+    }
+
+    /** Its targets, placed (slabs rebuilt since the last frame — an undo — are not yet) and looked over for a ray (Utils/rays.js). */
+    lookedOver(floorOnly) {
+        const kept = this.held?.[floorOnly ? "floor" : "all"];
+        if (kept) return kept;
+        const targets = floorOnly ? this.floorTargets() : this.supportTargets();
+        for (const target of targets) target.updateMatrixWorld();
+        const over = rays.hold(targets);
+        if (this.held) this.held[floorOnly ? "floor" : "all"] = over;
+        return over;
     }
 
     // ------------------------------------------------------------------
@@ -143,7 +176,8 @@ export default class Snapper {
     flush(footprint, exclude, allowed = null) {
         const targets = [...this.getBuildingFaces()];
         for (const editable of this.editor.editables.values()) {
-            if (exclude.has(editable) || !editable.isObstacle()) continue;
+            // (Nor what the view's scope leaves out: not there to go flush against.)
+            if (exclude.has(editable) || !editable.isObstacle() || this.editor.outOfScope.has(editable)) continue;
             const other = editable.footprint();
             if (!other) continue;
             // Only pieces within reach are worth the comparison.
@@ -213,9 +247,7 @@ export default class Snapper {
      * onto a sofa. Sampled at the centre and near each corner.
      */
     supportUnder(footprint, bottom, exclude, floorOnly = false) {
-        const targets = floorOnly ? this.floorTargets() : this.supportTargets();
-        // Slabs rebuilt since the last frame (an undo) are not placed yet.
-        for (const target of targets) target.updateMatrixWorld();
+        const over = this.lookedOver(floorOnly);
         let best = null;
 
         const samples = [[0, 0]];
@@ -230,9 +262,13 @@ export default class Snapper {
             _ray.set(_origin, _down);
             _ray.far = STEP_UP + 40;
 
-            for (const hit of _ray.intersectObjects(targets, true)) {
+            const unseen = this.editor.outOfScope;
+            // (three's own hits, nearest first, from the scene's index.)
+            for (const hit of rays.through(_ray, over)) {
                 if (!hit.face || hit.object.userData?.helper || hit.object.userData?.doorLeaf) continue;
                 if (exclude.size && this.editor.isInside(hit.object, exclude)) continue;
+                // A piece the view's scope leaves out is nothing to stand on; the building, drawn or not, is.
+                if (unseen.size && this.editor.isInside(hit.object, unseen)) continue;
                 _normal.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
                 // Double-sided slabs report their top face from above.
                 if (Math.abs(_normal.y) < 0.5) continue;

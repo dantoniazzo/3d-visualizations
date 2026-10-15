@@ -20,6 +20,21 @@ to `checks/<project>-<name>.mjs` (same folder, so the repo is still found four l
 what each section below lists as Ladonia-specific, and make sure it reports your building ids before
 trusting a pass.
 
+They run in node, from the spec and the app's own builders: nothing a tab draws reaches them. So the
+editor's plain light and view scope (since 2026-10-10 an editor tab opens with the houses alone
+drawn, the garden not even made), and its stand-ins and frames on demand (since 2026-10-13 the
+house and the furniture are drawn by merged and instanced copies, and a tab at rest draws nothing),
+change nothing here; it is the in-page helpers that read what is drawn, and `zfight.js` and
+`people-audit.js` ask for the whole site themselves, `zfight.js` passing over the stand-ins
+(SKILL.md's list of files, and its §10 for a helper of your own). All nine checkers were run against
+the app as it stood on 2026-10-12, after the performance work: every one still ran, with Ladonia's
+results as the sections below record them (stairs-check 0 blockers, 5 majors, 3 minors; door-swing
+71 leaves, no contact over 5 mm on the mesh; every street flight passing; people-plans no problems
+over its seeds). One of them imports code the editor's work of 2026-10-13 rewrote —
+`stairs-check.mjs` builds its trees with `Collision.js`'s `buildOctree` — and was run again on
+2026-10-14: the same 0 blockers, 5 majors and 3 minors, every flight and route OK. The others import
+only the validator, the catalogue, `Door.js` and the landscape, none of which that work touched.
+
 Run them from the repo root, e.g. `node .claude/skills/build-property-space/checks/stairs-check.mjs`.
 Each finds the repo four directories above itself (checks -> build-property-space -> skills ->
 .claude -> repo); set `REPO=/path/to/checkout` to point one at another checkout. They import the

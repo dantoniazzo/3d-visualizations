@@ -8,6 +8,13 @@
 // view: that builds only whom its quality step draws, and batches the shell),
 // after harness.js, through the sink:
 //   await eval(await (await fetch("http://127.0.0.1:3199/people-audit.js")).text())
+// As it loads it sets the editor's view scope to All for the page (the
+// editor opens with the houses alone drawn, the garden not made: World/
+// Scope.js) — the planting is part of what a person is measured against.
+// It measures against the builder's own meshes (sceneBuilder.root), which
+// the editor's stand-ins leave where they were (World/StandIns.js: only what
+// draws them changes) — run on the build of 2026-10-14, Ladonia's twelve
+// gave the six flags of 2026-10-10.
 // It needs no frames, so it runs with the pane hidden; only lineup() and
 // shots() draw, and they need a canvas of a size (a tab never shown has one
 // of 2 × 2, and saves blurs: app-notes.md, The browser pane). Nothing is
@@ -106,6 +113,11 @@
     await Promise.race([sb.furnitureReady, new Promise((r) => setTimeout(r, 30000))]);
     await Promise.race([P.ready, new Promise((r) => setTimeout(r, 30000))]);
     await P.seats();
+    // The editor opens with the houses alone drawn (World/Scope.js): the garden — a hedge's core, the planters' and beds'
+    // grasses, the trees, all of which a person is measured against — is not made until a scope shows it, and what a scope
+    // hides is not read (rescan). Everything shown, for this page only, and the trees waited for, before anything is read.
+    if (w.scope && w.scope.current !== "all") w.scope.set("all", { remember: false });
+    await Promise.race([Promise.resolve(w.vegetation?.treeSet?.ready).catch(() => {}), new Promise((r) => setTimeout(r, 30000))]);
     const preloader = document.querySelector(".preloader");
     if (preloader) preloader.style.display = "none";
 

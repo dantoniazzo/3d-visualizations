@@ -1,10 +1,19 @@
 /**
  * Bake the lighting of a space's published public view.
  *
- *   npm run bake -- <scene-id>                 the latest version, day and night, ~12 minutes
+ *   npm run bake -- <scene-id>                 the latest version, day and night: 28 minutes for a house of
+ *                                              twenty rooms on an M4 Pro (512 samples at 4096²), about two
+ *                                              hours for a site of three buildings and ninety rooms
  *   npm run bake -- <scene-id> --samples 128   a quicker, noisier draft
  *   npm run bake -- <scene-id> --size 2048     a coarser lightmap, quicker
  *   npm run bake -- <scene-id> --version <v>   an earlier version
+ *   npm run bake -- <scene-id> --margin 4      narrower margins round the lightmap's islands (8 texels at 4096)
+ *   npm run bake -- <scene-id> --full          everything, for a version published "Fully baked" too (below)
+ *   npm run bake -- <scene-id> --static        only what a fully static view reads, whatever the version says
+ *   npm run bake -- <scene-id> --variants night --no-switches --no-doors
+ *                                              a developer's: part of a bake, to try one thing (with BAKE_CUT,
+ *                                              blender/bake_public.py) — not a version to keep
+ *   npm run bake -- <scene-id> --dry <file>    a developer's: the bake's settings written to <file>, nothing baked
  *   npm run bake -- <scene-id> --debug         also keep the raw and denoised lightmaps (EXR)
  *
  * The editor's Publish panel runs this too, when a publish asks for its
@@ -15,12 +24,23 @@
  * room lights and every bounce between them — for day and for night, then
  * updates the published version in place: its view gains lightmap UVs and
  * baked vertex light, and the lightmaps sit beside it. The public view then
- * draws the house from what was baked: on a phone all of its light, unlit;
- * elsewhere all but the sun's and the lamps' straight light, which it draws
- * live, with shadows that follow the doors, the people and the car
- * (frontend/Experience/Utils/device.js's lightingMode). Each room door is
+ * draws the house from what was baked, all of its light: on a computer
+ * what moves — the doors, the people, the car — still shades the sun in
+ * it, and is lit by the bake's light probes; on a phone, and at the
+ * slider's two lowest steps, nothing is drawn live at all. The sun's and
+ * the lamps' straight light is drawn live over the rest, with shadows of
+ * the whole house, only for a link that asks (`?lighting=live`, to compare:
+ * frontend/Experience/Utils/device.js's lightingMode). Each room door is
  * baked shut too, the rooms either side of it, for the view to dim them as
  * it closes (doors.webp).
+ *
+ * A version published "Fully baked" (its `lighting` option "static",
+ * shared/publishOptions.js) is drawn from the bake alone on every device:
+ * its bake leaves out what such a view never reads — the doors baked shut
+ * (a fifth of a house's bake), the light probes, the sun's share of the
+ * light, the lightmaps and the vertex light without the sun's or the
+ * lamps' straight light — and says so (`lighting.only`: "static"), for
+ * the view to draw it so whatever its link asks. `--full` bakes it all.
  *
  * One bake at a time: Blender takes the whole GPU.
  *
@@ -47,7 +67,7 @@ import { findBlender } from "./lib/blender.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
-const VALUED = ["--samples", "--size", "--version"];
+const VALUED = ["--samples", "--size", "--version", "--margin", "--variants", "--dry"];
 const sceneId = args.find((a, i) => !a.startsWith("--") && !VALUED.includes(args[i - 1]));
 const option = (name, fallback) => {
     const i = args.indexOf(`--${name}`);
@@ -55,12 +75,15 @@ const option = (name, fallback) => {
 };
 
 if (!sceneId) {
-    console.error("Usage: npm run bake -- <scene-id> [--samples 128] [--size 2048] [--version <v>] [--debug]");
+    console.error("Usage: npm run bake -- <scene-id> [--samples 128] [--size 2048] [--version <v>] [--margin 4] [--full | --static] [--debug]");
     process.exit(1);
 }
 
-const blender = findBlender();
-if (!blender) {
+// `--dry <file>`: the settings alone — no Blender asked for, no bake's lock taken, nothing written but that file.
+const dry = option("dry", null);
+
+const blender = dry ? null : findBlender();
+if (!blender && !dry) {
     console.error("Blender not found. Install it, or set BLENDER=/path/to/blender.");
     process.exit(1);
 }
@@ -72,32 +95,34 @@ if (!manifest) {
     process.exit(1);
 }
 
-// One bake at a time, whether started here or from the Publish panel.
-const LOCK = join(PUBLISH_DIR, ".bake-lock");
-try {
-    const held = JSON.parse(readFileSync(LOCK, "utf8"));
-    process.kill(held.pid, 0);
-    console.error(`A bake is already running (${held.sceneId} ${held.version}, process ${held.pid}). Wait for it to finish.`);
-    process.exit(1);
-} catch {
-    // No lock, or its bake has gone.
-}
-writeFileSync(LOCK, JSON.stringify({ pid: process.pid, sceneId, version, startedAt: new Date().toISOString() }));
-process.on("exit", () => rmSync(LOCK, { force: true }));
-
 // Each bake gets a folder of its own: published files are served as never
 // changing, so a new bake must not reuse an old one's names.
 const sceneDir = join(PUBLISH_DIR, sceneId);
 const versionDir = join(sceneDir, version);
 const bakeName = `bake-${Date.now().toString(36)}`;
 const bakeDir = join(versionDir, bakeName);
-await mkdir(bakeDir, { recursive: true });
-// A bake that stops part-way leaves nothing behind: its half-written
-// folder would sit beside the version for ever.
 let finished = false;
-process.on("exit", () => {
-    if (!finished && !args.includes("--debug")) rmSync(bakeDir, { recursive: true, force: true });
-});
+if (!dry) {
+    // One bake at a time, whether started here or from the Publish panel.
+    const LOCK = join(PUBLISH_DIR, ".bake-lock");
+    try {
+        const held = JSON.parse(readFileSync(LOCK, "utf8"));
+        process.kill(held.pid, 0);
+        console.error(`A bake is already running (${held.sceneId} ${held.version}, process ${held.pid}). Wait for it to finish.`);
+        process.exit(1);
+    } catch {
+        // No lock, or its bake has gone.
+    }
+    writeFileSync(LOCK, JSON.stringify({ pid: process.pid, sceneId, version, startedAt: new Date().toISOString() }));
+    process.on("exit", () => rmSync(LOCK, { force: true }));
+
+    await mkdir(bakeDir, { recursive: true });
+    // A bake that stops part-way leaves nothing behind: its half-written
+    // folder would sit beside the version for ever.
+    process.on("exit", () => {
+        if (!finished && !args.includes("--debug")) rmSync(bakeDir, { recursive: true, force: true });
+    });
+}
 const spec = publishedSpec(JSON.parse(await readFile(join(sceneDir, manifest.spec), "utf8")));
 const preset = ENVIRONMENT_PRESETS[spec.environment?.preset] || ENVIRONMENT_PRESETS.interior_day;
 const sky = landscapeSky(spec.landscape?.sky);
@@ -258,7 +283,9 @@ for (const room of indoor) {
 // switch — each switch's light is baked on its own, into the rooms it
 // reaches: its own, and every room a door, doorway or stairwell opens into
 // from it. What it throws further is too little to see.
-const { neighbours, links, linkKey, roomAt } = roomLinks(spec, indoor);
+const { neighbours, links, linkKey, roomAt, joined } = roomLinks(spec, indoor);
+// Only what a view drawn fully static reads, for a version published so (or `--static`): `--full` for all of it.
+const onlyStatic = !args.includes("--full") && (args.includes("--static") || manifest.options?.lighting === "static");
 const switches = new Map();
 for (const light of spec.lights || []) {
     if (!light.room || !neighbours.has(light.room)) continue;
@@ -326,6 +353,57 @@ for (const wall of spec.walls || []) {
     }
 }
 
+// Every wall's own footprint and height, openings and all: a face in a
+// wall's thickness — a doorway's sides, a threshold, a window's reveal — is
+// the room's nearest it (bake_public.py's face_zones).
+const wallLines = [];
+for (const wall of spec.walls || []) {
+    const [x1, z1] = wall.start;
+    const [x2, z2] = wall.end;
+    const length = Math.hypot(x2 - x1, z2 - z1);
+    if (!length) continue;
+    wallLines.push({
+        start: wall.start,
+        direction: [(x2 - x1) / length, (z2 - z1) / length],
+        length,
+        half: wall.thickness / 2,
+        bottom: wall.base_height,
+        top: wall.base_height + wall.height,
+    });
+}
+
+// The garden's own lights for the evening (shared/landscape.js's `lights`
+// and `pools`), as the live view shines them (World/Flora/lights.js) — in
+// the night's bake as part of its own light: they come on with the night
+// and no visitor switches them. A three.js light of so many candela is a
+// Blender lamp of 4π times as many watts; the live ones fall off more
+// slowly than light does (their `decay` under 2) and stop dead at their
+// reach, so each is given the power that lights a surface GARDEN_REFERENCE
+// metres off as the live one does. The step lights and the planters' LED
+// strips give no light live either, only their glow.
+const GARDEN_REFERENCE = 2.5;
+const GARDEN_WARM = "#ffcf94";
+const gardenPower = (candela, decay) => +(candela * 4 * Math.PI * GARDEN_REFERENCE ** (2 - decay)).toFixed(1);
+const garden = [];
+for (const light of spec.landscape?.lights || []) {
+    const [x, y, z] = light.position;
+    if (light.type === "uplight") {
+        // SpotLight(warm, 26 cd, 9 m, 0.55 rad to the cone's edge, penumbra 0.85, decay 1.6), a hand's width over the ground.
+        garden.push({ kind: "spot", position: [x, y + 0.08, z], target: light.target, power: gardenPower(26, 1.6), color: GARDEN_WARM, angle: 1.1, blend: 0.85, size: 0.03 });
+    } else if (light.type === "downlight") {
+        // PointLight(warm, 7 cd, 7 m, decay 1.7), under the pergola's beam.
+        garden.push({ kind: "point", position: [x, y - 0.2, z], power: gardenPower(7, 1.7), color: GARDEN_WARM, size: 0.04 });
+    }
+}
+for (const pool of spec.landscape?.pools || []) {
+    const [x0, z0, x1, z1] = pool.box;
+    // PointLight(#5fe3ff, 18 cd, 9 m, decay 1.5), live half a metre under the water — and casting no shadow, so it
+    // lights the walls and the counter round the pool through the pool's own sides. Baked there, the basin keeps
+    // all of it in (tried: nothing of it on the terrace). So it is baked where a lit pool's light leaves it: at
+    // the water's surface — which the view draws live, and is not in the bake — and soft, as wide as a lamp may be.
+    garden.push({ kind: "point", position: [(x0 + x1) / 2, pool.level + 0.1, (z0 + z1) / 2], power: gardenPower(18, 1.5), color: "#5fe3ff", size: 0.5 });
+}
+
 const settings = {
     // A site with a sky of its own is lit by it (landscapeSky); the preset's
     // sun is then the sky's, where the live view has it.
@@ -333,9 +411,17 @@ const settings = {
     ...(sky && { sky: sky.world }),
     rooms,
     probes,
-    doors,
+    doors: args.includes("--no-doors") ? [] : doors,
     portals,
-    switches: [...switches.values()],
+    switches: args.includes("--no-switches") ? [] : [...switches.values()],
+    walls: wallLines,
+    // Which rooms open into which (shared/roomGraph.js): doors in parts of the site that no opening joins — a flat
+    // and the flat next door — are baked shut in one pass (blender/lib/batches.py).
+    links: Object.fromEntries([...neighbours].map(([id, others]) => [id, [...others]])),
+    // ...and by the rooms ANY opening joins — an arch, a hatch, a window between two rooms as well as what one walks
+    // through: a door shut dims whatever its room shares light with.
+    openings: Object.fromEntries([...joined].map(([id, others]) => [id, [...others]])),
+    garden,
     // The garden's trees and bushes, and the hills', as the view grows them
     // (shared/vegetation.js): not baked themselves, but casting their shade.
     trees: [...planTrees(spec), ...planHillTrees(spec), ...planRoadTrees(spec)],
@@ -352,6 +438,11 @@ const settings = {
     day: sky ? sky.day : { sun: preset.sun.intensity, sky: 1.0 },
     night: sky ? sky.night : { sky: 0.05, moon: 0.08 },
 };
+if (dry) {
+    await writeFile(dry, JSON.stringify(settings, null, 2));
+    console.log(`[bake] settings written to ${dry}: nothing baked`);
+    process.exit(0);
+}
 const settingsPath = join(bakeDir, "settings.json");
 await writeFile(settingsPath, JSON.stringify(settings, null, 2));
 
@@ -373,6 +464,9 @@ execFileSync(
         "--settings", settingsPath,
         "--samples", option("samples", "512"),
         "--size", option("size", "4096"),
+        ...(option("margin", null) ? ["--margin", option("margin", null)] : []),
+        ...(option("variants", null) ? ["--variants", option("variants", null)] : []),
+        ...(onlyStatic ? ["--static"] : []),
         ...(args.includes("--debug") ? ["--debug"] : []),
     ],
     { stdio: "inherit", cwd: join(ROOT, "blender") }
@@ -400,6 +494,15 @@ const lightmaps = Object.fromEntries(
         ])
     )
 );
+// ...and the one with each room's part held its own way (blender/lib/lightzones.py), which a view that resolves the
+// house's light into one lightmap fetches in its place.
+const roomLightmaps = Object.fromEntries(
+    await Promise.all(
+        Object.entries(bake.variants)
+            .filter(([, variant]) => variant.rooms)
+            .map(async ([name, variant]) => [name, (await size(join(bakeDir, variant.rooms.lightmap))) + (await size(join(bakeDir, variant.rooms.chroma)))])
+    )
+);
 // What the bake describes, with every file it names as it is served:
 // beside the rest of this bake.
 const served = (value) => {
@@ -416,6 +519,9 @@ await updateVersion(sceneId, version, {
         samples: bake.samples,
         size: bake.size,
         texel: bake.texel,
+        ...(bake.margin && { margin: bake.margin }),
+        // Baked for a view drawn fully static alone: no door states, light probes, sun masks or light apart.
+        ...(bake.only && { only: bake.only }),
         meshes: bake.meshes,
         triangles: bake.triangles,
         // How the light is drawn: Blender's Filmic, at the bake's exposure.
@@ -440,6 +546,7 @@ await updateVersion(sceneId, version, {
         ...manifest.sizes,
         view: view.length,
         lightmaps,
+        ...(Object.keys(roomLightmaps).length && { roomLightmaps }),
         ...(bake.probes && { probes: await size(join(bakeDir, bake.probes.file)) }),
         ...(bake.doorStates && { doorStates: await size(join(bakeDir, bake.doorStates.file)) }),
     },

@@ -1,7 +1,7 @@
 import * as THREE from "three";
 
 import { FINISHES } from "../../../shared/catalog.js";
-import { pointInPolygon, polygonCentroid } from "../Utils/geometry.js";
+import { pointInPolygon, polygonCentroid, signedArea } from "../Utils/geometry.js";
 
 /**
  * The property sorted into collections, the way Blender's outliner sorts a
@@ -20,6 +20,10 @@ import { pointInPolygon, polygonCentroid } from "../Utils/geometry.js";
  * room, or the site outside — as a piece of furniture does, and to a
  * collection of their own, "people", that switches them all off.
  *
+ * Over both, the view's scope (World/Scope.js) says how much of the site is
+ * drawn at all: the houses and their yards, the surroundings with the
+ * houses as empty shells, or everything (inScope).
+ *
  * Membership of the building is derived, not authored. A generated shell
  * says where its rooms and walls are, so a wall belongs to the rooms whose
  * edges run along it. An imported model only has named nodes, so each node
@@ -29,6 +33,19 @@ import { pointInPolygon, polygonCentroid } from "../Utils/geometry.js";
  */
 
 const LEVEL_NAMES = ["Ground floor", "First floor", "Second floor", "Third floor", "Fourth floor"];
+/**
+ * How much of a wall's length may run along no room indoors, on one side,
+ * and the wall still count as one between two rooms: the walls it meets at
+ * its ends take up to a wall's thickness each (the most among the three
+ * spaces' inner walls is 0.6 m; the least a façade leaves bare, 1.3 m).
+ */
+const INSIDE_SLACK = 1;
+/**
+ * How far round the houses their yards are framed with them (propertyBox):
+ * a terrace, a lawn, a drive — not the street, which runs on for hundreds
+ * of metres past the houses it serves.
+ */
+const YARD = 12;
 const _box = new THREE.Box3();
 
 export default class Collections {
@@ -47,6 +64,12 @@ export default class Collections {
 
     isOutdoor(room) {
         return FINISHES[room.floor_finish]?.kind === "ground";
+    }
+
+    /** Whether a room, by its id, is one indoors. */
+    isIndoors(id) {
+        const room = this.builder.rooms?.get(id);
+        return Boolean(room) && !this.isOutdoor(room);
     }
 
     /** Indoor storeys, lowest first, with their rooms. */
@@ -93,6 +116,24 @@ export default class Collections {
         return null;
     }
 
+    /**
+     * Whether a point is within a room indoors — inside its outline, between
+     * its floor and its ceiling — whatever storey the point is filed on: a
+     * lamp hung under a ceiling is filed by its height, a storey up where two
+     * buildings' storeys interleave, and so in no room at all (roomAt).
+     */
+    withinRoom(x, y, z) {
+        return this.spec.rooms.some(
+            (room) => !this.isOutdoor(room) && y > room.elevation - 0.05 && y < room.elevation + room.height + 0.05 && pointInPolygon(x, z, room.polygon)
+        );
+    }
+
+    /** Whether a floor opening is cut indoors: within a room just above its slab, or just below it. */
+    openingIndoors(hole) {
+        const [x, z] = hole.position;
+        return this.withinRoom(x, hole.elevation + 0.5, z) || this.withinRoom(x, hole.elevation - 0.5, z);
+    }
+
     roomName(id) {
         return this.spec.rooms.find((room) => room.id === id)?.name || id;
     }
@@ -102,6 +143,25 @@ export default class Collections {
      * along it, half a wall's thickness away.
      */
     wallRooms(wall) {
+        return this.wallSides(wall).rooms;
+    }
+
+    /**
+     * Whether a generated wall stands between two rooms indoors — one of the
+     * houses' insides — rather than being part of a house's envelope: rooms
+     * indoors run along all of it on both of its sides, bar the INSIDE_SLACK.
+     * A wall that is a façade for part of its length is the envelope's.
+     */
+    wallInside(wall) {
+        return this.wallSides(wall).inside;
+    }
+
+    /**
+     * A generated wall's rooms (wallRooms) and whether it is an inside wall
+     * (wallInside), worked out once: each room's edges along it, on which
+     * side of it the room lies, and how much of its length they cover.
+     */
+    wallSides(wall) {
         if (this.wallRoomCache.has(wall.id)) return this.wallRoomCache.get(wall.id);
 
         const [x1, z1] = wall.start;
@@ -110,10 +170,15 @@ export default class Collections {
         const n = [-t[1], t[0]];
         const reach = wall.thickness / 2 + 0.12;
         const rooms = [];
+        // How much of the wall rooms indoors run along, on the side its normal points to and on the other.
+        const indoors = [0, 0];
 
         for (const room of this.spec.rooms) {
             if (Math.abs(room.elevation - wall.base_height) > 0.35) continue;
             const polygon = room.polygon;
+            const inward = signedArea(polygon) > 0 ? 1 : -1;
+            const outdoor = this.isOutdoor(room);
+            let beside = false;
             for (let i = 0; i < polygon.length; i++) {
                 const p = polygon[i];
                 const q = polygon[(i + 1) % polygon.length];
@@ -123,14 +188,19 @@ export default class Collections {
                 const sp = (p[0] - x1) * t[0] + (p[1] - z1) * t[1];
                 const sq = (q[0] - x1) * t[0] + (q[1] - z1) * t[1];
                 const overlap = Math.min(Math.max(sp, sq), length) - Math.max(Math.min(sp, sq), 0);
-                if (overlap > 0.15) {
-                    rooms.push(room.id);
-                    break;
-                }
+                if (overlap <= 0.15) continue;
+                beside = true;
+                if (outdoor) break;
+                // A room lies to one side of each of its edges, by the way its
+                // outline turns: so to one side of the wall, by which way the
+                // edge runs along it.
+                indoors[(sq - sp) * inward > 0 ? 0 : 1] += overlap;
             }
+            if (beside) rooms.push(room.id);
         }
-        this.wallRoomCache.set(wall.id, rooms);
-        return rooms;
+        const sides = { rooms, inside: Math.min(...indoors) > 0 && length - Math.min(...indoors) < INSIDE_SLACK };
+        this.wallRoomCache.set(wall.id, sides);
+        return sides;
     }
 
     /** Rooms on a storey whose outline a box in plan overlaps. */
@@ -158,7 +228,8 @@ export default class Collections {
     /**
      * Every piece of the building with what it belongs to:
      * `{ object, kind, levels, rooms, outside }`, kind being floor,
-     * ceiling, wall, roof, door or ground.
+     * ceiling, wall (`inside`: one between two rooms indoors), roof, rail,
+     * fitting (a room's ceiling light and its switch), door or ground.
      */
     buildingParts() {
         const b = this.builder;
@@ -194,7 +265,13 @@ export default class Collections {
                     rooms,
                     // A garden wall or fence meets no room.
                     outside: rooms.length > 0 && rooms.every((id) => this.isOutdoor(this.spec.rooms.find((r) => r.id === id))),
+                    inside: this.wallInside(wall),
                 });
+            }
+            // Each room's ceiling light and the switch for it: the room's.
+            for (const owner of b.lightFittings?.children || []) {
+                const room = b.rooms?.get(owner.userData.id);
+                if (room) parts.push({ object: owner, kind: "fitting", levels: [this.levelOf(room.elevation)], rooms: [room.id] });
             }
             for (const group of b.roofGroups || []) parts.push({ object: group, kind: "roof" });
             // A stairwell's rails stand on the floor it is cut through.
@@ -202,7 +279,7 @@ export default class Collections {
                 const group = b.railGroups?.get(hole.id);
                 if (!group) continue;
                 const room = this.roomAt(hole.position[0], hole.elevation + 0.05, hole.position[1]);
-                parts.push({ object: group, kind: "rail", levels: [this.levelOf(hole.elevation)], rooms: room ? [room.id] : [] });
+                parts.push({ object: group, kind: "rail", levels: [this.levelOf(hole.elevation)], rooms: room ? [room.id] : [], indoors: !room && this.openingIndoors(hole) });
             }
         } else if (b.model) {
             for (const node of b.model.children) parts.push(this.modelPart(node));
@@ -283,14 +360,14 @@ export default class Collections {
     membership(editable) {
         if (editable.type === "opening") {
             const level = this.levelOf(editable.wall.base_height);
-            return { levels: [level], rooms: this.wallRooms(editable.wall) };
+            return { kind: "opening", levels: [level], rooms: this.wallRooms(editable.wall), inside: this.wallInside(editable.wall) };
         }
 
         const pose = editable.getPose();
         if (editable.type === "hole") {
             const level = this.levelOf(editable.hole.elevation);
             const room = this.roomAt(pose.position.x, editable.hole.elevation + 0.05, pose.position.z);
-            return { levels: [level], rooms: room ? [room.id] : [] };
+            return { levels: [level], rooms: room ? [room.id] : [], indoors: !room && this.openingIndoors(editable.hole) };
         }
 
         const footprint = editable.footprint();
@@ -308,15 +385,19 @@ export default class Collections {
                 const room = this.roomAt(x, y + 0.05, z);
                 if (room) rooms.add(room.id);
             }
-            return { levels: base === top ? [base] : [base, top], rooms: [...rooms] };
+            // In no room at either end, but between a room's walls on its way up: indoors, for the view's scope.
+            const indoors = !rooms.size && this.withinRoom(x, (editable.spec.base_height + editable.spec.top_height) / 2, z);
+            return { levels: base === top ? [base] : [base, top], rooms: [...rooms], indoors };
         }
 
         const room = this.roomAt(x, bottom + 0.05, z);
-        // People are a collection of their own too ("people").
-        const kind = editable.type === "person" ? { kind: "person" } : {};
+        // People are a collection of their own too ("people"); the cars are the surroundings'.
+        const kind = editable.type === "person" ? { kind: "person" } : editable.type === "car" ? { kind: "car" } : {};
         if (room && this.isOutdoor(room)) return { outside: true, rooms: [room.id], ...kind };
         const level = this.levelOf(bottom);
         if (!room && level === 0) return { outside: true, rooms: [], ...kind };
+        // In no room of its storey's, but indoors all the same (withinRoom): for the view's scope.
+        if (!room && this.withinRoom(x, bottom + 0.05, z)) return { levels: [level], rooms: [], indoors: true, ...kind };
         return { levels: [level], rooms: room ? [room.id] : [], ...kind };
     }
 
@@ -325,11 +406,36 @@ export default class Collections {
     // ------------------------------------------------------------------
 
     /**
+     * Whether the view's scope (World/Scope.js) takes something of this
+     * membership in. "house" leaves out the cars — with the garden, the far
+     * ground and the sky, which are no collection's (Scope hides those).
+     * "exterior" leaves out the houses' insides: floors and ceilings, the
+     * walls between two rooms with the doors in them, and whatever stands,
+     * hangs or is cut in a room indoors — furniture, stairs and their
+     * openings, lights, people. What is in no room indoors stays: a piece
+     * on a terrace, a garden wall, a house's outside walls and its roof.
+     */
+    inScope(member, scope) {
+        // The cars are the surroundings', wherever they stand: a garage's too.
+        if (member.kind === "car") return scope !== "house";
+        if (scope !== "exterior") return true;
+        if (member.outside || member.kind === "roof" || member.kind === "ground") return true;
+        if (member.kind === "floor" || member.kind === "ceiling") return false;
+        if (member.kind === "wall" || member.kind === "opening") return !member.inside;
+        if (member.indoors) return false;
+        const indoors = (member.rooms || []).filter((id) => this.isIndoors(id)).length;
+        // An imported house's door: between two rooms, or in its outside wall.
+        return member.kind === "door" ? indoors < 2 : indoors === 0;
+    }
+
+    /**
      * Whether something with this membership is shown, given the focus
      * (`{ type: "level", level } | { type: "room", room } | { type: "outside" }`
-     * or null) and the set of collections switched off.
+     * or null), the set of collections switched off and, when it is not
+     * everything, the view's scope (inScope).
      */
-    shows(member, focus, hidden) {
+    shows(member, focus, hidden, scope = "all") {
+        if (scope !== "all" && !this.inScope(member, scope)) return false;
         if (member.kind === "roof") return !focus && !hidden.has("roof");
         if (member.kind === "person" && hidden.has("people")) return false;
 
@@ -349,6 +455,38 @@ export default class Collections {
         if (focus.type === "level") return levels.includes(focus.level);
         if (focus.type === "room") return rooms.includes(focus.room);
         return false;
+    }
+
+    /**
+     * Whether a focus is on the houses' insides — a storey, or a room
+     * indoors — of which the "exterior" scope draws next to nothing.
+     */
+    focusIndoors(focus) {
+        if (focus?.type === "level") return true;
+        return focus?.type === "room" && this.isIndoors(focus.room);
+    }
+
+    /**
+     * A box around the houses with their yards, for framing the view on
+     * what the "house" scope draws: every room indoors, to its ceiling, and
+     * of the ground out of doors as much as lies within YARD of those.
+     */
+    propertyBox() {
+        const box = new THREE.Box3();
+        const point = new THREE.Vector3();
+        for (const room of this.spec.rooms) {
+            if (this.isOutdoor(room)) continue;
+            for (const [x, z] of room.polygon) {
+                box.expandByPoint(point.set(x, room.elevation, z));
+                box.expandByPoint(point.set(x, room.elevation + room.height, z));
+            }
+        }
+        if (box.isEmpty()) return box;
+        const near = box.clone().expandByScalar(YARD);
+        for (const room of this.outdoorRooms()) {
+            for (const [x, z] of room.polygon) box.expandByPoint(near.clampPoint(point.set(x, room.elevation, z), point));
+        }
+        return box;
     }
 
     /** A box around a focus, for framing the view on it. */

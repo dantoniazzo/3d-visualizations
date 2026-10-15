@@ -22,6 +22,9 @@ import Experience from "../../Experience.js";
  * live), a spotlight between the headlamps, which lights the road, the
  * garage door, the house; drawn from the bake, where nothing takes live
  * light, a pool of light on the road ahead, laid with the car (setMode).
+ * The spotlight is in the scene's light only while the headlamps are on
+ * (showBeam): a parked car's, at nothing, cost every lit pixel as much as
+ * one that shone.
  *
  * Driven, the running lamps and tail lamps are on; the headlamps come on
  * by themselves at night and go off by day, and `H` turns them on or off
@@ -245,11 +248,37 @@ export default class CarLights {
             sprite.userData.opacity = Math.min(1, on * HALO[lamp] * (lamp === "tail" && levels.brake ? 1.6 : 1));
         }
         const head = this.state.head;
-        if (this.beam?.isSpotLight) this.beam.intensity = head ? BEAM.intensity * (night ? 1 : 0.15) : 0;
+        if (this.beam?.isSpotLight) {
+            this.beam.intensity = head ? BEAM.intensity * (night ? 1 : 0.15) : 0;
+            this.showBeam(head > 0);
+        }
         if (this.beam?.isMesh) {
             // By day a beam on the road is lost in the sun.
             this.beam.visible = head > 0 && night;
         }
+    }
+
+    /**
+     * The beam's spotlight in the scene's light, or out of it (hidden).
+     * Coming on, it waits for the shaders of what it lights to be built for
+     * one light more (Renderer.prepareLights) — a moment after the lamps'
+     * own glass lights, the first time; at once ever after — rather than
+     * stop the view while they are.
+     */
+    showBeam(on) {
+        const beam = this.beam;
+        if (!on) {
+            beam.visible = false;
+            return;
+        }
+        if (beam.visible || this.preparing === beam) return;
+        this.preparing = beam;
+        this.experience.renderer.prepareLights([beam]).then(() => {
+            if (this.preparing !== beam) return;
+            this.preparing = null;
+            // Still this car's beam, and its headlamps still on.
+            if (this.beam === beam) beam.visible = this.state.head > 0;
+        });
     }
 
     /** A part of the model's, lit: its triangles again, its light added over them. */
@@ -339,16 +368,21 @@ export default class CarLights {
                 this.beam.material.dispose();
             }
             this.beam = null;
+            this.preparing = null;
         }
         if (!this.layout || !this.mode) return;
         const { nose, headY, ground } = this.layout;
         if (this.mode === "lit") {
             const spot = new THREE.SpotLight(COLOR.head, 0, BEAM.distance, BEAM.angle, BEAM.penumbra, BEAM.decay);
             spot.name = "headlamp-beam";
+            // Out of the scene's light until the headlamps are on (showBeam).
+            spot.visible = false;
             spot.position.set(0, headY, nose);
             // Dipped: down onto the road a dozen metres on.
             spot.target.position.set(0, ground, nose + BEAM.reach);
             this.group.add(spot, spot.target);
+            // Under the editor's plain light nothing of it is drawn but the lamps' glass.
+            this.experience.world?.plainLight?.keepOut(spot);
             this.beam = spot;
             return;
         }

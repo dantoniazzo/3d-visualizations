@@ -7,16 +7,38 @@
  */
 const LIGHTING = "view-lighting";
 const SCENERY = "view-scenery";
+const LOST = "view-lost-graphics";
 
-/** @returns {"live"|"baked"|"static"|null} */
+/**
+ * Only ever lighter than the visitor would be given: "static". A choice
+ * kept from when the menu offered more — "live", the whole house lit live,
+ * or "baked" on a phone — is as published again.
+ *
+ * @returns {"static"|null}
+ */
 export function chosenLighting() {
-    const value = read(LIGHTING);
-    return value === "live" || value === "baked" || value === "static" ? value : null;
+    return read(LIGHTING) === "static" ? "static" : null;
 }
 
-/** @param {"live"|"baked"|"static"|null} mode  null: as published */
+/** @param {"static"|null} mode  null: as published */
 export function chooseLighting(mode) {
     write(LIGHTING, mode);
+}
+
+/**
+ * The graphics gave up drawing on this visit (Utils/device.js's
+ * guardContextLoss): kept, for the next to say why it starts as light as
+ * it does.
+ */
+export function noteLostGraphics() {
+    write(LOST, "1");
+}
+
+/** Whether they gave up on the last visit — asked once: it is forgotten as it is answered. */
+export function lostGraphics() {
+    const lost = read(LOST) === "1";
+    if (lost) write(LOST, null);
+    return lost;
 }
 
 /** The ids (shared/scenery.js) hidden. */

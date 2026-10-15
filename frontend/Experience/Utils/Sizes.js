@@ -1,6 +1,6 @@
 import { EventEmitter } from "events";
 
-import { MAX_PIXEL_RATIO } from "./device.js";
+import { MAX_PIXELS, MAX_PIXEL_RATIO } from "./device.js";
 
 /**
  * The size of the viewport the canvas fills.
@@ -13,6 +13,8 @@ export default class Sizes extends EventEmitter {
     constructor() {
         super();
         this.element = document.querySelector(".experience-wrapper");
+        /** How much of the step's own pixel ratio is drawn: all of it, unless a public view's frame-rate guard has taken some (FrameGuard.js). */
+        this.scale = 1;
         this.handleSizes();
 
         const onResize = () => {
@@ -32,6 +34,10 @@ export default class Sizes extends EventEmitter {
         this.width = Math.max(1, this.element?.clientWidth || window.innerWidth);
         this.height = Math.max(1, this.element?.clientHeight || window.innerHeight);
         this.aspect = this.width / this.height;
-        this.pixelRatio = Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO);
+        // As many pixels as the screen has, up to the step's ratio — and no
+        // more in all than the step's budget, however big the window: a
+        // lower ratio then, rather than four times the pixels on a 5K screen.
+        const budget = Math.sqrt(MAX_PIXELS / (this.width * this.height));
+        this.pixelRatio = Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO, budget) * this.scale;
     }
 }

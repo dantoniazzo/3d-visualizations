@@ -13,22 +13,34 @@ import { pointInPolygon } from "./vegetation.js";
 /**
  * @param {object} spec  a scene's spec: its walls (their doors and doorways) and floor openings
  * @param {object[]} rooms  the rooms to join — indoor ones, as each caller counts them
- * @returns {{ neighbours: Map<string, Set<string>>, links: Map<string, (string|null)[]>, linkKey: Function, roomAt: Function }}
+ * @returns {{ neighbours: Map<string, Set<string>>, links: Map<string, (string|null)[]>, linkKey: Function, roomAt: Function, joined: Map<string, Set<string>> }}
  *   `neighbours`: each room's id → the ids of the rooms it opens into;
  *   `links`: for each two (linkKey(a, b)), what joins them — a door's id,
  *   or null for something always open (a doorway, a stairwell);
- *   `roomAt(x, y, z)`: the room of `rooms` at a point, or null
+ *   `roomAt(x, y, z)`: the room of `rooms` at a point, or null;
+ *   `joined`: each room's id → the rooms ANY opening joins it to — those
+ *   it opens into, and those it only shares light with: through an arch,
+ *   a hatch, a window between two rooms. Not what a switch is baked into;
+ *   what the bake takes for one part of a site when it shuts doors
+ *   together (blender/lib/batches.py)
  */
 export function roomLinks(spec, rooms) {
     const roomAt = (x, y, z) =>
         rooms.find((room) => y >= room.elevation - 0.05 && y < room.elevation + room.height + 0.3 && pointInPolygon(x, z, room.polygon)) ?? null;
     const neighbours = new Map(rooms.map((room) => [room.id, new Set()]));
+    const joined = new Map(rooms.map((room) => [room.id, new Set()]));
     const links = new Map();
     const linkKey = (a, b) => [a, b].sort().join("|");
+    const join = (a, b) => {
+        if (!a || !b || a === b) return;
+        joined.get(a.id)?.add(b.id);
+        joined.get(b.id)?.add(a.id);
+    };
     const connect = (a, b, door = null) => {
         if (!a || !b || a === b) return;
         neighbours.get(a.id)?.add(b.id);
         neighbours.get(b.id)?.add(a.id);
+        join(a, b);
         const key = linkKey(a.id, b.id);
         if (!links.has(key)) links.set(key, []);
         links.get(key).push(door);
@@ -42,9 +54,14 @@ export function roomLinks(spec, rooms) {
         const dz = (z2 - z1) / length;
         const side = wall.thickness / 2 + 0.3;
         for (const opening of wall.openings || []) {
-            if (opening.type !== "door" && opening.type !== "doorway") continue;
             const x = x1 + dx * opening.offset;
             const z = z1 + dz * opening.offset;
+            if (opening.type !== "door" && opening.type !== "doorway") {
+                // An arch, a hatch, a window: light passes, at the opening's own height.
+                const y = wall.base_height + (opening.sill ?? 0) + (opening.height ?? 2) / 2;
+                join(roomAt(x - dz * side, y, z + dx * side), roomAt(x + dz * side, y, z - dx * side));
+                continue;
+            }
             const y = wall.base_height + 1.0;
             connect(roomAt(x - dz * side, y, z + dx * side), roomAt(x + dz * side, y, z - dx * side), opening.type === "door" ? opening.id : null);
         }
@@ -54,7 +71,7 @@ export function roomLinks(spec, rooms) {
         connect(roomAt(x, hole.elevation + 0.1, z), roomAt(x, hole.elevation - 0.6, z));
     }
     for (const [a, b] of openPairs(rooms, spec.walls || [])) connect(a, b, null);
-    return { neighbours, links, linkKey, roomAt };
+    return { neighbours, links, linkKey, roomAt, joined };
 }
 
 /** How much of two rooms' edge must stand open, in metres, for them to be one space. */
@@ -116,7 +133,7 @@ export function openPairs(rooms, walls) {
 }
 
 /** The distance from (x, z) to the segment from `a` to `b`. */
-function segmentDistance(x, z, [ax, az], [bx, bz]) {
+export function segmentDistance(x, z, [ax, az], [bx, bz]) {
     const dx = bx - ax;
     const dz = bz - az;
     const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)));
