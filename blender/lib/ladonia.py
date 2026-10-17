@@ -32,21 +32,6 @@ SCHEMES = {
 }
 
 
-def _fixed(parts):
-    """Doors and drawers that stay shut, merged into the piece's body: a
-    flat has fifteen kitchens and as many wardrobes, and every leaf that
-    opens is a draw call of its own in the public view."""
-    kept = []
-    for p in parts:
-        if p.type == "EMPTY":
-            bpy.data.objects.remove(p, do_unlink=True)
-            continue
-        if "unit" in p:
-            del p["unit"]
-        kept.append(p)
-    return kept
-
-
 def _soft(name, size, loc, col, mat, rot=None, r=0.04):
     """An upholstered block: rounded edges, smooth shading."""
     return g.box(name, size, loc=loc, col=col, mat=mat, rot=rot, bevel=r, segments=3, shade_smooth=True)
@@ -513,6 +498,18 @@ K_RAIL = 0.87    # the base fronts' top; the channel under the worktop above it
 K_WALL = 1.52    # the ochre wall units' underside
 GAP = 0.0015     # half a joint between two fronts (3 mm)
 FT = 0.019       # a front's thickness
+BOARD = 0.018    # a carcass board: the sides, bottoms, backs, rails and shelves behind the fronts
+K_TRAY = 0.5     # a base unit's drawer tray, deep; it slides out three quarters of that
+#: How far a fitted door swings: a right angle, about the outer edge of its
+#: face on the side it hangs. Open so far it stands in front of its own
+#: cupboard, clear of the front, the wall or the tall unit beside it and of
+#: a neighbour's door open beside it, whichever side either hangs; any
+#: further, a door at a wall end swings into the wall, two hung on one
+#: joint cross, and one beside a drawer stands in the drawer's way (the
+#: room doors' leaves crossing in the corrections log, 2026-10-03/04).
+K_SWING = PI / 2
+#: The kinds of base module whose fronts hang on hinges (_base_units).
+HUNG = ("door", "sink", "fridge")
 
 
 def _slab(col, mat, xa, xb, za, zb, face, t=FT, name="front"):
@@ -525,6 +522,245 @@ def _slab(col, mat, xa, xb, za, zb, face, t=FT, name="front"):
 def _block(col, mat, xa, xb, ya, yb, za, zb, name="carcass", bevel=0.0):
     return g.box(name, (xb - xa, yb - ya, zb - za), loc=((xa + xb) / 2, (ya + yb) / 2, (za + zb) / 2), col=col, mat=mat,
                  bevel=bevel, segments=1 if bevel else 2)
+
+
+# ---------------------------------------------------------------------
+# What is behind the fronts: hollow carcasses, drawers on trays, fridges
+# ---------------------------------------------------------------------
+
+def _board(col, inside, edge, xa, xb, ya, yb, za, zb, name="carcass", up=False):
+    """A carcass board, white (`inside`) but for its front edge — its face
+    towards +Y, which shows through the joints between the fronts — in
+    `edge`, the colour the solid carcass had there, and with `up` its top
+    too (a tall unit's, seen from above where the view leaves the ceiling
+    off): hollowed, a shut kitchen still looks as it did, and it costs no
+    triangle (a face given another material)."""
+    board = _block(col, inside, xa, xb, ya, yb, za, zb, name)
+    if edge is not None and edge is not inside:
+        board.data.materials.append(edge)
+        for face in board.data.polygons:
+            if face.normal.y > 0.9 or (up and face.normal.z > 0.9):
+                face.material_index = 1
+    return board
+
+
+def _faced(col, mat, xa, xb, ya, yb, za, zb, name="carcass", **faces):
+    """A board in `mat` but for the faces named in `faces` — front (+Y),
+    back, left (-X), right, top, bottom — each in a material of its own: a
+    closet's board white inside, oak where it stands in for the block it
+    was cut from, dark where a joint looks in. A face given another
+    material, no triangle more (as _board's)."""
+    board = _block(col, mat, xa, xb, ya, yb, za, zb, name)
+    ways = {"front": (0, 1, 0), "back": (0, -1, 0), "left": (-1, 0, 0), "right": (1, 0, 0), "top": (0, 0, 1), "bottom": (0, 0, -1)}
+    slots = [mat]
+    for side, m in faces.items():
+        if m is None or m is mat:
+            continue
+        if m not in slots:
+            board.data.materials.append(m)
+            slots.append(m)
+        n = ways[side]
+        for face in board.data.polygons:
+            if face.normal.x * n[0] + face.normal.y * n[1] + face.normal.z * n[2] > 0.9:
+                face.material_index = slots.index(m)
+    return board
+
+
+def _carcass(col, mats, edge, xa, xb, za, zb, d, shelves=(), top=False, rails=(), inside=None):
+    """A cupboard's carcass from xa to xb and za to zb, its back on the wall
+    (y = 0) and its front open at y = `d`, 18 mm boards, white inside: two
+    sides, a bottom, a back, a top if asked for (a base unit's is its
+    worktop), front `rails` (z0, z1) — the channels between handleless
+    drawers and under the worktop, in `edge` all over their face — and
+    `shelves` at those heights, a centimetre back from the front. A
+    finished end panel beside it stays as it was, the board inside it."""
+    white = mats["cab_white"] if inside is None else inside
+    t = BOARD
+    ia, ib = xa + t, xb - t
+    lo, hi = za + t, zb - t if top else zb
+    parts = [_board(col, white, edge, xa, ia, 0, d, za, zb), _board(col, white, edge, ib, xb, 0, d, za, zb),
+             _board(col, white, edge, ia, ib, 0, d, za, lo), _board(col, white, None, ia, ib, 0, t, lo, hi, "back")]
+    if top:
+        parts.append(_board(col, white, edge, ia, ib, 0, d, hi, zb))
+    for z0, z1 in rails:
+        parts.append(_board(col, edge, edge, ia, ib, d - t, d, z0, z1, "rail"))
+    for z in shelves:
+        parts.append(_board(col, white, None, ia + 0.001, ib - 0.001, t - 0.001, d - 0.01, z - t / 2, z + t / 2, "shelf"))
+    return parts
+
+
+def _shelves(lo, hi, pitch=0.38):
+    """Shelf heights evenly up a cupboard whose inside runs from lo to hi:
+    one every `pitch` or so, at least one."""
+    n = max(1, int((hi - lo) / pitch))
+    return [lo + (hi - lo) * k / (n + 1) for k in range(1, n + 1)]
+
+
+def _hang(parts, xa, xb, face, side, col, label="door", swing=K_SWING):
+    """Hang a front (its `parts`: the front and whatever is fixed to it)
+    from xa to xb on its `side` edge (-1 its -X, +1 its +X), swinging out
+    towards +Y by `swing` (K_SWING) about the outer corner of its face, a
+    joint's width in from that edge (geometry.hinged)."""
+    if side < 0:
+        return g.hinged(parts, (xa + GAP, face, 0.0), swing, col, label=label)
+    return g.hinged(parts, (xb - GAP, face, 0.0), -swing, col, label=label)
+
+
+def _hands(modules, stops, kinds=HUNG):
+    """Which edge each door of a run hangs on, -1 its -X and +1 its +X:
+    {the index of its module in `modules` — (kind, xa, xb) along X —: a
+    side for each of its doors}, for the modules of `kinds`.
+
+    As a kitchen is fitted: away from what the run ends against (`stops`,
+    left and right: a wall, a tall unit, another leg or another piece), so
+    an open door stands to the room's side of its cupboard, not against the
+    wall or the tall unit beside it — every door of the run the same way
+    round, away from its nearer stop where it has two; with none, each
+    towards the nearer end of the run. A sink's two doors open from the
+    middle, and so do two doors of a width side by side, unless one of
+    them would hang at a stop, or on the joint the door beside them hangs
+    on: two doors hung on one joint read as a pair the wrong way out."""
+    lo, hi = modules[0][1], modules[-1][2]
+    near = lambda a, b: abs(a - b) < 1e-6   # noqa: E731
+
+    def way(xa, xb):
+        c = (xa + xb) / 2
+        if stops[0] and stops[1]:
+            return 1 if c - lo <= hi - c else -1
+        if stops[0] or stops[1]:
+            return 1 if stops[0] else -1
+        return -1 if c - lo < hi - c else 1
+
+    def free(i, j):
+        """Neither outer edge of modules i..j at a stop, nor on a joint a
+        door beside them hangs on (as it would the run's way)."""
+        xa, xb = modules[i][1], modules[j][2]
+        if (stops[0] and near(xa, lo)) or (stops[1] and near(xb, hi)):
+            return False
+        before = modules[i - 1] if i > 0 else None
+        after = modules[j + 1] if j + 1 < len(modules) else None
+        if before and before[0] in kinds and near(before[2], xa) and way(*before[1:]) > 0:
+            return False
+        return not (after and after[0] in kinds and near(after[1], xb) and way(*after[1:]) < 0)
+
+    hands = {}
+    for i, (kind, xa, xb) in enumerate(modules):
+        if kind not in kinds or i in hands:
+            continue
+        if kind == "sink" and xb - xa > 0.75:
+            hands[i] = (-1, 1) if free(i, i) else (way(xa, xb),) * 2
+            continue
+        if kind == "door" and i + 1 < len(modules):
+            nk, na, nb = modules[i + 1]
+            if nk == "door" and near(xb, na) and abs((xb - xa) - (nb - na)) < 0.01 and free(i, i + 1):
+                hands[i], hands[i + 1] = (-1,), (1,)
+                continue
+        hands[i] = (way(xa, xb),)
+    return hands
+
+
+def _tall_hand(left, right):
+    """Which edge a column's doors hang on, from what stands at either side
+    of it: "wall" (the end of the run against a wall or another piece),
+    "tall" (another column), "base" (the base units) or "open" (nothing).
+    Away from a wall, then from another column; a column with nothing at
+    one side hangs there, so it opens away from the worktop, as a fridge
+    should; two side by side at an open end open from the middle."""
+    if left == "wall":
+        return 1
+    if right == "wall":
+        return -1
+    if left == "tall" or right == "tall":
+        return 1 if left == "tall" else -1
+    if left == "open" or right == "open":
+        return -1 if left == "open" else 1
+    return -1
+
+
+def _sides_of(run, i, walls):
+    """What stands either side of the run's module `i` (_tall_hand's words),
+    `run` (kind, xa, xb) along X with its columns' kinds "column", "oven_col"
+    or "fridge_col", and `walls` (left, right) True where the run ends
+    against a wall or another piece."""
+    tall = ("column", "oven_col", "fridge_col")
+    left = ("wall" if walls[0] else "open") if i == 0 else ("tall" if run[i - 1][0] in tall else "base")
+    right = ("wall" if walls[1] else "open") if i == len(run) - 1 else ("tall" if run[i + 1][0] in tall else "base")
+    return left, right
+
+
+def _drawer(col, mats, front, xa, xb, za, zb, face, label="drawer", tub=False, depth=K_TRAY):
+    """A drawer of a hollow base unit from xa to xb (the unit's own width)
+    and za to zb: its front, and the tray it slides out on behind it — a
+    white floor, sides and back, inside the carcass's boards and clear of the
+    rails between drawers — sliding out towards +Y by three quarters of its
+    `depth`. `tub` makes it a fridge drawer's: an insulated white tub, its
+    walls 2.5 cm thick."""
+    parts = [_slab(col, front, xa, xb, za, zb, face)]
+    white = mats["acrylic_white"] if tub else mats["cab_white"]
+    t = 0.025 if tub else 0.012
+    x0, x1 = xa + BOARD + 0.006, xb - BOARD - 0.006
+    y1 = face - FT + 0.001                      # a millimetre into the front
+    y0 = y1 - depth
+    z0, z1 = za + 0.02, zb - 0.04
+    parts += [_block(col, white, x0, x1, y0, y1, z0, z0 + t, "tray"),
+              _block(col, white, x0, x0 + t, y0, y1, z0 + t, z1, "tray"),
+              _block(col, white, x1 - t, x1, y0, y1, z0 + t, z1, "tray"),
+              _block(col, white, x0 + t, x1 - t, y0, y0 + t, z0 + t, z1, "tray")]
+    if tub:
+        # Its own front wall behind the kitchen's: a tray's front is the drawer front.
+        parts.append(_block(col, white, x0 + t, x1 - t, y1 - t - 0.002, y1 - 0.002, z0 + t, z1, "tray"))
+    return g.sliding(parts, ((xa + xb) / 2, face, (za + zb) / 2), (0, 1), depth * 0.75, col, label=label)
+
+
+def _fridge(col, mats, xa, xb, lo, hi, face, bins=3, light=3.0):
+    """An integrated fridge in the cupboard whose opening runs from xa to
+    xb and lo to hi, behind a front whose face is at y = `face`: a white
+    liner, its walls 3 cm thick, glass shelves with white lips over a
+    crisper at its foot, and a light at the top of its mouth shining down
+    and out (the "light" fixture, as joinery.fridge's: Openables lights it
+    as far as the fridge's doors are open). Returns what stays, and the
+    appliance's own door, which the kitchen front is hung on and swings
+    with it: white, a grey seal round it pressing on the liner's mouth,
+    `bins` bins on its inside — each 9 cm deep, in front of the shelves,
+    clear of the liner's walls as it swings."""
+    liner, glass, seal = mats["acrylic_white"], mats["glass"], mats["seal"]
+    w = 0.03
+    yl = face - FT - 0.051          # the liner's mouth, room in front of it for the door, its seal and a millimetre
+    yd0, yd1 = yl + 0.007, face - FT + 0.001
+    yb = yd0 - 0.09                 # the bins' backs, and a centimetre in front of them the shelves'
+    back = BOARD + w
+    stay = [_block(col, liner, xa, xa + w, BOARD, yl, lo, hi, "liner"), _block(col, liner, xb - w, xb, BOARD, yl, lo, hi, "liner"),
+            _block(col, liner, xa + w, xb - w, BOARD, yl, lo, lo + w, "liner"),
+            _block(col, liner, xa + w, xb - w, BOARD, yl, hi - w, hi, "liner"),
+            _block(col, liner, xa + w, xb - w, BOARD, back, lo + w, hi - w, "liner")]
+    ia, ib, floor, roof = xa + w, xb - w, lo + w, hi - w
+
+    def shelf(z):
+        return [_block(col, glass, ia + 0.002, ib - 0.002, back - 0.001, yb - 0.01, z - 0.003, z + 0.003, "shelf"),
+                _block(col, liner, ia + 0.002, ib - 0.002, yb - 0.028, yb - 0.01, z - 0.009, z + 0.013, "shelf_lip")]
+
+    # The crisper: a clear front standing on the liner's floor, under a shelf for its lid.
+    crisp = floor + 0.2
+    stay.append(_block(col, glass, ia + 0.006, ib - 0.006, yb - 0.026, yb - 0.022, floor - 0.001, crisp - 0.01, "crisper"))
+    stay += shelf(crisp)
+    for z in _shelves(crisp, roof - 0.04, pitch=0.33):
+        stay += shelf(z)
+    stay.append(g.fixture("light", ((xa + xb) / 2, yl - 0.07, roof - 0.04),
+                          {"light": {"power": light, "color": "#eef4ff", "reach": 1.8 if hi - lo > 1 else 1.0}}, col,
+                          aim=(0, 0.45, -1)))
+
+    door = [_block(col, liner, xa + 0.006, xb - 0.006, yd0, yd1, lo + 0.006, hi - 0.006, "fridge_door")]
+    s0, s1 = yl + 0.001, yd0 + 0.001
+    a, b, c, d = xa + 0.004, xb - 0.004, lo + 0.004, hi - 0.004
+    door += [_block(col, seal, a, b, s0, s1, c, c + 0.02, "seal"), _block(col, seal, a, b, s0, s1, d - 0.02, d, "seal"),
+             _block(col, seal, a, a + 0.02, s0, s1, c + 0.02, d - 0.02, "seal"),
+             _block(col, seal, b - 0.02, b, s0, s1, c + 0.02, d - 0.02, "seal")]
+    ba, bb = ia + 0.025, ib - 0.025
+    for k in range(bins):
+        z = floor + 0.12 + (roof - floor - 0.32) * k / max(1, bins - 1)
+        door += [_block(col, liner, ba, bb, yb, yd0 + 0.001, z, z + 0.01, "bin"),
+                 _block(col, liner, ba, bb, yb, yb + 0.008, z + 0.01, z + 0.075, "bin")]
+    return stay, door
 
 
 def _holed_slab(name, x0, x1, y0, y1, z0, z1, hole, col, mat, ease=0.003):
@@ -565,10 +801,13 @@ def _lathe(name, profile, col, mat, loc=(0, 0, 0), segments=16, closed=True, sha
                   mat=mat)
 
 
-def _gooseneck(col, mats, x, y, z, mat, h=0.32, reach=0.21, swan=False, towards=1):
+def _gooseneck(col, mats, x, y, z, mat, h=0.32, reach=0.21, swan=False, towards=1, floor=None, hot=True):
     """A kitchen mixer on the worktop at `z`: a pipe up, bent over (`swan`:
     one round arch, else two tight right-angled bends) and down over the
-    bowl towards `towards` (+1: +Y), a lever on its side."""
+    bowl towards `towards` (+1: +Y), a lever on its side. Given the bowl's
+    `floor`, the water's fixtures too: the pipe's open end ("sink",
+    running hot unless `hot` is False) and the mixer as the box a visitor
+    turns it on by (geometry.water, control_round)."""
     t = towards
     pts = [(y, z + 0.02), (y, z + h * 0.5)]
     if swan:
@@ -589,18 +828,24 @@ def _gooseneck(col, mats, x, y, z, mat, h=0.32, reach=0.21, swan=False, towards=
             pts.append((y + t * (reach - r + r * math.cos(a)), z + h - r + r * math.sin(a)))
         pts.append((y + t * reach, z + h - 0.075))
     m = mats[mat]
-    return [
+    parts = [
         g.cylinder("tap_base", 0.024, 0.03, loc=(x, y, z + 0.015), col=col, mat=m, segments=16),
         g.sweep("tap_neck", [(x, yy, zz) for yy, zz in pts], 0.0105, sides=10, col=col, mat=m),
         g.cylinder("tap_lever", 0.006, 0.07, loc=(x + 0.04, y, z + 0.12), rot=(0, PI / 2 - 0.25, 0), col=col, mat=m,
                    segments=8),
         g.cylinder("tap_hub", 0.016, 0.03, loc=(x + 0.02, y, z + 0.11), rot=(0, PI / 2, 0), col=col, mat=m, segments=12),
     ]
+    if floor is not None:
+        oy, oz = pts[-1]                         # the pipe's open end, pointing down
+        ys = (y - t * 0.024, oy + t * 0.011)
+        parts += [g.water((x, oy, oz), "tap", oz - floor, (0.14, 0.14), "sink", hot=hot, r=0.008),
+                  g.control_round((x - 0.024, min(ys), z), (x + 0.075, max(ys), z + h + 0.011), ["sink"])]
+    return parts
 
 
 def _undermount(col, mats, cx, cy, w, d, tap, swan, depth=0.19, h=0.32):
     """A single bowl under the worktop's hole, a waste and a mixer `h` tall
-    behind it."""
+    behind it, its water falling to the bowl's floor (_gooseneck)."""
     under = K_TOP - K_WT
 
     def ring(inset, z, r=0.035):
@@ -611,7 +856,8 @@ def _undermount(col, mats, cx, cy, w, d, tap, swan, depth=0.19, h=0.32):
                     mat=mats["sink_dark"])]
     parts.append(g.cylinder("waste", 0.035, 0.003, loc=(cx, cy, under - depth - 0.002), col=col, mat=mats["steel"],
                             segments=16))
-    parts += _gooseneck(col, mats, cx, cy - d / 2 - 0.045, K_TOP, tap, h=h, swan=swan, reach=0.2 if swan else 0.19)
+    parts += _gooseneck(col, mats, cx, cy - d / 2 - 0.045, K_TOP, tap, h=h, swan=swan, reach=0.2 if swan else 0.19,
+                        floor=under - depth)
     return parts
 
 
@@ -664,54 +910,93 @@ def _builtin_oven(col, mats, cx, w, z0, z1, face, white=True):
 
 
 def _base_units(col, mats, s, modules, depth=K_D, ends=(False, False), hob=None, sink=None, splash=None, plinth=True,
-                splash_x=None):
+                splash_x=None, stops=None):
     """Base units along X facing +Y, their backs at y = 0: `modules` a list
     of (kind, xa, xb) — "door", "drawers", "sink", "dishwasher", "oven",
-    "filler" — handleless (a channel under the worktop, one between each
-    two drawers), on a recessed champagne plinth, under a slim worktop.
-    `ends` puts a panel on an open end; `hob` an x for a flush hob and its
-    width; `sink` (x, w) an undermount bowl and its mixer; `splash` a
-    height for a splashback in the scheme's material, along the whole run
-    or `splash_x` (x0, x1)."""
+    "filler", "corner" (a blind corner's front, behind the leg standing
+    across it), "fridge" (an integrated fridge behind its door) or
+    "fridge_drawers" (drawers, the two deep ones a fridge's) — handleless
+    (a channel under the worktop, one between each two drawers), on a
+    recessed champagne plinth, under a slim worktop.
+
+    Every cupboard is hollow, white inside (_carcass): a shelf behind a
+    door, a tray behind each drawer, the bowl and its trap behind the
+    sink's doors, a fridge behind a fridge's, a pan drawer under the oven.
+    The dishwasher, the oven itself, a blind corner and a filler stay
+    solid, their fronts shut. Whatever shows through the joints is in the
+    fronts' colour, as the solid carcass was: the channel under the worktop
+    and between the drawers reads as their own shadow (renders 18, 20).
+
+    `ends` puts a panel on an open end; `stops` (left, right) says which
+    ends stand against a wall, a tall unit or another leg — by default those
+    without a panel — for the doors to hang away from (_hands); `hob` an x
+    for a flush hob and its width; `sink` (x, w) an undermount bowl and its
+    mixer; `splash` a height for a splashback in the scheme's material,
+    along the whole run or `splash_x` (x0, x1)."""
     front, dark = mats[s["base"]], mats["kitchen_gap"]
     xa0, xb0 = modules[0][1], modules[-1][2]
     parts = []
     under = K_TOP - K_WT
     body = depth - FT - 0.001
-    for kind, xa, xb in modules:
+    hands = _hands(modules, (not ends[0], not ends[1]) if stops is None else stops)
+    top_rail = (K_RAIL - 0.03, under)
+    for i, (kind, xa, xb) in enumerate(modules):
         if ends[0] and xa == xa0:
             parts.append(_block(col, front, xa, xa + 0.018, 0, depth, 0, under, "end"))
             xa += 0.018
         if ends[1] and xb == xb0:
             parts.append(_block(col, front, xb - 0.018, xb, 0, depth, 0, under, "end"))
             xb -= 0.018
-        # The carcass in the fronts' colour: the channel under the worktop
-        # and between the drawers reads as their own shadow (renders 18, 20).
-        if kind == "sink":
-            parts.append(_block(col, front, xa, xb, 0, body, K_PL, 0.68))
-            parts.append(_block(col, front, xa, xb, body - 0.03, body, 0.68, under))
-            parts.append(_block(col, front, xa, xb, 0, 0.016, 0.68, under, "back"))    # shut behind, for glazing
-        else:
-            parts.append(_block(col, front, xa, xb, 0, body, K_PL, under))
         if plinth:
             parts.append(_block(col, mats["plinth_champagne"], xa, xb, 0, depth - 0.05, 0, K_PL, "plinth"))
-        if kind == "drawers":
+        if kind in ("dishwasher", "filler", "corner"):
+            parts.append(_block(col, front, xa, xb, 0, body, K_PL, under))
+            parts.append(_slab(col, front, xa, xb, K_PL, K_RAIL, depth))
+        elif kind in ("drawers", "fridge_drawers"):
             ch = 0.024
             avail = K_RAIL - K_PL - 2 * ch
-            z = K_PL
+            z, rails, fronts = K_PL, [top_rail], []
             for share in (0.39, 0.35, 0.26):           # bottom to top
                 h = avail * share
-                parts.append(_slab(col, front, xa, xb, z, z + h, depth))
+                fronts.append((z, z + h))
+                rails.append((z + h - 0.01, z + h + ch + 0.01))
                 z += h + ch
+            parts += _carcass(col, mats, front, xa, xb, K_PL, under, body, rails=rails[:-1])
+            for k, (za, zb) in enumerate(fronts):
+                cold = kind == "fridge_drawers" and k < 2
+                parts += _drawer(col, mats, front, xa, xb, za, zb, depth, label="fridge" if cold else "drawer", tub=cold,
+                                 depth=min(K_TRAY, body - 0.06))
+            if kind == "fridge_drawers":
+                # The fridge's light, at the top of its two drawers, shining down into them and out.
+                parts.append(g.fixture("light", ((xa + xb) / 2, body - 0.1, fronts[1][1] - 0.02),
+                                       {"light": {"power": 2.0, "color": "#eef4ff", "reach": 1.0}}, col, aim=(0, 0.45, -1)))
         elif kind == "oven":
-            parts.append(_slab(col, front, xa, xb, K_PL, 0.27, depth))
+            # The oven in its housing, a pan drawer under it.
+            parts.append(_block(col, front, xa, xb, 0, body, 0.27, under))
+            parts += _carcass(col, mats, front, xa, xb, K_PL, 0.27, body, rails=[(0.24, 0.27)])
+            parts += _drawer(col, mats, front, xa, xb, K_PL, 0.27, depth, depth=0.45)
             parts += _builtin_oven(col, mats, (xa + xb) / 2, xb - xa, 0.27, K_RAIL, depth, white=s["oven"] == "white")
-        elif kind == "sink" and xb - xa > 0.75:
-            xm = (xa + xb) / 2
-            parts.append(_slab(col, front, xa, xm, K_PL, K_RAIL, depth))
-            parts.append(_slab(col, front, xm, xb, K_PL, K_RAIL, depth))
         else:
-            parts.append(_slab(col, front, xa, xb, K_PL, K_RAIL, depth))
+            inner = []
+            if kind == "fridge":
+                stay, inner = _fridge(col, mats, xa + BOARD, xb - BOARD, K_PL + BOARD, top_rail[0] - 0.005, depth, bins=2,
+                                      light=2.0)
+                parts += _carcass(col, mats, front, xa, xb, K_PL, under, body, rails=[top_rail]) + stay
+            elif kind == "sink":
+                # Open over the bowl, the trap under its waste and back to the wall.
+                parts += _carcass(col, mats, front, xa, xb, K_PL, under, body, rails=[top_rail])
+            else:
+                parts += _carcass(col, mats, front, xa, xb, K_PL, under, body, rails=[top_rail],
+                                  shelves=[(K_PL + under) / 2])
+            label = "fridge" if kind == "fridge" else "door"
+            sides = hands.get(i, (-1,))
+            if len(sides) == 2:
+                xm = (xa + xb) / 2
+                parts += _hang([_slab(col, front, xa, xm, K_PL, K_RAIL, depth)], xa, xm, depth, sides[0], col)
+                parts += _hang([_slab(col, front, xm, xb, K_PL, K_RAIL, depth)], xm, xb, depth, sides[1], col)
+            else:
+                parts += _hang([_slab(col, front, xa, xb, K_PL, K_RAIL, depth)] + inner, xa, xb, depth, sides[0], col,
+                               label)
     top_d = depth + 0.02
     if sink:
         sx, sw = sink
@@ -720,6 +1005,11 @@ def _base_units(col, mats, s, modules, depth=K_D, ends=(False, False), hob=None,
         hole = (sx - sw / 2, sx + sw / 2, cy - sd / 2, cy + sd / 2)
         parts.append(_holed_slab("worktop", xa0, xb0, 0, top_d, under, K_TOP, hole, col, mats[s["top"]]))
         parts += _undermount(col, mats, sx, cy, sw, sd, s["tap"], swan=s["tap"] == "brass_brushed", h=s.get("tap_h", 0.32))
+        # The trap under the waste, back to the wall: what an open sink cupboard shows.
+        waste = under - 0.19
+        parts.append(g.sweep("trap", g.catmull_rom([(sx, cy, waste - 0.002), (sx, cy, waste - 0.12), (sx, cy - 0.04, waste - 0.2),
+                                                    (sx, cy - 0.12, waste - 0.2), (sx, BOARD - 0.005, waste - 0.16)], steps=3),
+                             0.02, sides=10, col=col, mat=mats["white_matte"]))
     else:
         parts.append(_block(col, mats[s["top"]], xa0, xb0, 0, top_d, under, K_TOP, "worktop", bevel=0.003))
     if hob:
@@ -731,34 +1021,79 @@ def _base_units(col, mats, s, modules, depth=K_D, ends=(False, False), hob=None,
     return parts
 
 
-def _tall(col, mats, xa, xb, mat, cuts, ovens=(), sides=(True, True), depth=K_D, top=FULL):
+def _tall(col, mats, xa, xb, mat, cuts, ovens=(), sides=(True, True), depth=K_D, top=FULL, hand=-1, fridge=False,
+          shut=()):
     """A full-height column from xa to xb: its doors between the heights in
     `cuts`, a built-in oven in each (z0, z1, white) of `ovens`, finished
-    side panels where `sides` says it shows, on the plinth."""
+    side panels where `sides` says it shows, on the plinth.
+
+    Hollow behind its doors, white inside, its boards' edges dark as the
+    solid carcass was: a board at each cut, shelves about every 40 cm, the
+    ovens in housings of their own. Its doors hang on its `hand` edge (-1
+    its -X, +1 its +X: _tall_hand), but those whose lower edge is in `shut`
+    (one another unit stands across); `fridge` makes the cupboard behind
+    its lowest door an integrated fridge (_fridge), its door the fridge's."""
     m, dark = mats[mat], mats["kitchen_gap"]
-    parts = [_block(col, dark, xa + 0.018 * sides[0], xb - 0.018 * sides[1], 0, depth - FT - 0.001, K_PL, top),
-             _block(col, mats["plinth_champagne"], xa, xb, 0, depth - 0.05, 0, K_PL, "plinth")]
+    body = depth - FT - 0.001
+    parts = [_block(col, mats["plinth_champagne"], xa, xb, 0, depth - 0.05, 0, K_PL, "plinth")]
     if sides[0]:
         parts.append(_block(col, m, xa, xa + 0.018, 0, depth, 0, top, "side"))
         xa += 0.018
     if sides[1]:
         parts.append(_block(col, m, xb - 0.018, xb, 0, depth, 0, top, "side"))
         xb -= 0.018
+    white, t = mats["cab_white"], BOARD
+    ia, ib = xa + t, xb - t
+    parts += [_board(col, white, dark, xa, ia, 0, body, K_PL, top, up=True),
+              _board(col, white, dark, ib, xb, 0, body, K_PL, top, up=True),
+              _board(col, white, dark, ia, ib, 0, body, K_PL, K_PL + t),
+              _board(col, white, dark, ia, ib, 0, body, top - t, top, up=True),
+              _board(col, white, None, ia, ib, 0, t, K_PL + t, top - t, "back")]
+    for z in cuts[1:-1]:
+        parts.append(_board(col, white, dark, ia, ib, 0, body, z - t / 2, z + t / 2))
+    cold = fridge
     for za, zb in zip(cuts, cuts[1:]):
+        lo = za + (t if za == cuts[0] else t / 2)
+        hi = zb - (t if zb == cuts[-1] else t / 2)
         if any(abs(za - o[0]) < 0.01 for o in ovens):
+            parts.append(_block(col, dark, ia, ib, t, body, lo, hi, "housing"))
             continue
-        parts.append(_slab(col, m, xa, xb, za, zb, depth))
-    for z0, z1, white in ovens:
-        parts += _builtin_oven(col, mats, (xa + xb) / 2, xb - xa, z0, z1, depth, white=white)
+        front = [_slab(col, m, xa, xb, za, zb, depth)]
+        if any(abs(za - z) < 0.01 for z in shut):
+            parts += front
+            continue
+        if cold:
+            stay, inner = _fridge(col, mats, ia, ib, lo, hi, depth, bins=4 if hi - lo > 1.7 else 3)
+            parts += stay + _hang(front + inner, xa, xb, depth, hand, col, "fridge")
+            cold = False
+            continue
+        parts += _carcass_shelves(col, mats, ia, ib, lo, hi, body)
+        parts += _hang(front, xa, xb, depth, hand, col)
+    for z0, z1, white_oven in ovens:
+        parts += _builtin_oven(col, mats, (xa + xb) / 2, xb - xa, z0, z1, depth, white=white_oven)
     return parts
 
 
-def _wall_units(col, mats, s, spans, z0=K_WALL, z1=FULL, d=0.35, niche=None, hood=None):
+def _carcass_shelves(col, mats, ia, ib, lo, hi, body):
+    """The shelves of a cupboard inside its boards, ia..ib and lo..hi."""
+    white = mats["cab_white"]
+    return [_board(col, white, None, ia + 0.001, ib - 0.001, BOARD - 0.001, body - 0.01, z - BOARD / 2, z + BOARD / 2, "shelf")
+            for z in _shelves(lo, hi)]
+
+
+def _wall_units(col, mats, s, spans, z0=K_WALL, z1=FULL, d=0.35, niche=None, hood=None, stops=(False, False)):
     """Wall cupboards from z0 to the ceiling, one door per span (xa, xb),
     handleless, their undersides in the doors' colour. `niche` (xa, xb, h)
     leaves an open box at the bottom of a span, framed in dark bronze;
-    `hood` (xa, xb) hangs a slim pull-out extractor visor under a span."""
-    m, dark = mats[s["upper"]], mats["kitchen_gap"]
+    `hood` (xa, xb) hangs a slim pull-out extractor visor under a span.
+
+    Each cupboard is hollow, white inside, a board between each two, their
+    edges dark as the solid carcass was: shelves about every 40 cm (over
+    the niche, or over the extractor's housing in the hood's), its door
+    hung away from what the run ends against (`stops`, left and right: a
+    tall unit or a wall; _hands). Beside a niche narrower than its cupboard
+    the carcass stays solid behind fronts that stay shut."""
+    m, dark, white, t = mats[s["upper"]], mats["kitchen_gap"], mats["cab_white"], BOARD
     xa0, xb0 = spans[0][0], spans[-1][1]
     body = d - FT - 0.001
     # Finished ends, the carcass between them.
@@ -766,9 +1101,6 @@ def _wall_units(col, mats, s, spans, z0=K_WALL, z1=FULL, d=0.35, niche=None, hoo
     xa0, xb0 = xa0 + 0.018, xb0 - 0.018
     if niche:
         nx0, nx1, nh = niche
-        parts.append(_block(col, dark, xa0, nx0, 0, body, z0, z1))
-        parts.append(_block(col, dark, nx1, xb0, 0, body, z0, z1))
-        parts.append(_block(col, dark, nx0, nx1, 0, body, z0 + nh, z1))
         # Its lining: cream inside, a thin bronze frame round its mouth.
         parts.append(_block(col, m, nx0, nx1, 0, 0.012, z0, z0 + nh, "niche"))
         parts.append(_block(col, m, nx0, nx1, 0, d, z0, z0 + 0.016, "niche"))
@@ -781,18 +1113,32 @@ def _wall_units(col, mats, s, spans, z0=K_WALL, z1=FULL, d=0.35, niche=None, hoo
                   _block(col, bz, nx0, nx1, d - 0.02, d + 0.001, z0 + nh - f, z0 + nh, "frame"),
                   _block(col, bz, nx0, nx0 + f, d - 0.02, d + 0.001, z0, z0 + nh, "frame"),
                   _block(col, bz, nx1 - f, nx1, d - 0.02, d + 0.001, z0, z0 + nh, "frame")]
-    else:
-        parts.append(_block(col, dark, xa0, xb0, 0, body, z0, z1))
     parts.append(_block(col, m, xa0, xb0, 0, body, z0, z0 + 0.012, "underside"))
-    for xa, xb in spans:
-        za = z0
+    # The carcass: a top, a board at each joint between two doors, a back
+    # in each cupboard from its floor up (a niche keeps its own lining).
+    parts.append(_board(col, white, dark, xa0, xb0, 0, body, z1 - t, z1, up=True))
+    for (_, xb), (xa, _) in zip(spans, spans[1:]):
+        parts.append(_board(col, white, dark, xa - t / 2, xa + t / 2, 0, body, z0 + 0.012, z1 - t))
+    hands = _hands([("door", xa, xb) for xa, xb in spans], stops)
+    for k, (xa, xb) in enumerate(spans):
+        za, floor = z0, z0 + 0.012
+        ia, ib = max(xa, xa0) + (t / 2 if k else 0), min(xb, xb0) - (t / 2 if k < len(spans) - 1 else 0)
         if niche and xa <= niche[0] + 0.001 and xb >= niche[1] - 0.001:
-            za = z0 + niche[2]
-            if niche[0] - xa > 0.03:
-                parts.append(_slab(col, m, xa, niche[0], z0, za, d))
-            if xb - niche[1] > 0.03:
-                parts.append(_slab(col, m, niche[1], xb, z0, za, d))
-        parts.append(_slab(col, m, xa, xb, za, z1, d))
+            za = floor = z0 + niche[2]
+            for a, b in ((xa, niche[0]), (niche[1], xb)):
+                if b - a > 0.03:
+                    parts.append(_slab(col, m, a, b, z0, za, d))
+                if b - a > 1e-4:
+                    parts.append(_block(col, dark, max(a, ia), min(b, ib), t, body, z0 + 0.012, za))
+        parts += [_board(col, white, dark, ia, ib, t, body, floor, floor + t),
+                  _board(col, white, None, ia, ib, 0, t, floor + t, z1 - t, "back")]
+        lo = floor + t
+        if hood and xa <= hood[0] + 0.001 and xb >= hood[1] - 0.001:
+            # The extractor's housing at the foot of the cupboard over its visor.
+            parts.append(_block(col, mats["steel"], ia + 0.01, ib - 0.01, t, body - 0.03, lo, lo + 0.26, "extractor"))
+            lo += 0.26
+        parts += _carcass_shelves(col, mats, ia, ib, lo, z1 - t, body)
+        parts += _hang([_slab(col, m, xa, xb, za, z1, d)], xa, xb, d, hands[k][0], col)
     if hood:
         hx0, hx1 = hood
         parts.append(_block(col, mats["bronze_dark"], hx0 + 0.005, hx1 - 0.005, 0.02, d + 0.01, z0 - 0.022, z0, "hood", bevel=0.002))
@@ -927,10 +1273,14 @@ def _ochre_layout(run):
     return mods
 
 
-def kitchen(col, mats, length, scheme="ochre", tall=1, tall_side=-1, uppers=True, shelves=None):
+def kitchen(col, mats, length, scheme="ochre", tall=1, tall_side=-1, uppers=True, shelves=None, walls=(False, False)):
     """A fitted kitchen `length` long against y = 0, facing +Y, handleless
     throughout, `tall` full-height columns at one end (`tall_side` -1 the
-    piece's own left, -X; +1 its right).
+    piece's own left, -X; +1 its right), the first of them that is not an
+    oven's an integrated fridge (_tall). Every front opens but the oven's,
+    the dishwasher's and the sage hob cabinet's flap, each door hung away
+    from the columns or from an end against a wall (`walls`, left and
+    right; _hands, _tall_hand).
 
     Ochre (render 18): light oak columns; mustard base units — the sink,
     doors, drawers, a white built-under oven under a flush black hob —
@@ -943,24 +1293,35 @@ def kitchen(col, mats, length, scheme="ochre", tall=1, tall_side=-1, uppers=True
     in grooved sage over the sink, with three floating shelves of crockery.
 
     `uppers` False leaves out everything over the worktop but a splashback
-    (a counter)."""
+    (a counter). A sage kitchen with no column but its oven's has its
+    fridge under the worktop, behind the door beside the sink, where that
+    door is wide enough for one."""
     s = SCHEMES[scheme]
     X = _span(length, tall_side)
     parts = []
     tw = 0.6 * tall
     run = length - tw
-    # The tall end.
-    for k in range(tall):
-        xa, xb = X(k * 0.6, (k + 1) * 0.6)
+    # The tall end: the columns along X, the base run beside them, for which
+    # way each column's doors hang.
+    talls = [("oven_col" if scheme == "sage" and k == 0 else "column",) + X(k * 0.6, (k + 1) * 0.6) + (k,) for k in range(tall)]
+    fridge = next((k for kind, _, _, k in talls if kind == "column"), None)
+    seq = sorted((t[:3] for t in talls), key=lambda m: m[1])
+    if tall:
+        seq = seq + [("base", seq[-1][2], length / 2)] if tall_side < 0 else [("base", -length / 2, seq[0][1])] + seq
+    for kind, xa, xb, k in talls:
+        hand = _tall_hand(*_sides_of(seq, [m[1] for m in seq].index(xa), walls))
         first, last = k == 0, k == tall - 1
         sides = (first, last) if tall_side < 0 else (last, first)
-        if scheme == "sage" and k == 0:
-            parts += _tall(col, mats, xa, xb, s["tall"], [K_PL, 0.86, 1.46, FULL], ovens=[(0.86, 1.46, False)], sides=sides)
+        if kind == "oven_col":
+            parts += _tall(col, mats, xa, xb, s["tall"], [K_PL, 0.86, 1.46, FULL], ovens=[(0.86, 1.46, False)], sides=sides,
+                           hand=hand)
         else:
-            parts += _tall(col, mats, xa, xb, s["tall"], [K_PL, 2.02, FULL], sides=sides)
+            parts += _tall(col, mats, xa, xb, s["tall"], [K_PL, 2.02, FULL], sides=sides, hand=hand, fridge=k == fridge)
     open_end = (False, True) if tall_side < 0 else (True, False)
     if not tall:
         open_end = (True, True)
+    # What the base run and the wall cupboards end against: the columns, or a wall.
+    stops = (walls[0] or (tall > 0 and tall_side < 0), walls[1] or (tall > 0 and tall_side > 0))
     if scheme == "ochre":
         mods, u = [], tw
         xs = {}
@@ -980,7 +1341,7 @@ def kitchen(col, mats, length, scheme="ochre", tall=1, tall_side=-1, uppers=True
             ca, cb = xs["shelfbase"]
             splash_x = (lo, ca + 0.009) if cb >= hi - 1e-6 else (cb - 0.009, hi)
         parts += _base_units(col, mats, s, mods, ends=open_end, hob=(ox, 0.58), sink=(sx, 0.5),
-                             splash=K_WALL if uppers else K_TOP + 0.6, splash_x=splash_x)
+                             splash=K_WALL if uppers else K_TOP + 0.6, splash_x=splash_x, stops=stops)
         if uppers:
             # Cupboards over the run but its shelf column: the hood's over
             # the oven, the niche's beside it, wider doors from the tall end.
@@ -994,8 +1355,12 @@ def kitchen(col, mats, length, scheme="ochre", tall=1, tall_side=-1, uppers=True
             spans = sorted(X(tw + a, tw + b) for a, b in spans_u)
             niche_x = X(tw + span_end - 1.2, tw + span_end - 0.6)
             hood_x = X(tw + span_end - 0.6, tw + span_end)
+            # They end against the columns, and at the far end against the
+            # open shelf column, or what the run's end stands against.
+            far = walls[1] if tall_side < 0 else walls[0]
+            ends_w = (stops[0], far and not shelf_w) if tall_side < 0 else (far and not shelf_w, stops[1])
             parts += _wall_units(col, mats, s, spans, niche=(niche_x[0], niche_x[1], 0.36) if run >= 1.6 else None,
-                                 hood=hood_x)
+                                 hood=hood_x, stops=ends_w)
             if shelf_w:
                 xa, xb = xs["shelfbase"]
                 parts += _shelf_column(col, mats, s["upper"], xa, xb, K_TOP, FULL, [K_WALL + 0.009, 1.92, 2.32], d=0.35)
@@ -1011,7 +1376,7 @@ def kitchen(col, mats, length, scheme="ochre", tall=1, tall_side=-1, uppers=True
             niche_mods.append(("dishwasher", 0.6))
         rest = niche_w - 0.6 - sum(w for _, w in niche_mods)
         if rest > 0.05:
-            niche_mods.append(("door", rest))
+            niche_mods.append(("fridge" if fridge is None and uppers and rest >= 0.55 else "door", rest))
         niche_mods.append(("sink", 0.6))
         for kind, w in hob_mods + niche_mods:
             xa, xb = X(u, u + w)
@@ -1021,7 +1386,7 @@ def kitchen(col, mats, length, scheme="ochre", tall=1, tall_side=-1, uppers=True
         hx = sum(X(tw, tw + hb)) / 2
         sx = sum(X(length - 0.6, length)) / 2
         parts += _base_units(col, mats, s, mods, ends=open_end, hob=(hx, hob_w), sink=(sx, 0.52),
-                             splash=None if uppers else K_TOP + 0.6)
+                             splash=None if uppers else K_TOP + 0.6, stops=stops)
         if uppers:
             ha, hb_ = X(tw, tw + hb)
             parts += _hob_cabinet(col, mats, s, ha, hb_)
@@ -1031,10 +1396,10 @@ def kitchen(col, mats, length, scheme="ochre", tall=1, tall_side=-1, uppers=True
             shelf_from = far - sl - 0.05 if tall_side < 0 else far + 0.05
             show = (shelves if shelves is not None else True) and niche_w >= 0.85
             parts += _sage_niche(col, mats, s, na, nb, shelf_from=shelf_from if show else None, shelf_len=sl)
-    return _fixed(parts)
+    return parts
 
 
-def counter(col, mats, length, scheme, kind, lead=0.0, splash=0.6, hand=-1):
+def counter(col, mats, length, scheme, kind, lead=0.0, splash=0.6, hand=-1, walls=(False, False)):
     """A base run alone, handleless, both ends finished, a splashback
     `splash` over the worktop (0: none): `kind` "hob" (a flush black hob
     over a built-under oven, drawers and doors), "sink" (`lead` metres of
@@ -1043,15 +1408,20 @@ def counter(col, mats, length, scheme, kind, lead=0.0, splash=0.6, hand=-1):
     of a drawer stack and no splashback, to stand under a window) or "low"
     (C's plans' order, C1+C2-0, from the hob end at -X — at +X with `hand`
     +1: a door under the hob, drawers, the sink, then the dishwasher at
-    the far end; no splashback, for glazing behind)."""
+    the far end; no splashback, for glazing behind). C4 and C5 have no
+    tall unit, so the low counter's drawers beside the sink are its fridge:
+    the two deep ones refrigerated, the shallow one over them for cutlery.
+    Every front opens but the oven's and the dishwasher's, the doors hung
+    away from an end against a wall or another piece (`walls`, left and
+    right; _hands)."""
     s = SCHEMES[scheme]
     if kind == "low":
         X = _span(length, hand)
-        mods = sorted(((k,) + X(a, b) for k, a, b in (("door", 0.0, 0.6), ("drawers", 0.6, 1.2), ("sink", 1.2, 1.8),
+        mods = sorted(((k,) + X(a, b) for k, a, b in (("door", 0.0, 0.6), ("fridge_drawers", 0.6, 1.2), ("sink", 1.2, 1.8),
                                                          ("dishwasher", 1.8, length))), key=lambda m: m[1])
         # The hob 4 cm in from the end it stands at, over its door.
-        return _fixed(_base_units(col, mats, s, mods, ends=(True, True), hob=(sum(X(0.04, 0.6)) / 2, 0.56),
-                                  sink=(sum(X(1.2, 1.8)) / 2, 0.52)))
+        return _base_units(col, mats, s, mods, ends=(True, True), hob=(sum(X(0.04, 0.6)) / 2, 0.56),
+                           sink=(sum(X(1.2, 1.8)) / 2, 0.52), stops=walls)
     if kind == "hob":
         widths = [("door", 0.6), ("oven", 0.6), ("drawers", 0.6)]
     elif kind == "plain":
@@ -1068,9 +1438,9 @@ def counter(col, mats, length, scheme, kind, lead=0.0, splash=0.6, hand=-1):
         mods.append((k, x, x + w))
         x += w
     at = {k: (a + b) / 2 for k, a, b in mods}
-    parts = _base_units(col, mats, s, mods, ends=(True, True), hob=(at["oven"], 0.58) if kind == "hob" else None,
-                        sink=(at["sink"], 0.5) if kind == "sink" else None, splash=K_TOP + splash if splash else None)
-    return _fixed(parts)
+    return _base_units(col, mats, s, mods, ends=(True, True), hob=(at["oven"], 0.58) if kind == "hob" else None,
+                       sink=(at["sink"], 0.5) if kind == "sink" else None, splash=K_TOP + splash if splash else None,
+                       stops=walls)
 
 
 def kitchen_a1(col, mats, scheme="ochre"):
@@ -1084,9 +1454,10 @@ def kitchen_a1(col, mats, scheme="ochre"):
     if scheme != "ochre":
         # From -X, as _ochre_layout(2.4) runs from the column at +X.
         return _sage_run(col, mats, 3.0, [("shelfbase", 0.3), ("oven", 0.6), ("drawers", 0.45), ("door", 0.45),
-                                          ("sink", 0.6), ("column", 0.6)],
+                                          ("sink", 0.6), ("fridge_col", 0.6)],
                          hob=(0.3, 0.9, 0.58), cab=(0.3, 0.9), niche=(0.9, 2.4), shelves=(1.25, 2.35))
-    return kitchen(col, mats, 3.0, "ochre", tall=1, tall_side=1)
+    # Its column stands against the media wall (ld-media-ochre), full height.
+    return kitchen(col, mats, 3.0, "ochre", tall=1, tall_side=1, walls=(False, True))
 
 
 def kitchen_a2(col, mats, L=4.5, scheme="sage"):
@@ -1106,28 +1477,37 @@ def kitchen_a2(col, mats, L=4.5, scheme="sage"):
     (centre 2.05 m from that end, as sage), drawers, the dishwasher, the
     white oven under the hob (centre L - 1.0, as sage), and the plan's
     base end unit, a door and the open shelf column's door; cream
-    cupboards to the ceiling over it, the niche beside the hood's."""
+    cupboards to the ceiling over it, the niche beside the hood's.
+
+    The fridge is the first of the two columns as they are listed; both
+    flats' kitchens run from wall to wall."""
+    walls = (True, True)
     if scheme != "sage":
-        return _ochre_run(col, mats, L, [("column", 0.6), ("column", 0.6), ("door", L - 4.5), ("sink", 0.6), ("drawers", 0.8),
-                                         ("dishwasher", 0.6), ("oven", 0.6), ("door", 0.4), ("shelfbase", 0.3)],
-                          hob=(L - 1.3, L - 0.7, 0.58), hood=(L - 1.3, L - 0.7), niche=(L - 1.9, L - 1.3))
+        return _ochre_run(col, mats, L, [("fridge_col", 0.6), ("column", 0.6), ("door", L - 4.5), ("sink", 0.6),
+                                         ("drawers", 0.8), ("dishwasher", 0.6), ("oven", 0.6), ("door", 0.4), ("shelfbase", 0.3)],
+                          hob=(L - 1.3, L - 0.7, 0.58), hood=(L - 1.3, L - 0.7), niche=(L - 1.9, L - 1.3), walls=walls)
     if L != 4.5:
-        return _sage_run(col, mats, L, [("column", 0.6), ("column", 0.6), ("door", L - 4.5), ("sink", 0.6), ("door", 0.7),
+        return _sage_run(col, mats, L, [("fridge_col", 0.6), ("column", 0.6), ("door", L - 4.5), ("sink", 0.6), ("door", 0.7),
                                         ("dishwasher", 0.6), ("door", 0.8), ("oven_col", 0.6)],
-                         hob=(L - 1.4, L - 0.6, 0.78), cab=(L - 1.4, L - 0.6), niche=(1.2, L - 1.4), shelves=(1.25, 2.35))
+                         hob=(L - 1.4, L - 0.6, 0.78), cab=(L - 1.4, L - 0.6), niche=(1.2, L - 1.4), shelves=(1.25, 2.35),
+                         walls=walls)
     s = SCHEMES["sage"]
     x = lambda u: L / 2 - u            # measured from the viewer's left (+X)
-    parts = _tall(col, mats, x(0.6), x(0), s["tall"], [K_PL, 0.86, 1.46, FULL], ovens=[(0.86, 1.46, False)])
+    parts = _tall(col, mats, x(0.6), x(0), s["tall"], [K_PL, 0.86, 1.46, FULL], ovens=[(0.86, 1.46, False)],
+                  hand=_tall_hand("base", "wall"))
     mods = [("door", x(1.2), x(0.6)), ("door", x(1.8), x(1.2)), ("dishwasher", x(2.4), x(1.8)),
             ("door", x(2.8), x(2.4)), ("sink", x(3.4), x(2.8))]
     mods.sort(key=lambda m: m[1])
-    parts += _base_units(col, mats, s, mods, hob=((x(0.6) + x(1.8)) / 2, 0.8), sink=((x(3.4) + x(2.8)) / 2, 0.52))
+    parts += _base_units(col, mats, s, mods, hob=((x(0.6) + x(1.8)) / 2, 0.8), sink=((x(3.4) + x(2.8)) / 2, 0.52),
+                         stops=(True, True))
     parts += _hob_cabinet(col, mats, s, x(1.8), x(0.6))
     parts += _sage_niche(col, mats, s, x(3.4), x(1.8), shelf_from=x(3.4) + 0.05, shelf_len=1.1)
     for k in range(2):
+        # The fridge by the sink, the pantry at the wall.
         xa, xb = x(3.4 + (k + 1) * 0.55), x(3.4 + k * 0.55)
-        parts += _tall(col, mats, xa, xb, s["tall"], [K_PL, 1.58, FULL], sides=(k == 1, k == 0))
-    return _fixed(parts)
+        parts += _tall(col, mats, xa, xb, s["tall"], [K_PL, 1.58, FULL], sides=(k == 1, k == 0), fridge=k == 0,
+                       hand=_tall_hand("tall", "base") if k == 0 else _tall_hand("wall", "tall"))
+    return parts
 
 
 def _grooved(col, mats, m, xa, xb, z0, z1, stop=None, t=0.018, first=0.27):
@@ -1149,39 +1529,61 @@ def _grooved(col, mats, m, xa, xb, z0, z1, stop=None, t=0.018, first=0.27):
     return parts
 
 
-def _sage_run(col, mats, L, mods, hob, cab, niche, shelves, hand=-1):
+def _run_stops(seq, base, walls):
+    """What a plan's base run ends against (left, right): a column beside
+    it, or the end of the run where that is against a wall (`walls`). `seq`
+    is the whole run (kind, u0, u1) in order, `base` its base modules."""
+    tall = ("column", "oven_col", "fridge_col")
+    near = lambda a, b: abs(a - b) < 1e-6   # noqa: E731
+    b0, b1 = base[0][1], base[-1][2]
+    lo, hi = seq[0][1], seq[-1][2]
+    left = any(near(t[2], b0) for t in seq if t[0] in tall) or (walls[0] and near(b0, lo))
+    right = any(near(t[1], b1) for t in seq if t[0] in tall) or (walls[1] and near(b1, hi))
+    return left, right
+
+
+def _sage_run(col, mats, L, mods, hob, cab, niche, shelves, hand=-1, walls=(False, False)):
     """A sage kitchen of render 20 laid out to a plan, `L` long, against
-    y = 0 facing +Y, exported shut. `mods` (kind, width) from its own left
-    (-X; with `hand` +1 from its right): "oven_col" a column with the
-    black oven at eye level, "column" a tall cupboard (an integrated fridge or a
-    pantry), "shelfbase" a door under a column of open shelves, or one of
-    _base_units' kinds. Measured the same way: `hob` (u0, u1, w) a flush
-    hob `w` wide centred on u0..u1, `cab` (u0, u1) the deep cabinet over
-    it, `niche` (u0, u1) the grooved recess, `shelves` (u0, u1) its three
-    shelves, their crockery set as the render's, by the nearer column."""
+    y = 0 facing +Y. `mods` (kind, width) from its own left (-X; with
+    `hand` +1 from its right): "oven_col" a column with the black oven at
+    eye level, "column" a tall cupboard (a pantry), "fridge_col" one with
+    an integrated fridge behind its lower door, "shelfbase" a door under a
+    column of open shelves, or one of _base_units' kinds. Measured the same
+    way: `hob` (u0, u1, w) a flush hob `w` wide centred on u0..u1, `cab`
+    (u0, u1) the deep cabinet over it, `niche` (u0, u1) the grooved recess,
+    `shelves` (u0, u1) its three shelves, their crockery set as the
+    render's, by the nearer column. Every front opens but the oven's, the
+    dishwasher's and the hob cabinet's flap, hung away from the columns
+    and from an end against a wall (`walls`, left and right as the piece
+    stands, -X first, whatever `hand`; _hands, _tall_hand)."""
     s = SCHEMES["sage"]
     if hand > 0:
         mods = mods[::-1]
         hob, cab, niche, shelves = [(L - r[1], L - r[0]) + tuple(r[2:]) for r in (hob, cab, niche, shelves)]
     x = lambda u: -L / 2 + u
     near = lambda a, b: abs(a - b) < 1e-6
-    talls, base, u = [], [], 0.0
+    talls, base, seq, u = [], [], [], 0.0
     for kind, w in mods:
-        (talls if kind in ("oven_col", "column") else base).append((kind, u, u + w))
+        (talls if kind in ("oven_col", "column", "fridge_col") else base).append((kind, u, u + w))
+        seq.append((kind, u, u + w))
         u += w
     parts = []
     for kind, a, b in talls:
         # A finished side wherever it doesn't stand against another column.
         sides = (not any(near(t[2], a) for t in talls), not any(near(t[1], b) for t in talls))
+        hand_ = _tall_hand(*_sides_of(seq, seq.index((kind, a, b)), walls))
         if kind == "oven_col":
-            parts += _tall(col, mats, x(a), x(b), s["tall"], [K_PL, 0.86, 1.46, FULL], ovens=[(0.86, 1.46, False)], sides=sides)
+            parts += _tall(col, mats, x(a), x(b), s["tall"], [K_PL, 0.86, 1.46, FULL], ovens=[(0.86, 1.46, False)], sides=sides,
+                           hand=hand_)
         else:
-            parts += _tall(col, mats, x(a), x(b), s["tall"], [K_PL, 1.58, FULL], sides=sides)
+            parts += _tall(col, mats, x(a), x(b), s["tall"], [K_PL, 1.58, FULL], sides=sides, hand=hand_,
+                           fridge=kind == "fridge_col")
     b0, b1 = base[0][1], base[-1][2]
     ends = (not any(near(t[2], b0) for t in talls), not any(near(t[1], b1) for t in talls))
     sink = [(a + b) / 2 for kind, a, b in base if kind == "sink"]
     parts += _base_units(col, mats, s, [("door" if k == "shelfbase" else k, x(a), x(b)) for k, a, b in base], ends=ends,
-                         hob=(x((hob[0] + hob[1]) / 2), hob[2]), sink=(x(sink[0]), 0.52) if sink else None)
+                         hob=(x((hob[0] + hob[1]) / 2), hob[2]), sink=(x(sink[0]), 0.52) if sink else None,
+                         stops=_run_stops(seq, base, walls))
     parts += _hob_cabinet(col, mats, s, x(cab[0]), x(cab[1]))
     mid = (shelves[0] + shelves[1]) / 2
     nearest = min(((a + b) / 2 for _, a, b in talls), key=lambda c: abs(c - mid), default=mid)
@@ -1190,37 +1592,43 @@ def _sage_run(col, mats, L, mods, hob, cab, niche, shelves, hand=-1):
     for kind, a, b in base:
         if kind == "shelfbase":
             parts += _shelf_column(col, mats, s["upper"], x(a), x(b), K_TOP, FULL, [K_WALL + 0.009, 1.92, 2.32], d=0.35)
-    return _fixed(parts)
+    return parts
 
 
-def _ochre_run(col, mats, L, mods, hob, hood, niche):
+def _ochre_run(col, mats, L, mods, hob, hood, niche, walls=(False, False)):
     """An ochre kitchen of render 18 laid out to a plan, as _sage_run lays
-    out render 20's: `L` long against y = 0 facing +Y, exported shut.
-    `mods` (kind, width) from its own left (-X): "column" an oak tall
-    unit, "shelfbase" a door under the cream open shelf column, or one of
+    out render 20's: `L` long against y = 0 facing +Y. `mods` (kind,
+    width) from its own left (-X): "column" an oak tall unit (a pantry),
+    "fridge_col" one with an integrated fridge behind its tall door,
+    "shelfbase" a door under the cream open shelf column, or one of
     _base_units' kinds ("oven" the white built-under one). Measured the
     same way: `hob` (u0, u1, w) a flush hob `w` wide centred on u0..u1,
     `hood` (u0, u1) the cupboard its visor hangs under and `niche` (u0,
     u1) the one beside it with the bronze-framed open box; cream
     cupboards to the ceiling over the rest of the run between the
-    columns and the shelf column, terrazzo up the wall to them."""
+    columns and the shelf column, terrazzo up the wall to them. Every
+    front opens but the oven's and the dishwasher's, hung away from the
+    columns and from an end against a wall (`walls`, left and right)."""
     s = SCHEMES["ochre"]
     x = lambda u: -L / 2 + u
     near = lambda a, b: abs(a - b) < 1e-6
-    talls, base, u = [], [], 0.0
+    talls, base, seq, u = [], [], [], 0.0
     for kind, w in mods:
         if w > 0.005:
-            (talls if kind == "column" else base).append((kind, u, u + w))
+            (talls if kind in ("column", "fridge_col") else base).append((kind, u, u + w))
+            seq.append((kind, u, u + w))
         u += w
     parts = []
-    for _, a, b in talls:
+    for kind, a, b in talls:
         sides = (not any(near(t[2], a) for t in talls), not any(near(t[1], b) for t in talls))
-        parts += _tall(col, mats, x(a), x(b), s["tall"], [K_PL, 2.02, FULL], sides=sides)
+        parts += _tall(col, mats, x(a), x(b), s["tall"], [K_PL, 2.02, FULL], sides=sides,
+                       hand=_tall_hand(*_sides_of(seq, seq.index((kind, a, b)), walls)), fridge=kind == "fridge_col")
     b0, b1 = base[0][1], base[-1][2]
     ends = (not any(near(t[2], b0) for t in talls), not any(near(t[1], b1) for t in talls))
+    stops = _run_stops(seq, base, walls)
     sink = [(a + b) / 2 for kind, a, b in base if kind == "sink"]
     parts += _base_units(col, mats, s, [("door" if k == "shelfbase" else k, x(a), x(b)) for k, a, b in base], ends=ends,
-                         hob=(x((hob[0] + hob[1]) / 2), hob[2]), sink=(x(sink[0]), 0.5) if sink else None)
+                         hob=(x((hob[0] + hob[1]) / 2), hob[2]), sink=(x(sink[0]), 0.5) if sink else None, stops=stops)
     shelf = next(((a, b) for k, a, b in base if k == "shelfbase"), None)
     w0, w1 = b0, shelf[0] if shelf else b1
     # The splashback stops a millimetre into what it meets, not on the
@@ -1231,11 +1639,13 @@ def _ochre_run(col, mats, L, mods, hob, hood, niche):
     for a, b in ((w0, min(hood[0], niche[0])), (max(hood[1], niche[1]), w1)):
         n = max(1, math.ceil((b - a) / 0.95 - 0.01)) if b - a > 0.05 else 0
         spans += [(a + k * (b - a) / n, a + (k + 1) * (b - a) / n) for k in range(n)]
+    # The wall cupboards end as the base run does, but against the open
+    # shelf column where there is one.
     parts += _wall_units(col, mats, s, sorted((x(a), x(b)) for a, b in spans), niche=(x(niche[0]), x(niche[1]), 0.36),
-                         hood=(x(hood[0]), x(hood[1])))
+                         hood=(x(hood[0]), x(hood[1])), stops=(stops[0], stops[1] and not shelf))
     if shelf:
         parts += _shelf_column(col, mats, s["upper"], x(shelf[0]), x(shelf[1]), K_TOP, FULL, [K_WALL + 0.009, 1.92, 2.32], d=0.35)
-    return _fixed(parts)
+    return parts
 
 
 def kitchen_42s(col, mats):
@@ -1243,8 +1653,8 @@ def kitchen_42s(col, mats):
     its own left (-X): the oven column and a pantry, a 0.2 m tray door,
     the sink (centre 1.7 m from that end) under the grooved recess and its
     shelves, a dishwasher, a 0.4 m door, and the 1.2 m hob bay (hob centre
-    3.6) under the deep cabinet."""
-    return _sage_run(col, mats, 4.2, [("oven_col", 0.6), ("column", 0.6), ("door", 0.2), ("sink", 0.6), ("dishwasher", 0.6),
+    3.6) under the deep cabinet. The pantry column is the fridge's."""
+    return _sage_run(col, mats, 4.2, [("oven_col", 0.6), ("fridge_col", 0.6), ("door", 0.2), ("sink", 0.6), ("dishwasher", 0.6),
                                       ("door", 0.4), ("door", 0.6), ("door", 0.6)],
                      hob=(3.0, 4.2, 0.78), cab=(3.0, 4.2), niche=(1.2, 3.0), shelves=(1.25, 2.35))
 
@@ -1259,39 +1669,48 @@ def kitchen_40n(col, mats, scheme="sage"):
     the sink, the deep cabinet over the hob bay and the end (as C1's).
     Ochre: the white oven under the hob, cream cupboards to the ceiling
     with the niche beside the hood's, the end door under the open shelf
-    column (as the ochre 4.2 m run)."""
+    column (as the ochre 4.2 m run).
+
+    The fridge: ochre's oak column; sage's, which has none but the oven's,
+    behind the door between it and the sink. Both stand from the stair's
+    wall (-X) to the plain counter under the window (+X)."""
+    walls = (True, True)
     if scheme == "sage":
-        return _sage_run(col, mats, 3.95, [("oven_col", 0.6), ("door", 0.6), ("sink", 0.6), ("dishwasher", 0.6), ("door", 0.65),
+        return _sage_run(col, mats, 3.95, [("oven_col", 0.6), ("fridge", 0.6), ("sink", 0.6), ("dishwasher", 0.6), ("door", 0.65),
                                            ("door", 0.6), ("door", 0.3)],
-                         hob=(3.05, 3.65, 0.58), cab=(3.05, 3.95), niche=(0.6, 3.05), shelves=(0.65, 1.8))
-    return _ochre_run(col, mats, 3.95, [("column", 0.6), ("door", 0.6), ("sink", 0.6), ("dishwasher", 0.6), ("drawers", 0.65),
+                         hob=(3.05, 3.65, 0.58), cab=(3.05, 3.95), niche=(0.6, 3.05), shelves=(0.65, 1.8), walls=walls)
+    return _ochre_run(col, mats, 3.95, [("fridge_col", 0.6), ("door", 0.6), ("sink", 0.6), ("dishwasher", 0.6), ("drawers", 0.65),
                                         ("oven", 0.6), ("shelfbase", 0.3)],
-                      hob=(3.05, 3.65, 0.58), hood=(3.05, 3.65), niche=(2.45, 3.05))
+                      hob=(3.05, 3.65, 0.58), hood=(3.05, 3.65), niche=(2.45, 3.05), walls=walls)
 
 
 def kitchen_c2(col, mats, hand=-1):
     """C2's kitchen (C0-4), 2.8 m, from its own left (-X; `hand` +1 from its
-    right, for C3): the oven column, a fridge and pantry column, the sink
-    under the grooved recess and its shelves, a 0.4 m door, and the hob
-    bay under the deep cabinet."""
-    return _sage_run(col, mats, 2.8, [("oven_col", 0.6), ("column", 0.6), ("sink", 0.6), ("door", 0.4), ("door", 0.6)],
-                     hob=(2.2, 2.8, 0.58), cab=(2.2, 2.8), niche=(1.2, 2.2), shelves=(1.25, 2.15), hand=hand)
+    right, for C3): the oven column, a fridge and pantry column (the fridge
+    behind its lower door), the sink under the grooved recess and its
+    shelves, a 0.4 m door, and the hob bay under the deep cabinet; the
+    columns at the open end, the hob bay's end against the wall."""
+    return _sage_run(col, mats, 2.8, [("oven_col", 0.6), ("fridge_col", 0.6), ("sink", 0.6), ("door", 0.4), ("door", 0.6)],
+                     hob=(2.2, 2.8, 0.58), cab=(2.2, 2.8), niche=(1.2, 2.2), shelves=(1.25, 2.15), hand=hand,
+                     walls=(False, True) if hand < 0 else (True, False))
 
 
 def kitchen_c1(col, mats):
     """C1's kitchen (C0-10), 3.9 m, from its own right (+X, the north end
     as placed): the fridge column, a pair of doors, the sink under the
     grooved recess and its shelves, a dishwasher, drawers, the hob bay and
-    a 0.25 m end door under the deep cabinet."""
-    return _sage_run(col, mats, 3.9, [("column", 0.6), ("door", 0.425), ("door", 0.425), ("sink", 0.6), ("dishwasher", 0.6),
+    a 0.25 m end door under the deep cabinet; the fridge's end open, the
+    hob's against the party wall (-X)."""
+    return _sage_run(col, mats, 3.9, [("fridge_col", 0.6), ("door", 0.425), ("door", 0.425), ("sink", 0.6), ("dishwasher", 0.6),
                                       ("drawers", 0.4), ("door", 0.6), ("door", 0.25)],
-                     hob=(3.05, 3.65, 0.58), cab=(3.05, 3.9), niche=(0.6, 3.05), shelves=(0.65, 2.05), hand=1)
+                     hob=(3.05, 3.65, 0.58), cab=(3.05, 3.9), niche=(0.6, 3.05), shelves=(0.65, 2.05), hand=1,
+                     walls=(True, False))
 
 
 def peninsula(col, mats, w=2.10, d=0.62, scheme="sage"):
     """A peninsula in the kitchens' handleless style: drawers and doors
     facing +Y, the back panelled, the worktop running on over the back as
-    a breakfast bar."""
+    a breakfast bar; its two doors open from the middle."""
     s = SCHEMES[scheme]
     third = w / 3
     mods = [("drawers", -w / 2, -w / 2 + third), ("door", -w / 2 + third, w / 2 - third), ("door", w / 2 - third, w / 2)]
@@ -1305,7 +1724,7 @@ def peninsula(col, mats, w=2.10, d=0.62, scheme="sage"):
     parts.append(_block(col, mats[s["base"]], -w / 2, w / 2, -d / 2 - 0.0, -d / 2 + 0.018, 0, K_TOP - K_WT, "back"))
     parts.append(_block(col, mats[s["top"]], -w / 2 - 0.01, w / 2 + 0.01, -d / 2 - 0.3, d / 2 + 0.0, K_TOP - K_WT, K_TOP,
                         "worktop", bevel=0.003))
-    return _fixed(parts)
+    return parts
 
 
 # ---------------------------------------------------------------------
@@ -1374,16 +1793,19 @@ def _corner_scheme(scheme):
     return s
 
 
-def _uppers(col, mats, s, spans, deep=False, hood=None, niche=None):
+def _uppers(col, mats, s, spans, deep=False, hood=None, niche=None, stops=(False, False), shut=False):
     """Cupboards to the ceiling over a run, their backs at y = 0, one
     handleless door per span (xa, xb): render 18's cream wall units, 0.35
     deep from K_WALL, `hood` (xa, xb) hanging its slim visor under a span
     and `niche` (xa, xb, h) opening a bronze-framed box at a span's foot;
-    or, `deep`, render 20's deep cabinet over the hob, 0.42 deep from
-    1.55, its flaps between finished sides. As _wall_units and
-    _hob_cabinet, but the carcass stands on the underside rather than
-    sharing its face."""
-    m, dark = mats[s["upper"]], mats["kitchen_gap"]
+    or, `deep`, render 20's deep cabinet, 0.42 deep from 1.55, its doors
+    between finished sides. As _wall_units and _hob_cabinet, but the
+    carcass stands on the underside rather than sharing its face.
+
+    Hollow as _wall_units' are, each door hung away from what the run ends
+    against (`stops`); `shut` keeps them solid and shut, as the deep
+    cabinet's flaps over a hob stay."""
+    m, dark, white, t = mats[s["upper"]], mats["kitchen_gap"], mats["cab_white"], BOARD
     z0, d, under = (1.55, 0.42, 0.016) if deep else (K_WALL, 0.35, 0.012)
     xa0, xb0 = spans[0][0], spans[-1][1]
     body = d - FT - 0.001
@@ -1395,14 +1817,16 @@ def _uppers(col, mats, s, spans, deep=False, hood=None, niche=None):
         for a, b in ((ia, nx0), (nx1, ib)):
             if b - a > 1e-4:
                 parts.append(_block(col, m, a, b, 0, body, z0, z0 + under, "underside"))
-                parts.append(_block(col, dark, a, b, 0, body, z0 + under, FULL))
-        parts.append(_block(col, dark, nx0, nx1, 0, body, z0 + nh, FULL))
+                if shut:
+                    parts.append(_block(col, dark, a, b, 0, body, z0 + under, FULL))
+        if shut:
+            parts.append(_block(col, dark, nx0, nx1, 0, body, z0 + nh, FULL))
         # Its lining, cream, behind a thin bronze frame round its mouth.
-        t, f, fd = 0.016, 0.01, d - 0.02
-        parts += [_block(col, m, nx0, nx1, 0, fd, z0, z0 + t, "niche"), _block(col, m, nx0, nx1, 0, fd, z0 + nh - t, z0 + nh, "niche"),
-                  _block(col, m, nx0, nx1, 0, 0.012, z0 + t, z0 + nh - t, "niche"),
-                  _block(col, m, nx0, nx0 + t, 0.012, fd, z0 + t, z0 + nh - t, "niche"),
-                  _block(col, m, nx1 - t, nx1, 0.012, fd, z0 + t, z0 + nh - t, "niche")]
+        tl, f, fd = 0.016, 0.01, d - 0.02
+        parts += [_block(col, m, nx0, nx1, 0, fd, z0, z0 + tl, "niche"), _block(col, m, nx0, nx1, 0, fd, z0 + nh - tl, z0 + nh, "niche"),
+                  _block(col, m, nx0, nx1, 0, 0.012, z0 + tl, z0 + nh - tl, "niche"),
+                  _block(col, m, nx0, nx0 + tl, 0.012, fd, z0 + tl, z0 + nh - tl, "niche"),
+                  _block(col, m, nx1 - tl, nx1, 0.012, fd, z0 + tl, z0 + nh - tl, "niche")]
         bz = mats["bronze_dark"]
         parts += [_block(col, bz, nx0, nx1, fd, d + 0.001, z0, z0 + f, "frame"),
                   _block(col, bz, nx0, nx1, fd, d + 0.001, z0 + nh - f, z0 + nh, "frame"),
@@ -1410,12 +1834,34 @@ def _uppers(col, mats, s, spans, deep=False, hood=None, niche=None):
                   _block(col, bz, nx1 - f, nx1, fd, d + 0.001, z0 + f, z0 + nh - f, "frame")]
     else:
         parts.append(_block(col, m, ia, ib, 0, body, z0, z0 + under, "underside"))
-        parts.append(_block(col, dark, ia, ib, 0, body, z0 + under, FULL))
-    for xa, xb in spans:
-        za = z0 + niche[2] if niche and xa <= niche[0] + 0.001 and xb >= niche[1] - 0.001 else z0
+        if shut:
+            parts.append(_block(col, dark, ia, ib, 0, body, z0 + under, FULL))
+    if not shut:
+        # The carcass: a top, a board at each joint between two doors, a
+        # back in each cupboard from its floor up (a niche keeps its lining).
+        parts.append(_board(col, white, dark, ia, ib, 0, body, FULL - t, FULL, up=True))
+        for (_, xb), (xa, _) in zip(spans, spans[1:]):
+            parts.append(_board(col, white, dark, xa - t / 2, xa + t / 2, 0, body, z0 + under, FULL - t))
+    hands = _hands([("door", xa, xb) for xa, xb in spans], stops)
+    for k, (xa, xb) in enumerate(spans):
+        at_niche = niche and xa <= niche[0] + 0.001 and xb >= niche[1] - 0.001
+        za = z0 + niche[2] if at_niche else z0
         if deep:
             xa, xb = max(xa, ia), min(xb, ib)
-        parts.append(_slab(col, m, xa, xb, za, FULL, d))
+        front = _slab(col, m, xa, xb, za, FULL, d)
+        if shut:
+            parts.append(front)
+            continue
+        ca, cb = max(xa, ia) + (t / 2 if k else 0), min(xb, ib) - (t / 2 if k < len(spans) - 1 else 0)
+        floor = za if at_niche else z0 + under
+        parts += [_board(col, white, dark, ca, cb, t, body, floor, floor + t),
+                  _board(col, white, None, ca, cb, 0, t, floor + t, FULL - t, "back")]
+        lo = floor + t
+        if hood and xa <= hood[0] + 0.001 and xb >= hood[1] - 0.001:
+            parts.append(_block(col, mats["steel"], ca + 0.01, cb - 0.01, t, body - 0.03, lo, lo + 0.26, "extractor"))
+            lo += 0.26
+        parts += _carcass_shelves(col, mats, ca, cb, lo, FULL - t, body)
+        parts += _hang([front], xa, xb, d, hands[k][0], col)
     if hood:
         hx0, hx1 = hood
         parts.append(_block(col, mats["bronze_dark"], hx0 + 0.005, hx1 - 0.005, 0.02, d + 0.01, z0 - 0.022, z0, "hood", bevel=0.002))
@@ -1436,7 +1882,13 @@ def kitchen_l(col, mats, scheme="ochre", w=2.49, d=2.20, sink_at=1.57, hob_at=0.
     wall, a splashback up to cupboards to the ceiling (ochre: cream, render
     18's hood visor over the hob and its bronze-framed niche beside it;
     sage: render 20's deep cabinet), the free end panelled full height.
-    One worktop round the corner, a recessed plinth, shut."""
+    One worktop round the corner, a recessed plinth.
+
+    With no tall unit, its fridge is under the worktop, behind the door
+    beside the sink. Every front opens but the oven's, the dishwasher's,
+    the blind corner's (the short leg stands across it) and the sage deep
+    cabinet's flaps over the hob, each leg's doors hung away from the
+    corner and from the full-height panel at the free end."""
     s = _corner_scheme(scheme)
     hx, hy = w / 2, d / 2
     fx, fy = -hx + K_D, -hy + K_D          # the short leg's fronts (an x), the long leg's (a y)
@@ -1448,7 +1900,7 @@ def kitchen_l(col, mats, scheme="ochre", w=2.49, d=2.20, sink_at=1.57, hob_at=0.
     span = sx - 0.3 - (fx + 0.05)
     n = max(1, math.ceil(span / 0.65 - 0.01))
     mods = [("corner", -hx, fx), ("filler", fx, fx + 0.05)]
-    mods += [("door", fx + 0.05 + k * span / n, fx + 0.05 + (k + 1) * span / n) for k in range(n)]
+    mods += [("fridge" if k == n - 1 else "door", fx + 0.05 + k * span / n, fx + 0.05 + (k + 1) * span / n) for k in range(n)]
     mods.append(("sink", sx - 0.3, sx + 0.3))
     if hx - (sx + 0.9) > 0.1:
         mods += [("dishwasher", sx + 0.3, sx + 0.9), ("door", sx + 0.9, hx)]
@@ -1461,7 +1913,8 @@ def kitchen_l(col, mats, scheme="ochre", w=2.49, d=2.20, sink_at=1.57, hob_at=0.
     a, b = -hy + end, -fy - 0.001
     mods = [("door", a, hc - 0.3), ("oven", hc - 0.3, hc + 0.3), ("drawers", hc + 0.3, hc + 0.85), ("filler", hc + 0.85, b)]
     short = []
-    for p in _base_units(col, mats, s, mods, hob=(hc, 0.58)):
+    # It ends against the free end's full-height panel and the corner.
+    for p in _base_units(col, mats, s, mods, hob=(hc, 0.58), stops=(True, True)):
         if p.name.startswith("worktop"):
             bpy.data.objects.remove(p, do_unlink=True)        # one top round the corner, below
         else:
@@ -1470,17 +1923,17 @@ def kitchen_l(col, mats, scheme="ochre", w=2.49, d=2.20, sink_at=1.57, hob_at=0.
     short.append(_block(col, mats[s["splash"]], a, hy, 0, 0.012, K_TOP, 1.55 if deep else K_WALL, "splash"))
     if deep:
         mid = (a - fy) / 2
-        short += _uppers(col, mats, s, [(a, mid), (mid, -fy)], deep=True)
+        short += _uppers(col, mats, s, [(a, mid), (mid, -fy)], deep=True, shut=True)
     else:
         short += _uppers(col, mats, s, [(a, hc - 0.3), (hc - 0.3, hc + 0.3), (hc + 0.3, -fy)], hood=(hc - 0.3, hc + 0.3),
-                         niche=(hc + 0.3, -fy, 0.36))
+                         niche=(hc + 0.3, -fy, 0.36), stops=(True, False))
     parts += _turn(short, -PI / 2, dx=-hx)
     # Its worktop, butting the long leg's; the plinth closed round the
     # inside corner; the free end's panel, floor to ceiling.
     parts.append(_block(col, top, -hx, fx + 0.02, fy + 0.02, hy - end, K_TOP - K_WT, K_TOP, "worktop", bevel=0.003))
     parts.append(_block(col, mats["plinth_champagne"], -hx, fx - 0.05, fy - 0.05, fy - 0.001, 0, K_PL, "plinth"))
     parts.append(_block(col, mats[s["tall"]], -hx, fx + 0.02, hy - end, hy, 0, FULL, "gable"))
-    return _fixed(parts)
+    return parts
 
 
 def kitchen_u(col, mats, scheme="ochre"):
@@ -1501,7 +1954,15 @@ def kitchen_u(col, mats, scheme="ochre"):
     +X: a door, an undermount sink centred at x 8.96 with a black mixer,
     the dishwasher's front at x 9.26-9.86 (the back leg's end covers its
     last 0.24) and the blind corner, a low upstand under the window. The
-    worktop runs round the inside corner; the free ends are finished."""
+    worktop runs round the inside corner; the free ends are finished.
+
+    Every front opens but the ovens', the dishwasher's, the blind
+    corner's and the oven column's below the worktop, which the back
+    leg's end stands across; the columns' doors hang away from the slant,
+    each leg's away from the corner it runs into. Fillers in the corner
+    let the fridge's door and the back leg's drawers by: one between the
+    oven column and the fridge, clear of the back leg's worktop, and one at
+    the back leg's north end, as its drawers travel north drawn out."""
     s = _corner_scheme(scheme)
     sage = scheme != "ochre"
     hx, fy = 1.4625, 1.21                  # half the north-south span; the free ends (x 8.13)
@@ -1524,15 +1985,24 @@ def kitchen_u(col, mats, scheme="ochre"):
     spans = [(yb, yb + 0.57), (yb + 0.57, fy)]
     n += _base_units(col, mats, s, [("drawers",) + spans[0], ("door",) + spans[1]], ends=(False, True))
     n.append(_block(col, mats[s["splash"]], yb, fy, 0, 0.012, K_TOP, 1.55 if sage else K_WALL, "splash"))
+    # Its cupboards end against the fridge column, free at the leg's end.
     if sage:
-        n += _uppers(col, mats, s, spans, deep=True)
+        n += _uppers(col, mats, s, spans, deep=True, stops=(True, False))
     else:
-        n += _uppers(col, mats, s, spans, niche=spans[0] + (0.36,))
+        n += _uppers(col, mats, s, spans, niche=spans[0] + (0.36,), stops=(True, False))
     oven = (K_TOP + 0.002, K_TOP + 0.452, s["oven"] == "white")
     door = 1.58 if sage else 2.02
     yw = wall(nf) + 0.002
-    n += _tall(col, mats, yj, yb, tall, [K_PL, door, FULL], sides=(False, True))
-    n += _tall(col, mats, yw, yj, tall, [K_PL, oven[0], oven[1], door, FULL], ovens=[oven], sides=(False, False))
+    # The back leg's worktop runs into the corner 2 cm proud of its fronts,
+    # in the way of the fridge's door as it swings: a 3 cm filler there in
+    # the columns' finish, the fridge column on from it.
+    yf = yj + 0.03
+    n += [_block(col, mats["kitchen_gap"], yj, yf, 0, K_D - FT - 0.001, K_PL, FULL),
+          _block(col, mats["plinth_champagne"], yj, yf, 0, K_D - 0.05, 0, K_PL, "plinth"),
+          _slab(col, mats[tall], yj, yf, K_PL, FULL, K_D, name="filler")]
+    n += _tall(col, mats, yf, yb, tall, [K_PL, door, FULL], sides=(False, True), hand=_tall_hand("tall", "base"), fridge=True)
+    n += _tall(col, mats, yw, yj, tall, [K_PL, oven[0], oven[1], door, FULL], ovens=[oven], sides=(False, False),
+               hand=_tall_hand("wall", "tall"), shut=(K_PL,))
     n += [_block(col, mats["kitchen_gap"], -1.3, yw, 0, K_D - FT - 0.001, K_PL, FULL),
           _block(col, mats["plinth_champagne"], -1.3, yw, 0, K_D - 0.05, 0, K_PL, "plinth")]
     parts += _cut(_turn(n, PI / 2, dx=hx), (0, w0), away)
@@ -1542,7 +2012,13 @@ def kitchen_u(col, mats, scheme="ochre"):
     hob_x, hob_y = -(11.50 - 11.4425), -(10.03 - 9.34)
     ox = math.cos(phi) * hob_x + math.sin(phi) * (hob_y - w0)       # the hob along the leg
     oy = -math.sin(phi) * hob_x + math.cos(phi) * (hob_y - w0)      # and off the wall
-    e = _base_units(col, mats, s, [("door", -1.2, ox - 0.3), ("oven", ox - 0.3, ox + 0.3), ("drawers", ox + 0.3, 1.2)])
+    # Drawn out square to the slant, its drawers also travel north, by
+    # sin(phi) of their travel: they stop short of the oven column's front
+    # by that and 3 mm, a filler between them and the corner.
+    travel = 0.75 * K_TRAY
+    stop = (nf - 0.003 + (K_D + travel) * math.sin(phi)) / math.cos(phi)
+    e = _base_units(col, mats, s, [("door", -1.2, ox - 0.3), ("oven", ox - 0.3, ox + 0.3), ("drawers", ox + 0.3, stop),
+                                   ("filler", stop, 1.2)])
     e += _flush_hob(col, mats, ox, oy, w=0.58)
     _turn(e, phi, dy=w0)
     tops = [p for p in e if p.name.startswith("worktop")]
@@ -1561,7 +2037,7 @@ def kitchen_u(col, mats, scheme="ochre"):
                                     ("corner", 0.52, 1.2)], depth=sd, ends=(True, False), sink=(-0.38, 0.52 if sage else 0.5))
     so.append(_block(col, mats[s["top"]], -fy, 1.2, 0, 0.012, K_TOP, K_TOP + 0.10, "upstand"))
     parts += _cut(_turn(so, -PI / 2, dx=-hx), (0, w0), away)
-    return _fixed(parts)
+    return parts
 
 
 def _tv(col, mats, cx, y, z0, w, h, t=0.028):
@@ -1575,30 +2051,60 @@ def media_wall(col, mats, w=2.32, wood="oak_veneer", back="lacquer_sand", top="l
     a cream lacquer panel behind a black 75" television, cream handleless
     cupboards across the top, and a low oak console with a 40 mm top
     overhanging two doors that meet in the middle, each with a short brass
-    tab on its top edge, on a recessed plinth. Its back is at y = -d/2."""
+    tab on its top edge, on a recessed plinth. Its back is at y = -d/2.
+
+    The cupboards over the niche and the console's are hollow, white
+    inside, a shelf in each; the cupboards' doors open from the middle,
+    the console's drop as flaps. The television and its panel stay where
+    they were."""
     wd, bk, cr = mats[wood], mats[back], mats[top]
+    dark, white, t = mats["kitchen_gap"], mats["cab_white"], BOARD
     d = 0.5
     y0 = -d / 2
     fw = 0.04
     xa, xb = -w / 2 + fw, w / 2 - fw
+    xm = (xa + xb) / 2
     parts = [_block(col, wd, -w / 2, xa, y0, y0 + d, 0, FULL, "frame"), _block(col, wd, xb, w / 2, y0, y0 + d, 0, FULL, "frame"),
              _block(col, bk, xa, xb, y0, y0 + 0.02, 0.45, 2.18, "panel")]
-    # Cupboards over the niche to the ceiling: two doors.
+
+    def cupboards(za, zb, face):
+        """The two cupboards of a pair of doors that meet in the middle,
+        from za to zb, hollow behind them — white, a board under them and
+        between them, a shelf in each, their edges dark — the doors hung
+        on their outer edges, by the oak frame."""
+        body = face - FT - 0.001
+        out = [_board(col, white, dark, xa, xb, y0, body, za, za + t), _board(col, white, None, xa, xb, y0, y0 + t, za + t, zb, "back"),
+               _board(col, white, dark, xm - t / 2, xm + t / 2, y0 + t, body, za + t, zb)]
+        mid = (za + t + zb) / 2
+        for a, b in ((xa, xm - t / 2), (xm + t / 2, xb)):
+            out.append(_board(col, white, None, a + 0.001, b - 0.001, y0 + t - 0.001, body - 0.01, mid - t / 2, mid + t / 2, "shelf"))
+        return out, body
+
+    # Cupboards over the niche to the ceiling: two doors, cream underneath,
+    # a top in the solid carcass's colour.
     cd = 0.38
-    parts.append(_block(col, mats["kitchen_gap"], xa, xb, y0, y0 + cd - FT - 0.001, 2.18, FULL))
-    parts.append(_block(col, cr, xa, xb, y0, y0 + cd - FT - 0.001, 2.18, 2.195, "underside"))
-    xm = (xa + xb) / 2
-    parts += [_slab(col, cr, xa, xm, 2.18, FULL, y0 + cd), _slab(col, cr, xm, xb, 2.18, FULL, y0 + cd)]
-    # The console: a recessed plinth, a carcass, two doors, the top over them.
+    inside, body = cupboards(2.195, FULL - t, y0 + cd)
+    parts += inside + [_block(col, cr, xa, xb, y0, body, 2.18, 2.195, "underside"),
+                       _board(col, white, dark, xa, xb, y0, body, FULL - t, FULL, up=True)]
+    parts += _hang([_slab(col, cr, xa, xm, 2.18, FULL, y0 + cd)], xa, xm, y0 + cd, -1, col)
+    parts += _hang([_slab(col, cr, xm, xb, 2.18, FULL, y0 + cd)], xm, xb, y0 + cd, 1, col)
+    # The console: a recessed plinth, a carcass, two doors, the top over
+    # them; each door's brass tab near the middle, on its top edge.
     ch, tt = 0.45, 0.04
     cy1 = y0 + d - 0.04                     # its doors' face, the top 40 mm proud of it
     parts.append(_block(col, mats["kitchen_gap"], xa, xb, y0, y0 + 0.4, 0, 0.07, "plinth"))
-    parts.append(_block(col, mats["kitchen_gap"], xa, xb, y0, cy1 - FT - 0.001, 0.07, ch - tt))
-    parts += [_slab(col, wd, xa, xm, 0.07, ch - tt, cy1), _slab(col, wd, xm, xb, 0.07, ch - tt, cy1)]
+    inside, body = cupboards(0.07, ch - tt, cy1)
+    parts += inside
     parts.append(_block(col, wd, xa, xb, y0, y0 + d, ch - tt, ch, "top", bevel=0.002))
-    for s in (-1, 1):
-        parts.append(_block(col, mats["brass"], xm + s * 0.12 - 0.04, xm + s * 0.12 + 0.04, cy1 - 0.001, cy1 + 0.012,
-                            ch - tt - 0.03, ch - tt - 0.002, "pull", bevel=0.001))
+    # Each 1.1 m door is a flap: it drops on a hinge along its foot, its
+    # brass tab at its top, to lie level a hand over the floor, 34 cm into
+    # the room — where a door swung on its side would sweep a quarter of a
+    # circle 1.1 m across the floor before the TV.
+    for s, (a, b) in ((-1, (xa, xm)), (1, (xm, xb))):
+        tab = _block(col, mats["brass"], xm + s * 0.12 - 0.04, xm + s * 0.12 + 0.04, cy1 - 0.001, cy1 + 0.012,
+                     ch - tt - 0.03, ch - tt - 0.002, "pull", bevel=0.001)
+        parts += g.hinged([_slab(col, wd, a, b, 0.07, ch - tt, cy1), tab], ((a + b) / 2, cy1, 0.07 + GAP), -K_SWING, col,
+                          label="door", axis=(1, 0, 0))
     parts += _tv(col, mats, 0, y0 + 0.02, 0.95, 1.66, 0.94)
     # A dark bowl on the console, at one end.
     parts += _bowl(col, mats, xa + 0.3, y0 + d / 2, ch, r=0.1, h=0.06, mat="ceramic_dark")
@@ -1613,28 +2119,89 @@ def tv_volume(col, mats, w=2.6, d=0.4, wood="oak_rift", tv=(1.43, 0.81), niche=T
     (as seen from the front: -X), dark inside, and a shadow gap under the
     ceiling (its top at 2.72 m). `tv_x`: the television's centre, +X being
     the viewer's left; `joints`: x of hairline door joints, from the niche's
-    top (or the floor) to the top."""
+    top (or the floor) to the top.
+
+    Each stretch of the block between two joints, or a joint and its end,
+    that the television does not hang on is the door of a closet behind it
+    (_closet), the joint the gap round it; a joint with no door beside it
+    stays a dark line. The television stays where it was."""
     wd = mats[wood]
     top = FULL - 0.02
     y0 = -d / 2
     parts = []
-    if niche:
-        nw, nh = 0.6, 0.35
-        nx0, nx1 = -w / 2 + 0.03, -w / 2 + 0.03 + nw
-        parts += [_block(col, wd, nx1, w / 2, y0, y0 + d, 0, top, "body"),
-                  _block(col, wd, -w / 2, nx1, y0, y0 + d, nh, top, "body"),
-                  _block(col, wd, -w / 2, nx0, y0, y0 + d, 0, nh, "body"),
-                  _block(col, mats["kitchen_gap"], nx0, nx1, y0, y0 + 0.05, 0, nh, "niche"),
-                  _block(col, mats["wood_dark"], nx0, nx1, y0, y0 + d - 0.015, 0, 0.02, "niche")]
-    else:
-        parts.append(_block(col, wd, -w / 2, w / 2, y0, y0 + d, 0, top, "body"))
     tw, th = tv
+    edges = [-w / 2] + sorted(joints) + [w / 2]
+    doors = [(a, b) for a, b in zip(edges, edges[1:]) if joints and (b <= tv_x - tw / 2 or a >= tv_x + tw / 2)]
+    nw, nh = 0.6, 0.35
+    nx0, nx1 = -w / 2 + 0.03, -w / 2 + 0.03 + nw
+    if not doors:
+        if niche:
+            parts += [_block(col, wd, nx1, w / 2, y0, y0 + d, 0, top, "body"),
+                      _block(col, wd, -w / 2, nx1, y0, y0 + d, nh, top, "body"),
+                      _block(col, wd, -w / 2, nx0, y0, y0 + d, 0, nh, "body")]
+        else:
+            parts.append(_block(col, wd, -w / 2, w / 2, y0, y0 + d, 0, top, "body"))
+    else:
+        lo = nh if niche else 0.0
+        # The block but for its closets, a joint's half-width from each,
+        # to the floor where nothing is cut from under it; what is left
+        # under the closets but the niche.
+        solid, x = [], -w / 2
+        for a, b in doors:
+            if a - x > 1e-6:
+                solid.append((x, a - GAP))
+            x = b + GAP if b < w / 2 - 1e-6 else w / 2
+        if w / 2 - x > 1e-6:
+            solid.append((x, w / 2))
+        for sa, sb in solid:
+            parts.append(_block(col, wd, sa, sb, y0, y0 + d, 0, top, "body"))
+        if lo:
+            low = [(-w / 2, nx0), (nx1, w / 2)] if niche else [(-w / 2, w / 2)]
+            for sa, sb in solid:
+                low = [p for a, b in low for p in ((a, min(b, sa)), (max(a, sb), b)) if p[1] - p[0] > 1e-6]
+            for a, b in low:
+                parts.append(_block(col, wd, a, b, y0, y0 + d, 0, lo, "body"))
+        for a, b in doors:
+            # Hung away from the nearer end of the block, which stands against a wall.
+            parts += _closet(col, mats, wd, a, b, lo, top, y0, y0 + d, -1 if (a + b) / 2 > 0 else 1,
+                             (a <= -w / 2 + 1e-6, b >= w / 2 - 1e-6))
+    if niche:
+        parts += [_block(col, mats["kitchen_gap"], nx0, nx1, y0, y0 + 0.05, 0, nh, "niche"),
+                  _block(col, mats["wood_dark"], nx0, nx1, y0, y0 + d - 0.015, 0, 0.02, "niche")]
     parts += _tv(col, mats, tv_x, y0 + d, 1.0, tw, th, t=0.022)
     for jx in joints:
+        if any(abs(jx - a) < 1e-6 or abs(jx - b) < 1e-6 for a, b in doors):
+            continue
         # A 3 mm dark line, a millimetre proud of the oak.
         parts.append(_block(col, mats["kitchen_gap"], jx - 0.0015, jx + 0.0015, y0 + d - 0.004, y0 + d + 0.001,
                             0.35 if niche else 0.0, top, "joint"))
     return parts
+
+
+def _closet(col, mats, wd, a, b, lo, top, back, face, hand, ends):
+    """A closet in a block of `wd` (tv_volume), from a to b and lo to top,
+    its back on the wall at `back`, its door's face at `face`: white
+    inside, a shelf at 2 m and a rail under it; at an end of the block
+    (`ends`, left and right) a side in the block's oak outside, at a joint a
+    board behind it, its edge dark, against the block beside it; the floor
+    oak underneath, where it is the niche's ceiling, the top oak above, as
+    the block was. The door hangs on its `hand` edge ("closet")."""
+    white, dark, t = mats["cab_white"], mats["kitchen_gap"], BOARD
+    body = face - FT - 0.001
+    la = a if ends[0] else a - GAP
+    rb = b if ends[1] else b + GAP
+    ia, ib = la + t, rb - t
+    edge = lambda end: wd if end else dark   # noqa: E731
+    parts = [_faced(col, white, la, ia, back, body, lo, top, "side", front=edge(ends[0]), left=wd, top=wd, bottom=wd),
+             _faced(col, white, ib, rb, back, body, lo, top, "side", front=edge(ends[1]), right=wd, top=wd, bottom=wd),
+             _faced(col, white, ia, ib, back, body, lo, lo + t, "floor", front=dark, bottom=wd),
+             _faced(col, white, ia, ib, back, body, top - t, top, "carcass", front=dark, top=wd),
+             _faced(col, white, ia, ib, back, back + t, lo + t, top - t, "back")]
+    shelf = min(top - 0.40, 2.0)
+    parts.append(_faced(col, white, ia + 0.001, ib - 0.001, back + t - 0.001, body - 0.01, shelf - t / 2, shelf + t / 2, "shelf"))
+    parts.append(g.cylinder("rail", 0.012, ib - ia + 0.002, loc=((ia + ib) / 2, (back + t + body) / 2, shelf - t / 2 - 0.07),
+                            rot=(0, PI / 2, 0), col=col, mat=mats["steel"], segments=12))
+    return parts + _hang([_slab(col, wd, a, b, lo, top, face)], a, b, face, hand, col, label="closet")
 
 
 def tv_wall(col, mats, w=1.23, h=0.72):
@@ -2395,34 +2962,54 @@ def sideboard(col, mats, w=2.40, d=0.45, h=0.75, wood="oak_mid", doors=None, pli
     """A low handleless oak sideboard (render 18): warm mid oak, standing
     on the floor like a built-in — no plinth unless asked — its doors
     joined by hairlines, a finger-pull shadow under the top. `fluted`: the
-    doors reeded upright, a half-round reed every 25 mm, 3 mm deep."""
-    wd = mats[wood]
+    doors reeded upright, a half-round reed every 25 mm, 3 mm deep.
+
+    A cupboard behind each door, oak inside, the boards' front edges and
+    the rail behind the finger pull dark as the solid carcass was, a shelf
+    in each; the doors open in pairs from the middle, one left over towards
+    its nearer end (_hands)."""
+    wd, dark, t = mats[wood], mats["kitchen_gap"], BOARD
     n = doors or max(2, round(w / 0.6))
     pl = 0.06 if plinth else 0.0
-    parts = [_block(col, mats["kitchen_gap"], -w / 2 + 0.018, w / 2 - 0.018, -d / 2, d / 2 - FT - 0.001, pl, h - 0.025),
-             _block(col, wd, -w / 2, -w / 2 + 0.018, -d / 2, d / 2, 0, h - 0.025, "side"),
-             _block(col, wd, w / 2 - 0.018, w / 2, -d / 2, d / 2, 0, h - 0.025, "side"),
-             _block(col, wd, -w / 2, w / 2, -d / 2, d / 2, h - 0.025, h, "top", bevel=0.002)]
+    xa, xb = -w / 2 + 0.018, w / 2 - 0.018
+    body = d / 2 - FT - 0.001                    # the carcass's front, a millimetre behind the doors
+    floor = pl + t if plinth else 0.012          # the cupboards' floor
+    under = h - 0.025                            # the top's underside
+    z0, z1 = max(pl, 0.012), h - 0.045           # the doors, the finger pull's shadow over them
+    parts = [_block(col, wd, -w / 2, xa, -d / 2, d / 2, 0, under, "side"),
+             _block(col, wd, xb, w / 2, -d / 2, d / 2, 0, under, "side"),
+             _block(col, wd, -w / 2, w / 2, -d / 2, d / 2, under, h, "top", bevel=0.002),
+             _board(col, wd, None, xa, xb, -d / 2, -d / 2 + t, floor, under, "back"),
+             _board(col, dark, dark, xa, xb, body - t, body, z1 - 0.012, under, "rail")]
     if plinth:
-        parts.append(_block(col, mats["kitchen_gap"], -w / 2 + 0.04, w / 2 - 0.04, -d / 2, d / 2 - 0.05, 0, pl, "plinth"))
+        parts += [_block(col, dark, -w / 2 + 0.04, w / 2 - 0.04, -d / 2, d / 2 - 0.05, 0, pl, "plinth"),
+                  _board(col, wd, dark, xa, xb, -d / 2, body, pl, pl + t)]
     else:
         parts.append(_block(col, wd, -w / 2 + 0.018, w / 2 - 0.018, -d / 2 + 0.02, d / 2, 0, 0.012, "bottom"))
     dw = (w - 0.036) / n
-    for i in range(n):
-        x0 = -w / 2 + 0.018 + i * dw
+    mods = [("door", xa + i * dw, xa + (i + 1) * dw) for i in range(n)]
+    hands = _hands(mods, (False, False))
+    for i, (_, x0, x1) in enumerate(mods):
+        # Its cupboard: a board behind each joint, a shelf halfway up.
+        if i:
+            parts.append(_board(col, wd, dark, x0 - t / 2, x0 + t / 2, -d / 2 + t, body, floor, z1 - 0.012))
+        ia, ib = (x0 + t / 2 if i else x0), (x1 - t / 2 if i < n - 1 else x1)
+        mid = (floor + z1 - 0.012) / 2
+        parts.append(_board(col, wd, None, ia + 0.001, ib - 0.001, -d / 2 + t - 0.001, body - 0.01, mid - t / 2, mid + t / 2, "shelf"))
         if not fluted:
-            parts.append(_slab(col, wd, x0, x0 + dw, max(pl, 0.012), h - 0.045, d / 2))
-            continue
-        xa, xb = x0 + GAP, x0 + dw - GAP
-        k = max(1, round((xb - xa) / 0.025))
-        front = []
-        for j in range(k):
-            for q in range(6):
-                u = q / 6
-                front.append((xb - (xb - xa) * (j + u) / k, d / 2 - 0.003 * (1 - math.sin(PI * u))))
-        front.append((xa, d / 2 - 0.003))
-        outline = [(xa, d / 2 - FT), (xb, d / 2 - FT)] + front
-        parts.append(_eased_prism("front", outline, max(pl, 0.012) + GAP, h - 0.045 - GAP, col, wd, ease=0.0))
+            front = _slab(col, wd, x0, x1, z0, z1, d / 2)
+        else:
+            fa, fb = x0 + GAP, x1 - GAP
+            k = max(1, round((fb - fa) / 0.025))
+            reeds = []
+            for j in range(k):
+                for q in range(6):
+                    u = q / 6
+                    reeds.append((fb - (fb - fa) * (j + u) / k, d / 2 - 0.003 * (1 - math.sin(PI * u))))
+            reeds.append((fa, d / 2 - 0.003))
+            outline = [(fa, d / 2 - FT), (fb, d / 2 - FT)] + reeds
+            front = _eased_prism("front", outline, z0 + GAP, z1 - GAP, col, wd, ease=0.0)
+        parts += _hang([front], x0, x1, d / 2, hands[i][0], col)
     return parts
 
 
@@ -3281,22 +3868,46 @@ def nightstand(col, mats, w=1.0, d=0.40, h=0.15, wood="walnut_veneer"):
     back over its lighter top, one drawer front set into it 3 mm behind an
     8 mm shadow gap all round, a slim light-oak bar pull 0.20 m long in the
     middle: hang it with its top 7 cm under the mattress's (y = 0.28). Back
-    at -Y."""
-    wd = mats[wood]
+    at -Y.
+
+    Hollow, lined dark where the solid one was dark, so the shadow gap
+    still reads as one: the drawer runs out on a light oak box inside its
+    front's outline, by three quarters of its depth."""
+    wd, dark = mats[wood], mats["kitchen_gap"]
     e, gp = 0.014, 0.008
     face = d / 2
     fr = face - 0.003                                # the drawer front's face
-    parts = [_block(col, mats["kitchen_gap"], -w / 2 + e - 0.001, w / 2 - e + 0.001, -d / 2 + 0.001, face - 0.016, e - 0.001,
-                    h - e + 0.001),
-             _block(col, mats["walnut_top"], -w / 2, w / 2, -d / 2, face, h - e, h, "case", bevel=0.0015),
+    # The case, and the dark lining inside it from 16 mm behind its face, as
+    # the solid block's front was: the lining's back, top, floor and sides.
+    li0, li1, lz0, lz1 = -w / 2 + e - 0.001, w / 2 - e + 0.001, e - 0.001, h - e + 0.001
+    lb, lf, k = -d / 2 + 0.001, face - 0.016, 0.003
+    parts = [_block(col, mats["walnut_top"], -w / 2, w / 2, -d / 2, face, h - e, h, "case", bevel=0.0015),
              _block(col, wd, -w / 2, w / 2, -d / 2, face, 0, e, "case", bevel=0.0015),
              _block(col, wd, -w / 2, -w / 2 + e, -d / 2, face, e, h - e, "case"),
              _block(col, wd, w / 2 - e, w / 2, -d / 2, face, e, h - e, "case"),
-             _block(col, wd, -w / 2 + e + gp, w / 2 - e - gp, fr - 0.019, fr, e + gp, h - e - gp, "front", bevel=0.001)]
-    parts.append(g.box("pull", (0.20, 0.010, 0.010), loc=(0, fr + 0.016, h / 2), col=col, mat=mats["oak_veneer"], bevel=0.003))
+             _block(col, dark, li0, li1, lb, lb + k, lz0, lz1, "lining"),
+             _block(col, dark, li0, li1, lb + k, lf, lz1 - k, lz1, "lining"),
+             _block(col, dark, li0, li1, lb + k, lf, lz0, lz0 + k, "lining"),
+             _block(col, dark, li0, li0 + k, lb + k, lf, lz0 + k, lz1 - k, "lining"),
+             _block(col, dark, li1 - k, li1, lb + k, lf, lz0 + k, lz1 - k, "lining")]
+    # The drawer: the front and its pull, and behind it the box, inside the
+    # front's outline and lower than it, so none of it shows in the gap.
+    fx0, fx1, fz0, fz1 = -w / 2 + e + gp, w / 2 - e - gp, e + gp, h - e - gp
+    oak = mats["oak_veneer"]
+    bx0, bx1, bz0, bz1, b = fx0 + 0.004, fx1 - 0.004, fz0 + 0.002, fz1 - 0.012, 0.008
+    y1, y0 = fr - 0.019 + 0.001, lb + k + 0.012
+    drawer = [_block(col, wd, fx0, fx1, fr - 0.019, fr, fz0, fz1, "front", bevel=0.001),
+              g.box("pull", (0.20, 0.010, 0.010), loc=(0, fr + 0.016, h / 2), col=col, mat=mats["oak_veneer"], bevel=0.003)]
     for s_ in (-1, 1):
-        parts.append(g.box("post", (0.008, 0.013, 0.006), loc=(s_ * 0.09, fr + 0.0055, h / 2), col=col, mat=mats["oak_veneer"]))
-    return parts
+        drawer.append(g.box("post", (0.008, 0.013, 0.006), loc=(s_ * 0.09, fr + 0.0055, h / 2), col=col, mat=mats["oak_veneer"]))
+    # Over the box, a dark board from the lining's back to just behind the
+    # front, under which the box runs: what the top of the shadow gap
+    # shows, seen from above, as the solid block did.
+    parts.append(_block(col, dark, li0 + k, li1 - k, lb + k, fr - 0.0205, bz1 + 0.002, lz1 - k, "lining"))
+    drawer += [_block(col, oak, bx0, bx1, y0, y1, bz0, bz0 + b, "tray"),
+               _block(col, oak, bx0, bx0 + b, y0, y1, bz0 + b, bz1, "tray"), _block(col, oak, bx1 - b, bx1, y0, y1, bz0 + b, bz1, "tray"),
+               _block(col, oak, bx0 + b, bx1 - b, y0, y0 + b, bz0 + b, bz1, "tray")]
+    return parts + g.sliding(drawer, (0.0, fr, h / 2), (0, 1), (y1 - y0) * 0.75, col, label="drawer")
 
 
 def wardrobe(col, mats, w=1.80, h=FULL, d=0.58):
@@ -3304,21 +3915,74 @@ def wardrobe(col, mats, w=1.80, h=FULL, d=0.58):
     one door alone under 0.9 m — wrapped in a beige-grey linen twill, with
     hairline joints, and one big solid walnut disc pull, 0.34 m across and
     4 cm thick, on each pair's middle joint at 0.98 m (a lone door's near
-    its opening edge)."""
-    lin = mats["linen_panel"]
+    its opening edge).
+
+    Hollow behind its doors, white inside, the edges of its boards dark as
+    the solid carcass was: a bay behind each pair, a board between each two,
+    a shelf across each at 2 m and a rail under it to hang clothes on. A
+    pair opens from the middle, each door hung on its outer edge
+    ("wardrobe"), its disc pull cut down the joint into a half on each; a
+    lone door hangs on its edge away from its pull. Each swings short of a
+    right angle by as much as keeps its pull, standing 4 cm proud of it,
+    from passing back over the line it hangs on (_pull_swing): open, the
+    pull stays clear of a wall the wardrobe stands against end-on and of
+    the door hung on the same joint beside it."""
+    lin, dark, white, t = mats["linen_panel"], mats["kitchen_gap"], mats["cab_white"], BOARD
     n = 1 if w < 0.9 else max(2, 2 * round(w / 1.1))
     dw = w / n
-    parts = [_block(col, mats["kitchen_gap"], -w / 2 + 0.018, w / 2 - 0.018, -d / 2, d / 2 - FT - 0.001, 0.0, h),
-             _block(col, lin, -w / 2, -w / 2 + 0.018, -d / 2, d / 2 - FT - 0.001, 0.0, h, "side"),
-             _block(col, lin, w / 2 - 0.018, w / 2, -d / 2, d / 2 - FT - 0.001, 0.0, h, "side")]
+    yb, face = -d / 2, d / 2
+    body = face - 0.022 - 0.001                  # a millimetre behind the doors' backs
+    xa, xb = -w / 2 + 0.018, w / 2 - 0.018       # inside the finished side panels
+    parts = [_block(col, lin, -w / 2, xa, yb, body, 0.0, h, "side"),
+             _block(col, lin, xb, w / 2, yb, body, 0.0, h, "side"),
+             _board(col, white, dark, xa, xb, yb, body, 0.0, t),
+             _board(col, white, dark, xa, xb, yb, body, h - t, h, up=True),
+             _board(col, white, None, xa, xb, yb, yb + t, t, h - t, "back")]
+    # A bay behind each pair (or the lone door), a board between each two.
+    walls = [-w / 2 + 2 * k * dw for k in range(1, (n + 1) // 2)]
+    for x in walls:
+        parts.append(_board(col, white, dark, x - t / 2, x + t / 2, yb + t, body, t, h - t))
+    shelf = min(h - 0.35, 2.0)
+    for a, b in zip([xa] + [x + t / 2 for x in walls], [x - t / 2 for x in walls] + [xb]):
+        parts.append(_board(col, white, None, a + 0.001, b - 0.001, yb + t - 0.001, body - 0.01, shelf - t / 2, shelf + t / 2,
+                            "shelf"))
+        parts.append(g.cylinder("rail", 0.012, b - a + 0.002, loc=((a + b) / 2, (yb + t + body) / 2, shelf - t / 2 - 0.07),
+                                rot=(0, PI / 2, 0), col=col, mat=mats["steel"], segments=12))
+
+    r, proud = 0.17, 0.04
+
+    def disc():
+        return g.cylinder("pull", r, proud, loc=(0.0, face + proud / 2, 0.98), rot=(PI / 2, 0, 0), col=col, mat=mats["walnut_top"],
+                          segments=56)
+
     for i in range(n):
-        x0 = -w / 2 + i * dw
-        parts.append(_slab(col, lin, x0, x0 + dw, 0.0, h, d / 2, t=0.022))
-    seams = [-w / 2 + (i + 1) * dw for i in range(0, n - 1, 2)] if n > 1 else [w / 2 - 0.20]
-    for x in seams:
-        parts.append(g.cylinder("pull", 0.17, 0.04, loc=(x, d / 2 + 0.02, 0.98), rot=(PI / 2, 0, 0), col=col,
-                                mat=mats["walnut_top"], segments=56))
-    return _fixed(parts)
+        x0, x1 = -w / 2 + i * dw, -w / 2 + (i + 1) * dw
+        front = [_slab(col, lin, x0, x1, 0.0, h, face, t=0.022)]
+        if n == 1:
+            pull = disc()
+            pull.location.x = w / 2 - 0.20
+            front.append(pull)
+            side, near = -1, w / 2 - 0.20 - r - (x0 + GAP)
+        else:
+            # Its half of the pair's disc, cut flush with its joint.
+            side = -1 if i % 2 == 0 else 1
+            seam = x1 if side < 0 else x0
+            pull = disc()
+            pull.location.x = seam
+            front += _cut([pull], (seam + side * GAP, 0.0), (-side, 0.0))
+            near = dw - GAP - r
+        parts += _hang(front, x0, x1, face, side, col, label="wardrobe", swing=_pull_swing(near, proud))
+    return parts
+
+
+def _pull_swing(near, proud, clear=0.002):
+    """How far a door with a pull `proud` of its face, the pull's nearest
+    point `near` from the hinge along the door, may swing — a right angle
+    at most — and keep the pull from passing back over the line the door
+    hangs on, `clear` short of it: open about the outer corner of its
+    face, everything on that face turns back past the hinge by its height
+    times the sine of the angle."""
+    return min(K_SWING, math.atan2(near, proud + clear))
 
 
 def rug(col, mats, w, d, mat, r=0.12, t=0.007):
@@ -3453,17 +4117,29 @@ def candles_out(col, mats):
 def outdoor_kitchen(col, mats, w=1.6, d=0.70, grill=False, mirror=False):
     """An outdoor kitchen (render 22): a warm wood cabinet base under a
     thick cream stone top, a white upstand along the back, a sink with a
-    black gooseneck mixer — and, `grill`, a built-in grill under a lid."""
+    black gooseneck mixer — and, `grill`, a built-in grill under a lid.
+
+    The cabinet is hollow behind its doors, teak inside, its boards' edges
+    dark as the solid one was, one shelf under the sink's bowl; its doors
+    open in pairs from the middle (_hands), a door left over towards its
+    nearer end."""
     hgt = 0.90
     tt = 0.1
-    wd = mats["teak"]
-    parts = [_block(col, mats["kitchen_gap"], -w / 2 + 0.05, w / 2 - 0.05, -d / 2 + 0.02, d / 2 - 0.08, 0, 0.08, "plinth"),
-             _block(col, mats["kitchen_gap"], -w / 2 + 0.02, w / 2 - 0.02, -d / 2 + 0.02, d / 2 - 0.06 - 0.02, 0.08, hgt - tt)]
+    wd, dark = mats["teak"], mats["kitchen_gap"]
+    face = d / 2 - 0.06
+    back, front = -d / 2 + 0.02, face - 0.022 - 0.001
+    xa, xb = -w / 2 + 0.02, w / 2 - 0.02
+    parts = [_block(col, dark, -w / 2 + 0.05, w / 2 - 0.05, -d / 2 + 0.02, d / 2 - 0.08, 0, 0.08, "plinth"),
+             _board(col, wd, dark, xa, xb, back, front, 0.08, 0.08 + BOARD),
+             _board(col, wd, None, xa, xb, back, back + BOARD, 0.08 + BOARD, hgt - tt, "back"),
+             _board(col, wd, None, xa + 0.001, xb - 0.001, back + BOARD - 0.001, front - 0.01, 0.42 - BOARD / 2, 0.42 + BOARD / 2,
+                    "shelf")]
     n = max(2, round(w / 0.55))
     dw = (w - 0.04) / n
-    for i in range(n):
-        x0 = -w / 2 + 0.02 + i * dw
-        parts.append(_slab(col, wd, x0, x0 + dw, 0.08, hgt - tt, d / 2 - 0.06, t=0.022))
+    doors = [("door", -w / 2 + 0.02 + i * dw, -w / 2 + 0.02 + (i + 1) * dw) for i in range(n)]
+    hands = _hands(doors, (False, False))
+    for i, (_, x0, x1) in enumerate(doors):
+        parts += _hang([_slab(col, wd, x0, x1, 0.08, hgt - tt, face, t=0.022)], x0, x1, face, hands[i][0], col)
     for s in (-1, 1):
         parts.append(_block(col, wd, s * w / 2 - (0.02 if s > 0 else 0), s * w / 2 + (0 if s > 0 else 0.02), -d / 2 + 0.02, d / 2 - 0.06,
                             0.0, hgt - tt, "side"))
@@ -3481,7 +4157,8 @@ def outdoor_kitchen(col, mats, w=1.6, d=0.70, grill=False, mirror=False):
                         center=(sx, cy, under - 0.19), col=col, mat=mats["steel"]))
     # The white upstand along the back.
     parts.append(_block(col, mats["render_white"], -w / 2, w / 2, -d / 2 - 0.0, -d / 2 + 0.12, hgt, hgt + 0.32, "upstand", bevel=0.004))
-    parts += _gooseneck(col, mats, sx, -d / 2 + 0.17, hgt, "black_metal_matte", h=0.34, reach=0.2)
+    # Its mixer runs cold, into the bowl's floor.
+    parts += _gooseneck(col, mats, sx, -d / 2 + 0.17, hgt, "black_metal_matte", h=0.34, reach=0.2, floor=under - 0.187, hot=False)
     if grill:
         gx = w / 2 - 0.45
         parts.append(_block(col, mats["black_metal_matte"], gx - 0.33, gx + 0.33, -d / 2 + 0.14, d / 2 - 0.06, hgt, hgt + 0.012, "grill"))
@@ -3728,8 +4405,18 @@ def mirrored(parts):
             loc, rot = p.location.copy(), p.rotation_euler.copy()
             p.location = (-loc.x, loc.y, loc.z)
             p.rotation_euler = (rot.x, -rot.y, PI - rot.z if "opens" in p and p["opens"].get("type") == "slide" else -rot.z)
-            if "opens" in p and p["opens"].get("type") == "hinge":
+            # A hinge turns the other way: about the up axis by the opposite
+            # angle; hung on an axis of its own (geometry.hinged's `axis`),
+            # the turn just given its marker has reversed that axis already.
+            if "opens" in p and p["opens"].get("type") == "hinge" and not p.get("axis"):
                 p["opens"]["angle"] = -p["opens"]["angle"]
+            # A shower's steam: its glass panes' footprints, said from the
+            # marker, mirrored with it (a size needs nothing: geometry.steam).
+            fixture = p.get("fixture")
+            if fixture is not None and "screens" in fixture.get("steam", {}):
+                props = fixture.to_dict()
+                props["steam"]["screens"] = [[-x1, -x0, y0, y1] for x0, x1, y0, y1 in props["steam"]["screens"]]
+                p["fixture"] = props
     return parts
 
 
@@ -3830,7 +4517,11 @@ def shower_walkin(col, mats, w=2.18, d=1.10, h=2.10, screen=1.0, side=1, style="
     ledge under, so the window in the wall behind shows (A1+B1-3); the
     bottles stand on the ledge instead of in a niche, the rain head hangs
     from the ceiling, and the mixer and the screen's stay keep to the
-    tiles beside the opening."""
+    tiles beside the opening.
+
+    Its water falls from the rain head to the tray, turned on at the mixer
+    (the bar valve, chrome), and its steam fills the tray's length to the
+    screen's top (geometry.water, control, steam)."""
     if window and side < 0:
         window = (-window[1], -window[0], window[2])
     black = style == "black"
@@ -3901,11 +4592,15 @@ def shower_walkin(col, mats, w=2.18, d=1.10, h=2.10, screen=1.0, side=1, style="
         parts += [g.cylinder("swivel", 0.013, 0.032, loc=(hx, hy, az - 0.016), col=col, mat=fit, segments=12),
                   g.box("rain_head", (0.30, 0.30, 0.008), loc=(hx, hy, az - 0.035), col=col, mat=fit, bevel=0.003, segments=2),
                   g.box("nozzles", (0.27, 0.27, 0.002), loc=(hx, hy, az - 0.0395), col=col, mat=mats["trim_charcoal"])]
+        # Its water, from the nozzles' face to the tray, a little wider than the head where it lands.
+        mouth = az - 0.0405
+        parts.append(g.water((hx, hy, mouth), "rain", mouth - T, (0.36, 0.36), "rain", size=(0.27, 0.27)))
         # Wall mixer by the entry, a hand spray in a holder over it and its hose.
         mx = w / 2 - screen + 0.08
         if window:
             mx = min(mx, window[0] - 0.09)
-        parts += [g.box("mixer_plate", (0.10, 0.012, 0.22), loc=(mx, yf + 0.006, 1.05), col=col, mat=fit, bevel=0.004, segments=2)]
+        parts += [g.box("mixer_plate", (0.10, 0.012, 0.22), loc=(mx, yf + 0.006, 1.05), col=col, mat=fit, bevel=0.004, segments=2),
+                  g.control_round((mx - 0.05, yf, 1.05 - 0.11), (mx + 0.05, yf + 0.062, 1.05 + 0.11), ["rain"])]
         for dz in (-0.055, 0.055):
             parts += [g.cylinder("mixer_knob", 0.022, 0.042, loc=(mx, yf + 0.032, 1.05 + dz), rot=(PI / 2, 0, 0), col=col, mat=fit,
                                  segments=16),
@@ -3921,7 +4616,14 @@ def shower_walkin(col, mats, w=2.18, d=1.10, h=2.10, screen=1.0, side=1, style="
         parts.append(g.sweep("hose", hose, 0.0065, sides=6, col=col, mat=fit))
     else:
         from . import joinery
-        parts += joinery._shower_kit(col, mats, w / 2 - screen / 2, yf, reach=(d - pw) / 2)
+        parts += joinery._shower_kit(col, mats, w / 2 - screen / 2, yf, reach=(d - pw) / 2, floor=T)
+
+    # The steam's space: the tray from the back wall's tiles to its open
+    # front, from its floor to the screen's top; the screen mists.
+    sy, sz = (yf + d / 2) / 2, (T + TOP) / 2
+    pane = (xs0 + 0.01, xs1 - 0.01) if black else (xs0, xs1 - 0.006)
+    parts.append(g.steam((0.0, sy, sz), (w / 2, (d / 2 - yf) / 2, (TOP - T) / 2), [(pane[0], pane[1], gy - 0.004 - sy, gy + 0.004 - sy)],
+                         col))
     return mirrored(parts) if side < 0 else parts
 
 
@@ -3936,18 +4638,24 @@ def _vessel(col, mats, x, y, z, rx=0.21, ry=0.17, mat="porcelain"):
     return [shell, g.cylinder("waste", 0.02, 0.003, loc=(x, y, z + 0.0135), col=col, mat=mats["black_metal_matte"], segments=16)]
 
 
-def _vessel_tap(col, mats, x, y, z, h=0.30, reach=0.17, mat="black_metal_matte"):
+def _vessel_tap(col, mats, x, y, z, h=0.30, reach=0.17, mat="black_metal_matte", floor=None, group="basin"):
     """A tall single-lever basin mixer for a vessel: a column, a straight
-    spout over the bowl (+Y), a lever on its side."""
+    spout over the bowl (+Y), a lever on its side. Given the vessel's
+    `floor`, the water's fixtures too, as joinery.basin_mixer's."""
     m = mats[mat]
     sz = z + h - 0.03
-    return [g.cylinder("tap_base", 0.024, 0.012, loc=(x, y, z + 0.006), col=col, mat=m, segments=16),
-            g.cylinder("tap_body", 0.0155, h - 0.01, loc=(x, y, z + 0.01 + (h - 0.01) / 2), col=col, mat=m, segments=16),
-            g.cylinder("tap_spout", 0.0105, reach, loc=(x, y + reach / 2, sz), rot=(PI / 2, 0, 0), col=col, mat=m, segments=12),
-            g.cylinder("tap_outlet", 0.012, 0.024, loc=(x, y + reach - 0.004, sz - 0.01), col=col, mat=m, segments=12),
-            g.cylinder("tap_hub", 0.012, 0.02, loc=(x + 0.022, y, z + h - 0.07), rot=(0, PI / 2, 0), col=col, mat=m, segments=12),
-            g.cylinder("tap_lever", 0.006, 0.07, loc=(x + 0.062, y, z + h - 0.058), rot=(0, PI / 2 - 0.3, 0), col=col, mat=m,
-                       segments=8)]
+    parts = [g.cylinder("tap_base", 0.024, 0.012, loc=(x, y, z + 0.006), col=col, mat=m, segments=16),
+             g.cylinder("tap_body", 0.0155, h - 0.01, loc=(x, y, z + 0.01 + (h - 0.01) / 2), col=col, mat=m, segments=16),
+             g.cylinder("tap_spout", 0.0105, reach, loc=(x, y + reach / 2, sz), rot=(PI / 2, 0, 0), col=col, mat=m, segments=12),
+             g.cylinder("tap_outlet", 0.012, 0.024, loc=(x, y + reach - 0.004, sz - 0.01), col=col, mat=m, segments=12),
+             g.cylinder("tap_hub", 0.012, 0.02, loc=(x + 0.022, y, z + h - 0.07), rot=(0, PI / 2, 0), col=col, mat=m, segments=12),
+             g.cylinder("tap_lever", 0.006, 0.07, loc=(x + 0.062, y, z + h - 0.058), rot=(0, PI / 2 - 0.3, 0), col=col, mat=m,
+                        segments=8)]
+    if floor is not None:
+        mouth = sz - 0.022                       # the outlet's underside
+        parts += [g.water((x, y + reach - 0.004, mouth), "tap", mouth - floor, (0.12, 0.12), group, r=0.009),
+                  g.control_round((x - 0.024, y - 0.024, z), (x + 0.096, y + reach + 0.008, z + h), [group])]
+    return parts
 
 
 def vanity_double(col, mats, w=1.45, d=0.45, wood="oak_veneer", tap="black_metal_matte"):
@@ -3955,24 +4663,56 @@ def vanity_double(col, mats, w=1.45, d=0.45, wood="oak_veneer", tap="black_metal
     handleless drawers under a solid top with a finger-pull shadow, two
     white oval vessel basins with tall black mixers, and one wide mirror
     in a slim black frame over them. Back at -Y; hang it with its
-    underside at 0.40 m (y = 0.40), its top is then at 0.80."""
-    wd = mats[wood]
+    underside at 0.40 m (y = 0.40), its top is then at 0.80.
+
+    Hollow behind its drawers, white inside, a board between them and a
+    dark rail behind the finger pull, as the solid carcass showed there:
+    each drawer slides out on a U-shaped tray round the waste of the basin
+    over it, which drops through the top and runs back to the wall in a
+    trap. Each mixer's water falls into its basin ("basin1" at -X, then
+    "basin2")."""
+    wd, dark, white = mats[wood], mats["kitchen_gap"], mats["cab_white"]
     z0, z1, tt = 0.40, 0.80, 0.03
     yb, yf = -d / 2, d / 2
-    parts = [_block(col, mats["kitchen_gap"], -w / 2 + 0.018, w / 2 - 0.018, yb, yf - FT - 0.001, z0 + 0.012, z1 - tt, "inside"),
-             _block(col, wd, -w / 2, -w / 2 + 0.018, yb, yf, z0, z1 - tt, "side"),
+    t = BOARD
+    xa, xb = -w / 2 + 0.018, w / 2 - 0.018
+    body = yf - FT - 0.001                       # the carcass's front, a millimetre behind the drawers
+    under = z1 - tt                              # the top's underside
+    dz1 = under - 0.02                           # the drawers' top, under the finger pull
+    parts = [_block(col, wd, -w / 2, -w / 2 + 0.018, yb, yf, z0, z1 - tt, "side"),
              _block(col, wd, w / 2 - 0.018, w / 2, yb, yf, z0, z1 - tt, "side"),
              _block(col, wd, -w / 2 + 0.018, w / 2 - 0.018, yb, yf, z0, z0 + 0.012, "bottom"),
-             _block(col, wd, -w / 2, w / 2, yb, yf, z1 - tt, z1, "top", bevel=0.002)]
+             _block(col, wd, -w / 2, w / 2, yb, yf, z1 - tt, z1, "top", bevel=0.002),
+             _board(col, white, None, xa, xb, yb, yb + t, z0 + 0.012, under, "back"),
+             _board(col, white, dark, -t / 2, t / 2, yb + t, body, z0 + 0.012, under),
+             _board(col, dark, dark, xa, xb, body - t, body, dz1 - 0.012, under, "rail")]
     dw = (w - 0.036) / 2
-    for i in range(2):
-        x0 = -w / 2 + 0.018 + i * dw
-        parts.append(_slab(col, wd, x0, x0 + dw, z0 + 0.012, z1 - tt - 0.02, yf))
     ty = yb + 0.045
-    for s in (-1, 1):
-        bx, by = s * w / 4, 0.02
+    for i, s_ in enumerate((-1, 1)):
+        x0 = -w / 2 + 0.018 + i * dw
+        bx, by = s_ * w / 4, 0.02
         parts += _vessel(col, mats, bx, by, z1)
-        parts += _vessel_tap(col, mats, bx, ty, z1, reach=by - ty - 0.02, mat=tap)
+        parts += _vessel_tap(col, mats, bx, ty, z1, reach=by - ty - 0.02, mat=tap, floor=z1 + 0.014, group=f"basin{i + 1}")
+        # The trap, from the basin's waste down through the top and back to the wall.
+        parts.append(g.sweep("trap", g.catmull_rom([(bx, by, under + 0.004), (bx, by, under - 0.10), (bx, by - 0.04, under - 0.17),
+                                                    (bx, by - 0.12, under - 0.17), (bx, yb + t - 0.005, under - 0.14)], steps=2),
+                             0.016, sides=8, col=col, mat=mats["white_matte"]))
+        # The drawer: its front, and a white tray inside the carcass's
+        # boards, U-shaped round the trap — open at the back, so the trap
+        # stays in the notch as the drawer runs out.
+        tx0 = (xa if i == 0 else t / 2) + 0.006
+        tx1 = (-t / 2 if i == 0 else xb) - 0.006
+        y1, y0 = yf - FT + 0.001, yb + t + 0.01
+        zf, zt = z0 + 0.012 + 0.008, dz1 - 0.04
+        n0, n1, ny, k = bx - 0.055, bx + 0.055, by + 0.055, 0.012
+        drawer = [_slab(col, wd, x0, x0 + dw, z0 + 0.012, dz1, yf),
+                  _block(col, white, tx0, n0, y0, y1, zf, zf + k, "tray"), _block(col, white, n1, tx1, y0, y1, zf, zf + k, "tray"),
+                  _block(col, white, n0, n1, ny, y1, zf, zf + k, "tray"),
+                  _block(col, white, tx0, tx0 + k, y0, y1, zf + k, zt, "tray"), _block(col, white, tx1 - k, tx1, y0, y1, zf + k, zt, "tray"),
+                  _block(col, white, tx0 + k, n0, y0, y0 + k, zf + k, zt, "tray"), _block(col, white, n1, tx1 - k, y0, y0 + k, zf + k, zt, "tray"),
+                  _block(col, white, n0, n0 + k, y0, ny, zf + k, zt, "tray"), _block(col, white, n1 - k, n1, y0, ny, zf + k, zt, "tray"),
+                  _block(col, white, n0 + k, n1 - k, ny, ny + k, zf + k, zt, "tray")]
+        parts += g.sliding(drawer, (x0 + dw / 2, yf, (z0 + dz1) / 2), (0, 1), (y1 - y0) * 0.75, col, label="drawer")
     # The mirror: glass set a few millimetres back in a slim black frame.
     fm = mats["black_metal_matte"]
     mw, m0, m1, fb = 1.20, 1.15, 1.90, 0.015
@@ -4042,6 +4782,11 @@ def outdoor_shower(col, mats, h=2.25):
     hose = g.catmull_rom([(0, py + 0.06, mz - 0.02), (0.01, py + 0.07, 0.86), (0.04, py + 0.08, 0.70), (0.075, py + 0.06, 0.64),
                           (0.095, py + 0.03, 0.70), (0.08, py + 0.008, 0.80), (hx, py, 0.84)], steps=4)
     parts.append(g.sweep("hose", hose, 0.0065, sides=8, col=col, mat=st))
+    # Its water, cold, from the nozzles to the teak plate under them,
+    # turned on at the lever mixer.
+    mouth = zc - pr - 0.0315
+    parts += [g.water((0, hy, mouth), "rain", mouth - 0.047, (0.30, 0.30), "rain", hot=False, r=0.105),
+              g.control_round((-0.025, py + 0.005, mz - 0.025), (0.025, py + 0.168, mz + 0.085), ["rain"])]
     return parts
 
 

@@ -1,6 +1,7 @@
 import * as THREE from "three";
 
 import Door from "../Door.js";
+import WindowSash, { OPENS_FROM_SILL, paneHinge, windowOpens } from "../Sash.js";
 import KitLibrary, { boxUVs, mergeParts, mirror } from "./KitLibrary.js";
 import { FINISHES } from "../../../../shared/catalog.js";
 import { GROUND_DROP } from "../../../../shared/vegetation.js";
@@ -28,6 +29,10 @@ import { ensureCCW, isConvex, subtractConvex } from "../../Utils/geometry.js";
  * That joinery, the window frames and the door leaves come from the Blender
  * kit of parts (KitLibrary) when it has loaded, stretched to each opening
  * and flight; without it, from boxes of the same size.
+ *
+ * A slim window that opens (World/Sash.js's windowOpens) has a sash in each
+ * of its panes in place of the one sheet of glass, hung in the wall as a
+ * door's leaf is, and an invisible pane in its opening that collides.
  */
 
 /** Handrail height, above a floor or a flight's pitch line. */
@@ -53,9 +58,22 @@ const STRING_ABOVE = 0.065;
 const CLOSET_PANEL = 0.04;
 const CLOSET_SLAB = 0.25;
 
+/** A slim window's aluminium sections: how wide each shows, how deep, and
+ *  how far its frame is set back from its wall's outside face (side A). */
+const SLIM_SECTION = 0.055;
+const SLIM_DEPTH = 0.07;
+const SLIM_SET_BACK = 0.05;
+/** The invisible pane that bars an opening window's way (blocker), thick. */
+const WINDOW_BAR = 0.02;
+
 /** A box, already moved to where it goes, ready to be merged. */
 function boxAt(w, h, d, x, y, z) {
     return new THREE.BoxGeometry(w, h, d).translate(x, y, z);
+}
+
+/** Where a slim window's frame stands through its wall: its middle's Z, towards side A. */
+function slimFrameZ(wall) {
+    return wall.thickness / 2 - SLIM_DEPTH / 2 - SLIM_SET_BACK;
 }
 
 /**
@@ -308,14 +326,15 @@ export default class StructureBuilder {
 
     /**
      * One wall, split into solid panels around its openings, with a door
-     * built into every `door` opening.
+     * built into every `door` opening, and a sash into each pane of a
+     * window that opens.
      *
      * A wall has two faces: side A is +Z in the wall's local frame (the left
      * of the start→end direction), side B is -Z. Each can carry its own
      * finish, which is why the panels use a six-material BoxGeometry rather
      * than a single material.
      *
-     * @returns {{group, surfaces, doors}}
+     * @returns {{group, surfaces, doors, windows}}  `windows` its sashes (World/Sash.js), hung in `group` already
      */
     buildWall(wall) {
         const group = new THREE.Group();
@@ -385,6 +404,7 @@ export default class StructureBuilder {
 
         const openings = [...wall.openings].sort((a, b) => a.offset - b.offset);
         const doors = [];
+        const windows = [];
         let cursor = 0;
 
         for (const opening of openings) {
@@ -423,7 +443,7 @@ export default class StructureBuilder {
                 doors.push(door);
                 if (opening.blind != null) this.addBlind(group, opening, wall, half, openingTag, this.materials.getTrim(opening.door?.frame || "frame_anthracite"));
             } else if (opening.type === "window") {
-                this.addWindow(group, opening, wall, half, openingTag);
+                windows.push(...this.addWindow(group, opening, wall, half, openingTag));
             }
 
             cursor = end;
@@ -452,7 +472,7 @@ export default class StructureBuilder {
             },
         ];
 
-        return { group, surfaces, doors };
+        return { group, surfaces, doors, windows };
     }
 
     /**
@@ -597,30 +617,51 @@ export default class StructureBuilder {
      * kit, the frame is a moulded frame-and-sash ring no deeper than a real
      * one, set in the middle of the reveal; without it, four boxes most of
      * the wall's depth.
+     *
+     * A slim window that opens (World/Sash.js's windowOpens) has a sash in
+     * each pane instead of its one sheet of glass, and — its sill too high
+     * to step over — an invisible pane in the outer half of its frame's
+     * depth, outside the sashes, that collides whether they are open or
+     * not: the glass did, and a sash, which moves, is in no collision tree.
+     * Its fixed frame, its mullions and its blind are as they always were,
+     * so a publish's snapshot of it, and the bake of that, are unchanged.
+     *
+     * @returns {WindowSash[]}  its sashes, hung in `group`; none for a window that stays fixed
      */
     addWindow(group, opening, wall, half, tag) {
         const frameMaterial = this.materials.getTrim(opening.frame || "trim_white");
         const x = opening.offset - half;
         const y = opening.sill + opening.height / 2;
+        const slim = opening.style === "slim";
 
-        const glass = new THREE.Mesh(
-            this.track(new THREE.BoxGeometry(opening.width - 0.08, opening.height - 0.08, 0.015)),
-            this.materials.getTrim(opening.style === "slim" ? "glass_solar" : "glass", "glass")
-        );
-        glass.position.set(x, y, 0);
-        glass.userData = { ...tag };
-        group.add(glass);
+        const sashes = this.windowSashes(opening, wall, half, tag);
+        for (const sash of sashes) group.add(sash.group);
+        if (sashes.length && opening.sill >= OPENS_FROM_SILL) {
+            const bar = this.blocker(opening.width, opening.height, WINDOW_BAR, "Window");
+            bar.position.set(x, y, slimFrameZ(wall) + SLIM_DEPTH / 2 - WINDOW_BAR / 2);
+            bar.userData.wallId = wall.id;
+            bar.userData.openingId = opening.id;
+            group.add(bar);
+        } else if (!sashes.length) {
+            const glass = new THREE.Mesh(
+                this.track(new THREE.BoxGeometry(opening.width - 0.08, opening.height - 0.08, 0.015)),
+                this.materials.getTrim(slim ? "glass_solar" : "glass", "glass")
+            );
+            glass.position.set(x, y, slim ? slimFrameZ(wall) : 0);
+            glass.userData = { ...tag };
+            group.add(glass);
+        }
 
         const kit = this.kit;
         const [across, up] = opening.panes || [1, 1];
         const parts = [];
 
-        if (opening.style === "slim") {
+        if (slim) {
             // A modern window: slim aluminium sections set towards the
             // outside of the reveal, mullions between its panes.
-            const s = 0.055;
-            const depth = 0.07;
-            const z = wall.thickness / 2 - depth / 2 - 0.05;
+            const s = SLIM_SECTION;
+            const depth = SLIM_DEPTH;
+            const z = slimFrameZ(wall);
             const { width: w, height: h } = opening;
             parts.push(
                 boxAt(w, s, depth, x, y + h / 2 - s / 2, z),
@@ -630,10 +671,9 @@ export default class StructureBuilder {
             );
             for (let i = 1; i < across; i++) parts.push(boxAt(s * 0.9, h - s * 2, depth, x - w / 2 + (i * w) / across, y, z));
             for (let j = 1; j < up; j++) parts.push(boxAt(w - s * 2, s * 0.9, depth, x, y - h / 2 + (j * h) / up, z));
-            glass.position.z = z;
             if (opening.blind != null) this.addBlind(group, opening, wall, half, tag, frameMaterial);
             group.add(this.mergedDecor(parts, frameMaterial, "window-frame", tag));
-            return;
+            return sashes;
         }
 
         if (kit.has("window_frame") && kit.has("glazing_bar")) {
@@ -713,6 +753,49 @@ export default class StructureBuilder {
             );
         }
         if (parts.length) group.add(this.mergedDecor(parts, frameMaterial, "glazing-bars", tag));
+        return sashes;
+    }
+
+    /**
+     * The sashes of a slim window that opens, one in each of its panes, in
+     * its wall's frame (World/Sash.js): each filling the hole its fixed
+     * frame and mullions leave, its face to the room flush with theirs.
+     * Made here for the editor's wall (addWindow), and on their own for a
+     * public view's stand-in for it (SceneBuilder.buildFromRuntime), where
+     * what is round them is the snapshot's.
+     *
+     * @param {{ type: "turn"|"tilt", hinges?: number[] }} [hung]  how a
+     *        published version hung them, pane by pane (Publish/Runtime.js);
+     *        else as windowOpens says of the opening now
+     * @returns {WindowSash[]}  none for a window that stays fixed
+     */
+    windowSashes(opening, wall, half, tag, hung = null) {
+        const opens = hung ?? windowOpens(opening);
+        if (!opens) return [];
+        const [across, up] = opening.panes || [1, 1];
+        const x = opening.offset - half;
+        const { width: w, height: h, sill } = opening;
+        const s = SLIM_SECTION;
+        const inner = slimFrameZ(wall) - SLIM_DEPTH / 2;
+        const frame = this.materials.getTrim(opening.frame || "trim_white");
+        const glass = this.materials.getTrim("glass_solar", "glass");
+        const sashes = [];
+        for (let j = 0; j < up; j++) {
+            for (let i = 0; i < across; i++) {
+                const index = j * across + i;
+                // To the frame's sections at the window's edges, to the faces of the mullions between its panes.
+                const aperture = {
+                    x0: x - w / 2 + (i === 0 ? s : (i * w) / across + s * 0.45),
+                    x1: x - w / 2 + (i === across - 1 ? w - s : ((i + 1) * w) / across - s * 0.45),
+                    y0: sill + (j === 0 ? s : (j * h) / up + s * 0.45),
+                    y1: sill + (j === up - 1 ? h - s : ((j + 1) * h) / up - s * 0.45),
+                };
+                const asked = hung?.hinges?.[index];
+                const hingeSide = asked === -1 || asked === 1 ? asked : paneHinge(i, across, opens.hinge);
+                sashes.push(new WindowSash({ opening, wallId: wall.id, index, aperture, inner, hingeSide, type: opens.type, frame, glass, tag }));
+            }
+        }
+        return sashes;
     }
 
     /**

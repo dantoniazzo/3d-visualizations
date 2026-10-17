@@ -4,7 +4,10 @@ What the app is drawn with that it did not make itself, where each came
 from and under what licence — for review. The cars and the avatars are
 listed in the README; this is everything added for the Kosinožići Villas
 space (`scripts/spaces/ladonia/`, an earlier draft in `scripts/spaces/kosinozici.js`) and its landscape,
-and the people set round a property.
+the people set round a property, what its televisions show, and the
+clips a visitor swims by. The running water and steam (2026-10-16) take
+nothing from anyone: their shaders and their noise are made in the app's
+own code (`frontend/Experience/World/waterShaders.js`).
 
 ## Textures — Poly Haven (CC0)
 
@@ -111,6 +114,53 @@ in a repository anyone can clone.
 Without them the app falls back to stand-ins made from its own two avatars
 (`index.standin.json`, `standin-*.glb`, `clips.standin.glb`; the avatars
 are credited in the README).
+
+### The visitor's swimming, sitting down and getting up — Mixamo (Adobe)
+
+A visitor in the pool (`frontend/Experience/World/Player/Swim.js`) swims,
+treads water and climbs out by clips from Mixamo, and sits down onto a seat
+and gets up off it by two more (`frontend/Experience/World/Player/Player.js`),
+under the same terms as the people's. Downloaded with an Adobe account on
+2026-10-16 into `assets/people/avatar/` (FBX Binary, Without Skin, 30 fps,
+In Place where Mixamo offered it), each file named after what it is played
+as:
+
+| File | Mixamo's animation | As downloaded |
+|---|---|---|
+| `Swimming.fbx` | "Swimming: Swimming Underwater" | In Place: a frog-kick stroke, the body along the water, 4.5 s, its own loop |
+| `Breaststroke.fbx` | "Swimming To Edge: Swimming Breastroke To Edge Of Pool" | no In Place option: one breaststroke and then a reach for the pool's edge, its hips travelling 0.93 m |
+| `Treading Water.fbx` | "Treading Water: Floating" | in place, 3 s, its own loop |
+| `Climbing.fbx` | "Climbing: Pulling Up To A Ledge" | from a hang at arms' length up onto the ledge, its hips travelling 0.54 m |
+| `Stand To Sit.fbx` | "Stand To Sit: Standing To Sitting Transition" | 2.2 s, sat down 0.47 m behind where it stood |
+| `Sit To Stand.fbx` | "Sit To Stand: Sitting To Standing" | 2.3 s, stood up 0.46 m before its seat |
+
+Mixamo has no front-crawl clip. `npm run people` (`blender/import_people.py
+--avatar-clips`, then `scripts/optimize-people.mjs`) makes them into
+`public/models/people/avatar-clips.glb` and `avatar-clips.json` — the strokes
+cut to loops of whole strokes, held in place and swum with the head up; the
+climb begun where the head is up by the hands; the two transitions as they
+are — and the app fits them to the two avatars as it runs. The downloads
+and both outputs are git-ignored, as the people's are, so a clone of this
+repository has none of them until it downloads its own: without them a
+visitor swims as a wader — the avatar's own Walking and Idle, sunk to the
+shoulders — climbs out with its Jump, and glides onto a seat and off it.
+
+## The televisions' picture — NASA (public domain)
+
+What a television shows once a visitor switches it on
+(`frontend/Experience/World/Screens.js`), `public/media/earth-tv.mp4`: 40 s
+of "Earth Illuminated: ISS Time-lapse Photography", by NASA's Johnson Space
+Center — the Earth turning under the International Space Station, by day and
+by night — from Wikimedia Commons,
+https://commons.wikimedia.org/wiki/File:Earth_Illuminated-_ISS_Time-lapse_Photography.webm.
+Cut from 0:28 to 1:08 and encoded small for a screen in the room (960 × 540,
+H.264 in MP4, 29.97 frames a second, no sound, 2.67 MB). It loops, and is
+downloaded only when a television is first switched on.
+
+Licence: public domain — a work of NASA, a United States government agency,
+not subject to copyright in the United States. NASA's media guidelines ask
+that it not be used to suggest that NASA endorses anything: nothing here
+does.
 
 ## Props — made here
 

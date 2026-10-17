@@ -138,6 +138,9 @@ beside a deploy. To add a character or a clip:
 4. `npm run seats` measures where one sits or lies on each piece of the
    furniture catalogue (`public/models/furniture/seats.json`); run it
    again after `npm run furniture` changes a sofa, a chair or a lounger.
+   The visitors sit on the same seats. `npm run screens` likewise measures
+   each television's glass (`screens.json`); `npm run screens -- --check`
+   after re-exporting a piece with a screen proves the glass did not move.
 5. `npm run people:place -- <scene> --seed n` plans a space's people
    (`shared/people.js`) and writes them into its spec, where the editor
    moves, turns, adds and removes them; another seed is another
@@ -323,11 +326,16 @@ Click once to capture the pointer, then look with the mouse.
 | `Mouse` | look |
 | `WASD` / arrows | move |
 | `Shift` | run |
-| `Space` | jump |
-| `E` | open / close the door you're at |
+| `Space` | jump · seated, stand up · in the pool by its edge, climb out |
+| `E` | act on what the crosshair is on — a door, a window, a cupboard's door or a drawer (a fridge's, a wardrobe's, a washing machine's porthole, a shower's glass door), a light or its switch, a seat, a television, a tap or a shower's valve; standing in a shower, that shower; seated, the television in front of the seat, or get up; with nothing aimed at, the nearest door on your floor |
+| `Q` | the lights of the room you are in, all at once |
 | `F` | get in / out of the car you're at |
 | `T` | change the finish of the surface under the crosshair |
 | `V` | first / third person |
+| `O` | dance |
+| `N` | day or night |
+| `L` | the lights panel |
+| `C` | the colliders, drawn as wireframes · `Shift` `C` seen through everything |
 | `P` | realistic preview on / off (see Edit mode) |
 | `Tab` | edit mode |
 | `M` | menu (jump-to-room) |
@@ -336,7 +344,235 @@ Click once to capture the pointer, then look with the mouse.
 
 Behind the wheel, `WASD` steers and `Space` brakes; `H` turns the
 headlights on or off; `F` gets you out.
-Touch devices fall back to drag-to-look plus an on-screen joystick.
+Touch devices fall back to drag-to-look plus an on-screen joystick; the
+button under the thumb does what `E` and `F` do, with an icon for what it
+will act on — a door, a drawer, a window, a light, a seat, a television,
+a tap or a shower (*On*, *Off*, a drop of water), the car — a round bulb
+above it switches the room's lights, and in the pool by its edge a round
+*Climb out* button, a pool ladder on it, climbs out.
+
+Every key is listed once, in `shared/interact.js`'s `KEYS`: the physical
+key, read by its place on the keyboard as `WASD` are (so `Q` is the key
+marked A on a French keyboard), where it works — on foot, from above, at
+the wheel; the editor, a public view — and its touch button. The hints on
+screen are written in `index.html`; those for a key that works only in
+some places (`Q`, `C`) are shown from that list, so they are hinted only
+where they work.
+
+**What E acts on.** One picker answers for the crosshair, the prompt and
+`E` (`World/Interactables.js`): of whatever can be acted on along the
+crosshair's ray — a door's leaf within 4 m, a cupboard's door or a drawer
+within 2.5, a window within 2 (from the room's side), a light or its switch
+within 4, a seat within 2, a television within 5, a tap within 1.6, a
+shower's valve within 2 — the nearest, and of two
+met within 5 cm of each other the more particular, so the switch beside a
+door's frame is the switch, and a seat is never what someone aiming at a
+door meant. Standing in a shower, `E` turns it on or off when nothing else
+is aimed at — its glass door, a light or the room's door still come first.
+With nothing aimed at, `E` opens or shuts the
+nearest door within 2.2 m on the floor the visitor stands on — never one
+upstairs over their head, nor one downstairs; a car within 3.4 m is offered on `F` before
+anything aimed at. In a public view nothing behind the first surface the
+crosshair sees is aimed at or named: a door upstairs is not opened through
+the ceiling, as it once could be. What a visitor opens, switches or drives
+is never saved, nor shown to anyone else.
+
+**Sitting.** Aim at a chair, a stool, a pouf, any place on a sofa or a
+chaise's deep end and press **E** (*Sit*; on a touch screen the button with
+the seat icon): the figure walks to the seat, turns its back to it and sits
+down onto it (Mixamo's *Stand To Sit*, about 2 s in all), then sits with
+the people's own *Sitting Idle* clip, fitted to whichever avatar you chose
+(`World/Seats.js`); getting up it stands up off the seat (*Sit To Stand*,
+about 1.8 s). The figure sits facing the way the seat faces. Only a chair
+or a stool on its own (not a sofa's place, nor an armchair, a lounge or a
+desk chair, whose arm the legs would cross), where facing its way meets
+something, is sat on turned a quarter to one side instead — and only where
+the figure turned so meets nothing at all, its own chair's back and a
+shell chair's sides included, sitting there, sitting down and getting up;
+of two such sides, the one facing you. In Ladonia that is a pouf beside
+the corner sofa (for the female avatar); every dining chair is sat facing
+its table, and where the chair is drawn up under the table the figure's
+hands, thighs and feet go into the table's edge and base (typically by
+0.2–0.3 m, at most about 0.45 m). The two clips are used only
+where there is room for them: where the body — sitting down, getting up,
+the walk to the seat (its feet and shins down to the floor) and the turn
+on the spot before it — would meet nothing but the seat's own piece.
+Elsewhere — a chair drawn up to a table, a sofa with its coffee table
+close, under a pendant lamp hung low, beside someone sitting next to the
+seat, or with no clips at all (a clone without the downloads:
+`assets/THIRD_PARTY.md`) — the figure goes on foot: it walks to where it
+stands at the seat (just before it, or where there is no room there, in
+its place), round what is in the way where it finds a way round, turns,
+and sits down where it stands; getting up, it stands up where it sits,
+turns to where you stood before you sat and walks there — or, that way
+blocked, to the nearest spot free to stand in that has a clear way to it.
+Every walk faces the way it goes, turned to it on the spot first, and is
+no faster than a walk (1.6 m/s at its fastest). Where a seat is hemmed in
+— a chair drawn up between others against a wall, a sofa's middle place
+behind a close coffee table — there may be no clear way, and the walk
+passes through the table or the next chair, and at a few seats a wall
+(walking to or from about half of Ladonia's seats, typically by 0.2–0.3 m,
+at most about 0.47 m). In first person the view turns the
+way the figure sits, a little down; in third person the camera turns
+round the seated head. **E** again (*Stand up*), **Space**, any walking key
+or a push of the stick gets you up — a walking key walks off once you are
+up. By the clip you stand where it stands you, before the seat — or, where
+you would not fit there (the seat's own front edge is in the way), a short
+step further on the way you face; on foot, where the walk ends. Sat on
+from afar (from above, a seat clicked from more than 2.5 m away), the
+figure walks there where the way is clear and no longer than 6 m;
+otherwise it fades out where it stands and fades in beside the seat (0.3 s
+each, never seen to jump), and walks the last steps. Getting up before it
+has come — during the fade — it fades back in where it is; where it was
+put in the seat's own place, with no room beside the seat, it fades out
+there and back in where you stood. It gets up to the nearest free spot
+with a clear way off the seat — up to 3.5 m round it where nothing nearer
+is free — never back across the room. **F**, **Tab**, a teleport or the
+menu's room jump stand you up first. **Q** and **V** still work seated, and
+the view you choose is the one you get up into. Loungers, beds and bar
+stools are not seats, nor is a seat one of the people round the property
+sits on, or another visitor. From above, a click or a tap on a seat on the
+floor shown sits you there, from anywhere (the mouse over it says *Sofa ·
+click to sit*), and **E** with nothing aimed at sits you on the nearest
+free seat within 1.2 m that nothing stands between — unless a door is
+nearer. A low seat is sat on as a person would: on an outdoor lounge chair
+the figure sits back, its hands behind its head (the people's *Sitting
+Reclined Male*, on either avatar); on a low sofa or a pouf its knees open a
+little further, its feet flat on the floor where *Sitting Idle* put them a
+few centimetres under it (`Seats.wayOf`, since 2026-10-16). Others see you
+sit, the same way (the fade from afar is your page's own: to others the
+figure is seen to move across at once).
+
+**Television.** Every television in the furniture — Ladonia has twelve,
+wall-hung and in its TV walls — can be switched on: aim at it from in
+front, within 5 m, and press **E** (*Turn on TV*), or click it from above
+(*TV · click to turn on*). It plays a 40 s loop of the Earth from the
+International Space Station (NASA, public domain: `assets/THIRD_PARTY.md`),
+without sound, downloaded only when a set is first switched on, and bright
+enough to read as a screen in a lit room by day without burning out at
+night or from above (`World/Screens.js`). Seated with a set in front of
+you, **E** switches it — the prompt adds *Space Stand up* — and turning it
+on from the seat turns the view to first person, onto the screen; getting
+up gives back the view you sat in. The picture plays only while a set that
+is on is in sight; it pauses in edit mode and on a hidden tab. Which sets
+are on is your own.
+
+**Running water.** Every tap, basin mixer, kitchen and outdoor sink and
+shower turns on — Ladonia's 70, among them 19 showers: aim at the tap or
+the valve, within 1.6 m (a shower's within 2), and press **E** (*Turn on
+the tap*, *Turn on the shower*; on a touch screen the button shows *On* or
+*Off* and a drop of water); standing in a shower, **E** with nothing else
+aimed at does the same. Water runs until it is turned off, wherever you
+go: a stream from the spout, droplets and a ripple where it lands, rain
+from a shower's head ending on your head and shoulders as you stand under
+it. The indoor showers run hot: within a few seconds a column of steam
+rises off the water, and over about 15 s the steam gathers under the
+enclosure's top and fills it from there down, spills over the top into
+the room and gathers under its ceiling, and the glass mists from the top
+down after it; about 45 s after the water stops the steam has cleared,
+from the bottom up, and the glass last, after about 70 s. Taps, sinks and
+the outdoor showers run cold, with no steam. From above nothing is aimed
+at, and the water running on the floors shown is drawn, its steam
+fainter. It is all drawn by shaders of its own (`World/Water.js`,
+`World/waterShaders.js`): the steam is a volume looked through, not a
+cloud of cards. It costs nothing while it is all off; a shower at full
+steam seen from inside it 0.7 ms a frame at the highest step, 0.25 ms at
+most at the lowest (M4 Pro, 2026-10-16). Which taps are on is your own:
+nothing is saved or shown to anyone else, and every visit starts with all
+of them off. A public view has water only from a version published with
+the furniture as it is now (its models carry where each spout, valve and
+enclosure is); one published before has none.
+
+**Swimming.** B's pool at Ladonia has steps across its south end, by the
+loungers: five treads of the pool's mosaic, a stone nosing on each. Walk
+down them and you wade, slower the deeper the water, until you float; in the
+pool **WASD** or the stick swims (about 0.85 m/s, faster with **Shift**),
+your head just over the water. Swim back over the steps and you stand and
+wade out. **Space** by the pool's edge climbs out where there is room to
+stand on the deck (*Climb out*; on a touch screen a round button with a pool
+ladder). Afloat, **Space** does not jump — there is no diving — and **E**
+does nothing; a jump into the pool plunges you under and you float back up,
+the view tinted blue-green while the camera is under the surface. The camera
+behind you stays over the water. Others see you swim: their page plays your
+figure by its own frames, at your strokes' pace, as deep as you float where
+you are sent — so its waterline there is only approximate: as you change
+strokes or stop, its head can go under for a moment (by up to about half
+a metre where the messages arrive unevenly), and more often the faster
+you change. The
+figure swims with Mixamo's clips (`assets/THIRD_PARTY.md`; `npm run people
+-- --avatar-clips`): a frog-kick stroke at swimming pace and a breaststroke
+with **Shift**, both swum with the head up and the face out of the water;
+treading water when still; and climbing out: the figure swims on to the
+edge, its stroke playing, and reaches for it at no more than swimming pace,
+its hands coming up out of the water and over the coping — leaning into the
+climb as the climb's clip fades in, with its eyes out of the water, its head
+moving no more than 2–3.5 cm a frame from the moment **Space** is pressed
+(it rose 0.25–0.46 m in that first frame before 2026-10-17); they stay on
+the coping as it pulls itself up and over and its feet stay off the wall,
+the view rising with it, and it stands up with its feet on the paving.
+Afloat, the figure sits in the water so that what it wears stays under the
+surface and its face stays out (a hood no longer pokes through), leaning
+back as far as that takes — as someone treading water does — at every moment
+of the stroke, and from one clip into the next without hopping out of the
+water or ducking under it, a change in the middle of another blending from
+where that one had got to, for others' figures too. All of it stays in the
+pool: a swim into a wall stops where the figure would meet it and treads
+water there (settling into it once, not flicking between the stroke and
+treading water as it comes to rest), a turn by a wall moves it off the wall,
+treading water before the steps it drifts back off them, and swimming up
+onto them it is lifted as its feet come onto a tread — eased, its knees
+taking up the rest meanwhile — and stands as they come onto the first tread.
+Ladonia's pool is 1.4 m deep, shallower than an avatar is tall: as the clips
+are made, the feet went into its floor at the bottom of a kick and nearly
+all the time treading water, so wherever a foot would go into the floor, or
+a tread of the steps, the knee bends further and the foot comes up just
+clear of it (the figure itself is not lifted, so what it wears stays under
+the water). Without the clips (a clone without the downloads) it wades —
+walking and standing, sunk to the shoulders (`World/Player/Swim.js`) — and
+climbs out with a jump. The water is clear: the steps and a swimmer's body
+show through it. The steps are a pool's `steps` in the scene
+(`landscape.pools[i].steps`): a scene seeded before them has none until its
+file is given them — without seeding it again, which would lose its edits:
+`node .claude/skills/build-property-space/patch-pool-steps.mjs
+scenes/kosinozici-villas.json` (with every editor tab on it reloaded first).
+
+**Windows that open.** The slim windows over a sill (Ladonia's, 45 of them,
+59 panes) open: aim at a pane from inside the room, within 2 m, and press
+**E** (*Open window*). Each sash turns in 90° on the jamb nearer its end of
+the window, so a pair opens from the middle; where something stands in the
+way of its turning — a wardrobe beside the window, a headboard, a kitchen's
+wall units or tap, a shower's pre-wall — it tilts in 10° from its bottom
+rail instead, and the prompt says *Tilt window*. **E** again (*Close
+window*) shuts it. Floor-to-head glazing and the kit-framed windows of
+Wrenfield and Ashgrove stay fixed. However far it is open, nobody climbs or
+falls out: an invisible pane stands in the frame's outer half. A window's
+`opens` field (editor: the window's properties, *Opening*) can make it turn,
+tilt or stay fixed, and hang it on the left or the right; no scene needs
+it (`World/Sash.js`).
+
+**Seeing the colliders.** **C** draws everything the visitor walks
+against as wireframes over the view, on a faint tint, each kind in its
+colour: the building and the ground blue, the invisible blockers and the
+world's edge magenta, stair ramps (and a pool's steps'), guards and the
+cupboards under stairs yellow, furniture that collides as its mesh green and as its box orange,
+the people violet, the trees' trunks lime, door leaves red (bright while
+they block, faint once open), the cars cyan (bright while driven, faint
+parked — a parked car blocks nothing) and the visitor's own capsule white,
+except in first person and at the wheel. **Shift C** has them seen through
+everything, fainter. In the editor they are always there to show, in the
+walkthrough and in edit mode alike — where the header has a toggle beside
+*X-ray* and the View menu two items — and they show a region round the
+visitor, 15 m each way, from a metre under the floor stood on to 3 m over
+it, built again every 5 m walked and after an edit; edit mode shows where
+a piece being moved would collide, as it moves. A public view shows them
+only to a link with `?debug` (a *Debug* switch in the menu, **M**) or
+`?colliders` (shown from the start; `?colliders=xray` seen through), and
+then the whole house's, cut above the floor shown from above. They are
+drawn in a scene of their own, which nothing published, baked, merged or
+picked ever sees, and cost nothing until first shown: their code is not
+even downloaded. Shown, they add 0.5–1.5 ms to a frame and seen through
+0.5–2.9 (M4 Pro, step 4, 2026-10-16); the public view's frame-rate guard
+leaves the view alone meanwhile.
 
 **Share the URL.** `?scene=<id>` puts everyone in the same property.
 
@@ -361,8 +597,41 @@ and chatting, and it shows whichever floor you are on, so going upstairs
 takes the view up a floor. The floor picker, or **Page Up** and **Page
 Down**, shows another floor; walking again brings the view back to yours.
 **V** or *Walk* goes back to walking. The view stays within the distances
-(6–24 m) and angles (30° and steeper) the publish looked from, so no face it
-threw away can come into sight (`frontend/Experience/World/BirdView.js`).
+(6–24 m) and angles (30° and steeper) the publish looked from, and on foot
+within the floor's own bounds, so no face it threw away can come into sight
+(`frontend/Experience/World/BirdView.js`).
+
+**Driving from above.** The car can be driven without leaving the view:
+**F** beside it, or a click or a tap on any car on the floor shown — the
+mouse over one says *BMW X6 M · click to drive* — gets in, and the view
+stays as it was, following the car. Its keys are the car's own, as behind
+it: **W** on, **S** brake and back, **A** and **D** steer, **Space**
+brake, **H** the headlamps, **F** out (on a touch screen the stick: up to
+go, down to brake and back, sideways to steer, and *Get out*); the first
+drive from above in a visit says so once. The view looks a little ahead
+of the car, and behind it when it backs, and swings round until the car
+heads up the screen once it is moving and has not been turned by hand for
+1.4 s, as the camera behind the car does; how steep and how far stay the
+visitor's, and dragging, pinching, the floor picker and **Page Up** /
+**Page Down** work as before — pressing on brings the view back to the
+car's floor. **B**, or the *Bird's-eye* button, goes between the camera
+behind the car and the view from above at any moment of a drive, both
+ways; from above at the wheel the *Walk* button reads *Behind the car*,
+and it, or **V**, goes behind the car. Getting
+out leaves the visitor by the driver's door, still looking down, walking
+the way the view faces. The car stays in the view wherever it goes: off the
+road and over the open ground — to the edge of a site's terrain, or of the
+neighbourhood's world (`shared/drive.js`) — the view goes with it, shows
+the ground floor out there however high the hillside, and goes on
+following the visitor on foot after they get out, until they are back by
+the house; there the car stops at the ground's edge, as at a wall, rather
+than drive off it — only the motion that would go over the edge is
+stopped, so the car slides along it and turns away when steered. The whole
+car stays inside the frame at every zoom and tilt, with a margin: where it
+cannot at the closest zoom, the view draws back a little. Out of the car on
+raised ground beyond the houses — Ladonia's western hill — your figure
+stays drawn and the car can be clicked again. The publish looks from out
+there too (below).
 
 A floor is a storey as a visitor counts them (`shared/storeys.js`): every
 building's ground floor together, with the terraces and the street round
@@ -383,7 +652,13 @@ rooms would be, by bringing up the rooms' own baked light short of burning
 out (`Realism.js`'s `LightMeter.above`, `SceneBuilder`'s `INDOOR_LIFT`),
 while the garden keeps the outside's exposure. A version that was not
 baked has no bake to draw from: its view from above is drawn flat, the sun
-unshadowed and none of its lamps lit (the lit rooms still glow).
+unshadowed and none of its lamps lit (the lit rooms still glow). A car
+driven from above is drawn so too: its headlamps' beam is the baked pool of
+light on the road whichever way the view is lit — no shadow map is drawn
+at all — and the car's own beam comes back as the view is left. Measured
+on an M4 Pro at the top step (2026-10-16), standing from above by
+Ladonia's BMW takes 9.0–9.2 ms a frame (9.2–9.3 before) and sitting in it
+8.8; driving along the road, a median 4.4, one frame in 1,430 over 16.7.
 
 Walking, a baked room by day is exposed for what the camera sees in it, as
 a photographer meters a room (`Realism.js`'s `LightMeter`): a glazed living
@@ -410,10 +685,13 @@ version: `/view/<id>` opens the latest, and editing the space afterwards
 changes nothing there until it is published again. The snapshot:
 
 - renders every static triangle, by id, from thousands of places a camera
-  can be — every room at three heights, the stairs, the garden, and a
-  bird's-eye orbit of each floor with the floors above taken away — and
-  throws away every face none of them sees: undersides of furniture, faces
-  pressed against walls, the insides of overlapping boxes;
+  can be — every room at three heights, the stairs, the garden, a
+  bird's-eye orbit of each floor with the floors above taken away, and of
+  the ground floor from rings round it out over the ground a car can take
+  the view to (only the views with the houses in frame: Ladonia 642 more,
+  about 2 s of its 170) — and throws away every face none of them sees:
+  undersides of furniture, faces pressed against walls, the insides of
+  overlapping boxes;
 - turns round any face that was only ever seen from behind, and splits a
   surface seen from both sides into two single-sided ones, so the whole
   view draws with back-face culling;
@@ -590,6 +868,33 @@ own switches, so the two can be compared as they were left. The same holds
 in a view lit live and in the editor's realistic preview
 (`World/LiveSwitches.js`), not under the editor's plain light. A switch's light is only downloaded the first time it
 is turned on.
+
+**The room's lights at a key.** **Q** switches the lights of the room the
+visitor stands in, all of them at once, without aiming at any: if any of
+its switches is on, all go off, and otherwise all come on. From above it
+is the room their figure is in, whichever floor is shown. Beside the
+room's name at the top of the screen a chip says *Lights on* or *Lights
+off*, its bulb lit while any is on, and can be clicked with the cursor
+free; on a touch screen a round bulb button sits over the action button.
+Both are there only in a room that has a switch, and not at the wheel.
+Where the row along the top is short of room — the editor's at 1024 px, a
+phone's — the room's name keeps to one line and is cut short with an
+ellipsis (the whole of it shown on hovering it), and the chip keeps the
+same margin from the window's edge as the menu button from its other.
+After a press a line over the crosshair names the room and what was done
+— or says *No lights to switch here*, out of doors or in a room with no
+switch — and in the editor under its plain light adds that the light is
+seen in the realistic preview (**P**), where only the fittings' glass
+changes. Aiming at a light and pressing **E** still switches that one
+alone, the way to turn one lamp of several or a light in another room;
+**Q** never switches the room an open-plan room runs into. Which room the
+visitor is in is one answer for the room's name, **Q** and the live room
+(`World/Whereabouts.js`): half-way up a flight of stairs it is the room at
+the nearer end of it, never the bathroom the flight climbs over, and
+crossing a threshold the name and the chip do not flicker. In a baked
+view a room's first turn on downloads its light, which follows the chip a
+moment later; Ladonia's terrace lamps are not in its bake, so its
+terraces have no switch for **Q** there, as they have in the editor.
 
 **One lightmap for the house.** A switch turned or a door swung does not
 change how anything is drawn: the view works the house's light out again
@@ -788,21 +1093,58 @@ only in the rooms it changes (`SceneBuilder.mixVertexLight`).
 
 **Doors and drawers.** The furniture's doors and drawers open: the
 wardrobes', the kitchen's cupboards and drawers, the tall units', the
-microwave's, the fridge's, the nightstands' and the vanities'. Point the
-crosshair at one within two and a half metres and press **E**. The
-builders in `blender/lib/joinery.py` mark each door as hinged on its edge
-and each drawer as sliding, and `geometry.join_piece` keeps each a part of
-its own, its origin on its hinge, what it does in its node's extras. The
+microwave's, the fridge's, the nightstands' and the vanities' — and since
+2026-10-16 every front of Ladonia's fitted kitchens, counters, peninsulas
+and outdoor kitchens (the dishwashers, ovens and the hob cabinet's flaps
+stay shut), its wardrobes, nightstands, sideboards, cabinet, media wall
+(its console's flaps drop down) and the closets in its TV walls, the
+washing machines' portholes and detergent drawers, and the corner showers'
+glass doors: 475 parts in all. Point the crosshair at one within two and
+a half metres and press **E**, or on a touch screen the button under the
+thumb, which shows a drawer or a door for what it will open; the prompt
+names it as its model does — *Open fridge*, *Close wardrobe*, *Open
+washing machine*, *Open detergent drawer*, *Open shower door*. Each opens
+only as far as nothing blocks it, as a real door swung into a chair stops
+at the chair (`Openable.plan`, since 2026-10-16): in Ladonia the wall
+units stop short of the ceiling tracks' spots, the L kitchens' cupboard
+doors beside their under-counter fridges at the dining chairs (the
+fridges' own doors open fully), the outdoor kitchens' doors at the garden
+armchairs, wardrobe doors at the nightstands and the small
+vanity's drawer at the WC — 32 of its 475 parts, worked out once a part
+starts to open and again only after the furniture is moved. A version
+published since then carries each part's stop; one published before
+works it out in the view, against the published collision, and stops 26
+of them. The
+builders in `blender/lib/joinery.py` and `ladonia.py` mark each door as
+hinged on its edge (or, a flap, about another axis) and each drawer as
+sliding, and `geometry.join_piece` keeps each a part of its own, its origin
+on its hinge, what it does and what it is called in its node's extras. The
 carcasses behind them are hollow, with shelves, rails, a hanging rail in a
-wardrobe, and in the fridge a white liner, glass shelves, bins in the doors
-and a light that comes on as a door opens. The doors and drawers are left
+wardrobe, and in a fridge — Ladonia's are integrated, in a tall unit or
+under the counter — a white liner, glass shelves, bins in the doors and a
+light that comes on as its doors open (one light, lent to the fridge
+opened last: a light that is there costs every lit pixel, lit or not, so
+it is there only from a fridge's opening until a few seconds after the
+last is shut, its shaders made ahead). While its doors
+are shut a fridge's glass shelves are not drawn at all, so no hairline of
+one shows through the shut door, in a room shown live (**K**) too. A
+piece with parts that open collides as itself without them and a box for
+each where it stands shut, so the floor inside an L- or U-shaped kitchen
+is walked on and nobody walks into an open cupboard; an open door is
+walked through, as a room's is, and a shower's glass door bars the way
+only until it is open. A public view shows Ladonia's new fronts once it is
+published again and baked. The doors and drawers are left
 out of the merged house, the snapshot, the bake and the collision; the
 bake lights the insides as they are seen with the doors open, and shut, a
 door hides it. They are drawn live (`World/Openables.js`); a published
 version's runtime file carries them, shut, and in a baked view they are
 lit by the light probes and shade the sun's light as they move — or, from
 a bake without probes or in a view fully baked, like the door leaves, from
-the probes of the nearest door on their floor.
+the probes of the nearest door on their floor. The runtime file keeps a
+drawer's slide in its piece's own frame, and the view turns it with the
+piece as it loads (`SceneBuilder.buildFromRuntime`): until 2026-10-16
+every drawer of a piece turned from its catalogue's way round slid into
+it or sideways in a public view — 34 of Ladonia's 38.
 
 **The garden.** Every lawn is grassed, fenced round, with bushes along
 the fence and trees in the back garden — in the editor, the walkthrough
@@ -974,7 +1316,11 @@ a step on a device not rated for it, and `?rated=0`…`4` pretends a device
 rated that low — never higher than it is — to see what such a device is
 given (it changes nothing kept on the device). `?stats` on any link shows frame rate, draw calls, triangles and
 the bytes downloaded — which is how to compare a change on the device it
-is for.
+is for — and, while the colliders are shown, their triangles by kind.
+`?debug` lets a public view show its colliders (**C**, and the menu's
+*Debug* switch), `?colliders` shows them from the start and
+`?colliders=xray` seen through everything (*Seeing the colliders*, under
+Walkthrough); the link a client is sent has none of it.
 
 ### A site of its own: Ladonia Residence, Kosinožići
 
@@ -1065,8 +1411,14 @@ fence, hills and neighbourhood are left out:
 - **What stands on it**, also part of the house: dry-stone retaining walls
   with copings, kerbs and road markings, pergolas (anthracite frames,
   timber louvres, lattice screens), corten planters, glass balustrades and
-  a mosaic-lined pool with its hardwood deck. The pool's water ripples and
-  reflects the sky.
+  a mosaic-lined pool with its hardwood deck — B's with steps down into it
+  across its south end since 2026-10-16 (a small addition to the
+  listing's renders, which show a plain basin). The pool's water is clear
+  (since 2026-10-16, wave C): its mosaic, its steps and anyone swimming
+  show through it, turquoise deepening with the depth; the sun's caustics
+  play on the basin by day and the pool lamp makes it glow at night; it
+  ripples and mirrors the sky, most strongly looking along it; and it is
+  swum in.
 - **What grows** (`World/Flora/`), drawn live and swaying in the wind:
   - *Trees and shrubs* are grown with
     [ez-tree](https://github.com/dgreenheck/ez-tree): downy oaks, an ash
@@ -1179,6 +1531,7 @@ are Blender's — **Z is up**, X red, Y green, Z blue — and so are the keys:
 | `Page Up` / `Page Down` | work on the floor above / below |
 | `/` | the selected piece's room on its own; again for everything |
 | `Alt` `Z` | X-ray · `Alt` `H` unhide every floor and room |
+| `C` | colliders as wireframes · `Shift` `C` seen through everything |
 | `N` / `T` | toggle the sidebar / toolbar |
 | `Shift` `Tab` | toggle snapping |
 
@@ -1204,7 +1557,15 @@ aim at the sofa behind one and the sofa is selected. Floors and ceilings do
 stop a click, so an empty spot on the floor still deselects rather than
 picking up whatever is on the storey below. **X-ray** (`Alt` `Z`, or the
 header button) draws walls, ceilings and the roof see-through; floors, door
-and window frames and furniture stay solid.
+and window frames and furniture stay solid. **Colliders** (`C`, the
+wire-cube beside it — Shift-click for seen through everything — or the
+View menu) draws what is walked against, as in the walkthrough
+(*Seeing the colliders*): round the view's target, and with a floor or a
+room in focus cut 2 m above its floor, as its ceilings are. A piece
+selected shows the collider it would have — its box or its mesh — and
+moves it as it is moved; once the move is made the furniture's tree is
+mended and drawn again. Under 1600 px wide the toggle is in the header
+only while they are shown, so the floor and room picker keeps its width.
 
 With `7` for the top view, a floor on its own is the floor plan. **Walk from
 here** drops you onto the floor in the middle of the view.
@@ -1246,7 +1607,16 @@ edits, picks, snaps to, collides with and publishes are untouched — still
 in the scene, on a layer no camera draws — so a console snippet that walks
 the scene meets each surface twice, and a `Raycaster` of its own needs
 that layer (`layers.enable(12)`). `?standins=0` in the link draws them as
-they are built, for comparing.
+they are built, for comparing. A piece whose doors or drawers open is drawn
+whole while they are all shut — one mesh a material, its copies instanced
+— and a part that moves or stands open draws itself until it is shut again
+(since 2026-10-16); a public view merges its shut doors, drawers and
+windows' sashes by material as it loads. `?shut=0` draws them one
+by one, in either, for comparing. Under the plain light the editor also
+holds still what the stand-ins draw and leaves the units they draw
+entirely out of three's own pass over the scene: 1.6–1.9 ms a frame
+faster, which puts Ladonia's editor back at or under what it took before
+its doors and drawers opened (`?still=0` leaves that out, for comparing).
 
 What the editor asks the scene — what is under a click, what a dragged
 piece stands on, what the crosshair points at, where the camera's boom
@@ -1413,10 +1783,16 @@ frontend/Experience/World/
   Collision.js            Static + dynamic octrees the player walks against,
                           each kept in step with what it is made from
   Door.js                 Openable door: geometry, swing, own collision
+  Sash.js                 A window's sash that opens: turned in or tilted,
+                          as what is in the way decides
+  Openables.js            The furniture's doors and drawers: how each
+                          moves, what it is called, what it collides as
+                          shut, the light lent to the fridge opened last
   PlainLight.js, Scope.js The editor's plain light, and how much of the site
                           it draws (House, Exterior, All)
   StandIns.js             What the editor draws under that light in place
                           of the house and the furniture: merged, instanced
+                          — and holds still, out of three's way
   LiveSwitches.js, LampPool.js, RoomGlow.js
                           Lights switched live: the editor's preview, an
                           unbaked public view
@@ -1433,7 +1809,25 @@ frontend/Experience/World/
                           editor's light, at night a dark room's the
                           bake's measure (RoomGlow's table, rows 1–7)
   ProbeLight.js           What moves, lit by the bake's light probes
-  BirdView.js             One floor from above
+  BirdView.js             One floor from above, on foot or driving
+  Interactables.js        What the visitor can act on, and how: the one
+                          picker behind the crosshair, the prompt, E and F
+  Whereabouts.js          Which room the visitor is in: one answer for the
+                          room's name, Q and the live room
+  Seats.js                Where the visitor can sit, and the sitting clip
+                          fitted to their avatar
+  Screens.js              The televisions' pictures, switched on and off
+  Water.js, waterShaders.js
+                          The taps and showers running: their water, the
+                          showers' steam and misted glass, and the shaders
+  ShutBatcher.js          A public view's shut doors, drawers and sashes
+                          drawn merged, a mesh a material; what shut doors
+                          hide (a fridge's shelves) not drawn
+  Player/Swim.js          Wading, swimming, standing on the pool's steps,
+                          climbing out; the figure placed so that what it
+                          wears stays under the water
+  ColliderView.js         The colliders drawn as wireframes (C), downloaded
+                          the first time they are shown
   Builders/
     TextureLibrary.js     Canvas-generated finishes
     MaterialLibrary.js    One material per finish; UV-baked tiling
@@ -1447,6 +1841,8 @@ frontend/Experience/
   Realism.js              Sun shadow fit, room probe, and a baked view's
                           light meter
   FrameGuard.js           A public view that runs slowly makes itself lighter
+  Colliders.js            Whether the colliders are shown (C), and where
+                          they may be
   Utils/device.js         The slider's steps, a device's ceiling, how a
                           baked view is lit
   Utils/rays.js           Rays through the scene as three's Raycaster answers
@@ -1472,10 +1868,13 @@ scenes/                   Saved properties (JSON, safe to hand-edit)
 published/                Published versions and their bakes (git-ignored)
 shared/                   What the page, the server and the bake all read:
                           publishOptions.js, daylight.js, storeys.js,
-                          roomGraph.js, lightRegions.js, frameGuard.js
+                          roomGraph.js, lightRegions.js, frameGuard.js,
+                          interact.js (the keys, and what is aimed at)
 scripts/bake-public.mjs   npm run bake: Blender (blender/bake_public.py) on
                           a published version
 scripts/seed-scenes.js    Writes the bundled examples
+scripts/measure-screens.mjs  npm run screens: where each television's glass
+                          is, from its model, into furniture/screens.json
 scripts/inspect-glb.mjs   Pre-import report for a GLB
 ```
 
@@ -1682,6 +2081,40 @@ registry, not the mesh, is the authority on which finish a given face wears.
   cill (`cill`), flights a balustrade (`balustrade`) and stairwells rails
   (`rails`); all are simple boxes, drawn but not collided with, except the
   invisible panel along each rail and balustrade.
+- **What a visitor does is their own.** Doors, drawers, windows, lights,
+  the televisions, the taps and the car are not shared: others see a
+  visitor's figure standing where it got into the car, not the car
+  driving — but they do see it sitting and swimming.
+- **Nobody steps into a corner shower yet.** Its glass door opens, and no
+  longer bars the way once open, but the walker is 0.7 m wide and the
+  door's opening 0.6 m; its valve is turned from outside.
+- **A published version is as it was published.** The opening kitchens,
+  wardrobes and the rest, and the windows that open, reach a public view
+  only once its space is published again (and baked, for the baked look);
+  a version published before keeps its fixed fronts and fixed glass.
+- **The opening furniture still costs a little.** Shut, Ladonia's 475
+  parts are drawn with their pieces in the editor and merged by material
+  in a public view, so they add few draw calls, and a fridge's glass
+  shelves are not drawn behind its shut doors. But the shut fronts are lit
+  live by the bake's probes where they were part of the lightmapped house,
+  and the washing machines' portholes and the showers' doors are new
+  glass. At the highest step (2048 × 1536, M4 Pro) a public view of the
+  new version takes +0.08 to +0.35 ms more a frame than the version
+  before it at the same spot with no water running (A1's living room
+  +0.35), and +0.62 in the bathroom with a shower running, about +0.5 of
+  it the water — the final check, each comparison run both ways round;
+  earlier sittings read A1's living room at 0 to +1.15 by how their tabs
+  were set up — where it took up to 1.5 ms more before this was worked
+  on; the build itself draws the version before 0.15–0.53 ms faster than
+  the build before it did. The editor is at or under what it
+  took before the doors and drawers opened.
+- **The visitor's own clips are not in the repository.** Mixamo's terms
+  keep the swimming, climbing-out, sitting-down and getting-up clips out
+  (`assets/THIRD_PARTY.md`); a clone downloads its own, and without them
+  the visitor wades, and walks to a seat and sits down where it stands.
+- **The nearest door is the nearest across the floor.** With nothing aimed
+  at, `E` opens the door nearest the visitor's head within 2.2 m on their
+  floor, measured across it — through a wall, it may be the next room's.
 - **No auth.** Anyone with the URL can enter and edit.
 
 ---
@@ -1696,4 +2129,5 @@ are from [Mixamo](https://www.mixamo.com) (Adobe), converted by
 `npm run people`; what they hold was made here, in Blender
 (`blender/lib/props.py`). The cars are credited under *Building the
 models*; everything else bought in, the people's names and licence
-included, is in `assets/THIRD_PARTY.md`.
+included, and the televisions' picture (NASA, public domain), is in
+`assets/THIRD_PARTY.md`.

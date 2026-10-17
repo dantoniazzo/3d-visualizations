@@ -17,10 +17,14 @@ import { onQualityChange } from "./Utils/device.js";
  *     manager); another visitor moving; the quality slider; the tab shown
  *     again — and for a moment after (HOLD), for whatever follows from it;
  *   - **something is still moving by itself** (`busy`, asked after every
- *     frame): a door or a drawer easing, the visitor walking, falling or at
- *     the wheel, another visitor's figure not standing still, the camera,
- *     the collision trees built a slice a frame, the stand-ins merging what
- *     was built again or dropping what has left the view;
+ *     frame): a door or a drawer easing, or anything else acted on that
+ *     says it still is (World/Interactables.js's busy: sitting down or
+ *     getting up, World/Seats.js; a television's picture coming up or
+ *     going, World/Screens.js), the visitor walking, falling or at the
+ *     wheel, another visitor's figure not standing or sitting still, the
+ *     camera, the collision trees built a slice a
+ *     frame, the stand-ins merging what was built again or dropping what
+ *     has left the view;
  *   - and, with none of that, **twice a second all the same** (HEARTBEAT):
  *     a frame in which no time passes, so that a change nothing told this
  *     of — a case missed above, a tool's own — is on the screen within half
@@ -33,8 +37,10 @@ import { onQualityChange } from "./Utils/device.js";
  * whenever frames are drawn for another reason. Two things are kept moving
  * at a slower rate (REST frames a second) instead: the walkthrough, where a
  * visitor standing still sees their figure, the people and the water as
- * alive as before; and, in edit mode, the people while one of them is
- * selected or being placed — a clip being chosen is to be watched.
+ * alive as before, and a television that is on playing at that rate (in
+ * edit mode its picture is paused: World/Screens.js); and, in edit mode,
+ * the people while one of them is selected or being placed — a clip being
+ * chosen is to be watched.
  *
  * Every frame, as before: a public view (it has no Pace); the realistic
  * preview and a publish (`world.plain` false, or the scene held or
@@ -59,6 +65,13 @@ const REST = 30;
 const STILL = 1e-5;
 /** ...and how much any number of the camera's place or projection changes before the view counts as moved (a tenth of a micrometre, where it is a length). */
 const STEADY = 1e-7;
+
+/**
+ * Another visitor's figure playing a clip of these names is at rest: standing, sitting (World/Seats.js's "sitting",
+ * and any sitting clip after it), or treading water where it floats (Player/Swim.js's "treading": it bobs where it
+ * is, as standing idles).
+ */
+const AT_REST = /^(idle$|sitting|treading$)/;
 
 /** What ends a rest, of what the page hears of the visitor. */
 const INPUTS = ["pointerdown", "pointermove", "pointerup", "pointercancel", "mousemove", "wheel", "keydown", "keyup", "click", "dblclick", "contextmenu", "input", "change", "focusin", "focusout", "touchstart", "touchmove", "touchend", "drop", "resize", "visibilitychange", "pointerlockchange", "fullscreenchange"];
@@ -277,8 +290,15 @@ export default class Pace {
         if (standIns?.active && (standIns.waiting > 0 || standIns.loose.size > 0)) return "stand-ins";
         for (const door of builder.doors ?? []) if (door.isMoving) return "door";
         for (const part of builder.openables?.parts ?? []) if (part.isMoving) return "drawer";
+        // Whatever else the visitor acts on that goes on moving by itself once acted on — what World/Interactables.js
+        // has been given (a seat sat on, a tap's water, a set's picture fading in or out) says so; the doors and drawers
+        // are the two lines above.
+        const acted = world.interactables?.busy();
+        if (acted) return acted;
         const player = world.player;
         if (player.inVehicle) return "driving";
+        // Climbing out of a pool: the figure swims to the edge, comes on to it and stands up at the end while the body waits (Player/Swim.js).
+        if (player.swimmer?.climb || player.swimmer?.toEdge) return "climbing";
         if (player.avatar) {
             if (player.isMoving() || player.actions?.jump) return "walking";
             // Coasting to a stop, in the air, pushed by a door: by where the body is, not its speed — standing, it is
@@ -290,10 +310,11 @@ export default class Pace {
                 return "walking";
             }
         }
-        // Another visitor's figure walking, running, jumping or dancing where it stands (its moves are heard of: Player's socket).
+        // Another visitor's figure walking, running, jumping or dancing where it stands (its moves are heard of: Player's
+        // socket). Standing or sitting still it idles, as the people do: kept moving at the slow rate, in the walkthrough.
         for (const id in player.otherPlayers) {
             const animation = player.otherPlayers[id].animation;
-            if (animation && animation !== "idle") return "visitor";
+            if (animation && !AT_REST.test(animation)) return "visitor";
         }
         return null;
     }

@@ -28,7 +28,11 @@
  *   pergolas   [{ box: [x0,z0,x1,z1], base, height, slats, posts, wall, screens? }]
  *   planters   [{ path, base, height, width }]  corten, full of grasses
  *   railings   [{ points: [[x,z,y],...], height }]  glass balustrades
- *   pools      [{ box, level, depth, deck? }]
+ *   pools      [{ box, level, depth, deck?, steps? }]  `steps`: { side, count,
+ *              going? } — straight steps the pool's full width down from its
+ *              side "x0", "x1", "z0" or "z1" (its box's edges), `count`
+ *              treads `going` deep (0.35 m) between the floor and the
+ *              coping, rising evenly (poolSteps)
  *   hedges     [{ path, base, height, width, red }]  photinia; `red` 0 a green (laurel) hedge
  *   lawns      [{ polygon }]  mown grass, blade by blade near the eye
  *   trees      [{ species, position, scale, yaw, elevation? }]  `elevation`: above the ground (a planter)
@@ -69,6 +73,106 @@ export function sanitizeLandscape(raw) {
     };
     const out = clean(raw, 0);
     return out && Object.keys(out).length ? out : null;
+}
+
+// ---------------------------------------------------------------------
+// A pool
+// ---------------------------------------------------------------------
+
+/**
+ * A pool's rim and coping, which its builder (World/Builders/
+ * LandscapeBuilder.js) lays and the steps climb to: the basin's walls stop
+ * POOL_RIM over the ground, and its coping's top is POOL_COPING_TOP.
+ */
+export const POOL_RIM = 0.02;
+export const POOL_COPING_TOP = POOL_RIM + 0.05;
+/** How wide the strip along a pool step's front edge is (its nosing, of the coping's stone), and how deep. */
+export const NOSING = 0.05;
+export const NOSING_DEPTH = 0.04;
+/** The sides a pool's steps may come down from, and which way each climbs out, across the floor. */
+const STEP_SIDES = { x0: [-1, 0], x1: [1, 0], z0: [0, -1], z1: [0, 1] };
+
+/**
+ * A pool's steps (`pool.steps`) as they are built and walked: `count`
+ * treads `going` deep, the pool's full width, from the floor up to its
+ * coping in `count + 1` equal rises, the top tread against the side they
+ * come down from — and the invisible ramp a visitor walks on them by, as a
+ * flight's (World/Builders/StructureBuilder.js's buildStairs: the capsule
+ * cannot step up a riser), through the middle of every tread, meeting the
+ * coping's top a half going back from the pool's edge and running on
+ * below the floor at the foot, so that it is met as a slope and not a lip.
+ *
+ * Null for a pool without steps.
+ *
+ * @returns {null|{
+ *   side: string, count: number, going: number, rise: number, floor: number, top: number,
+ *   out: [number, number],                    which way they climb, across the floor
+ *   edge: [number, number],                   the middle of the pool's edge they climb to
+ *   width: number,                            across them
+ *   treads: { box, top, rest, nosing }[],    each tread's footprint [x0, z0, x1, z1], its top's height, and its
+ *                                             footprint behind the strip along its front edge (`nosing`, NOSING wide)
+ *   ramp: { from: number, to: number, high: number, low: number },  along `out` from `edge` (negative: into the pool), the ramp's top's height at each end
+ *   box: [number, number, number, number],    the steps' footprint
+ * }}
+ */
+export function poolSteps(pool) {
+    const steps = pool?.steps;
+    if (!steps || typeof steps !== "object" || !Array.isArray(pool.box) || pool.box.length !== 4) return null;
+    const side = STEP_SIDES[steps.side] ? steps.side : "z1";
+    const [x0, z0, x1, z1] = pool.box;
+    const [ox, oz] = STEP_SIDES[side];
+    const across = ox ? z1 - z0 : x1 - x0;
+    const length = ox ? x1 - x0 : z1 - z0;
+    const going = Math.min(0.6, Math.max(0.2, Number(steps.going) || 0.35));
+    // No more treads than leave half the pool to swim in.
+    const count = Math.max(1, Math.min(12, Math.round(Number(steps.count) || 0), Math.floor((length * 0.5) / going)));
+    const floor = pool.level - pool.depth;
+    const top = POOL_COPING_TOP;
+    const rise = (top - floor) / (count + 1);
+    const edge = ox ? [ox > 0 ? x1 : x0, (z0 + z1) / 2] : [(x0 + x1) / 2, oz > 0 ? z1 : z0];
+    // A box from `a` to `b` metres in from the edge, across the whole pool.
+    const band = (a, b) => {
+        const [p, q] = [edge[0] - ox * a, edge[1] - oz * a];
+        const [r, s] = [edge[0] - ox * b, edge[1] - oz * b];
+        return ox ? [Math.min(p, r), z0, Math.max(p, r), z1] : [x0, Math.min(q, s), x1, Math.max(q, s)];
+    };
+    const treads = [];
+    for (let k = 0; k < count; k++) {
+        // The k-th from the foot: `count - 1 - k` goings in from the edge, its front further in.
+        const back = (count - 1 - k) * going;
+        const front = back + going;
+        treads.push({ box: band(back, front), top: floor + (k + 1) * rise, rest: band(back, front - NOSING), nosing: band(front - NOSING, front) });
+    }
+    return {
+        side,
+        count,
+        going,
+        rise,
+        floor,
+        top,
+        out: [ox, oz],
+        edge,
+        width: across,
+        treads,
+        ramp: { from: -(count + 1) * going, to: going / 2, low: floor - rise / 2, high: top },
+        box: band(0, count * going),
+    };
+}
+
+/**
+ * The pool of a landscape's that (x, z) is over, if any — its water's
+ * level, its floor, and its steps (poolSteps) — as the visitor's swimming
+ * asks of it each frame (World/Player/Player.js).
+ *
+ * @returns {null|{ pool: object, level: number, floor: number, steps: object|null }}
+ */
+export function poolAt(landscape, x, z) {
+    for (const pool of landscape?.pools || []) {
+        const [x0, z0, x1, z1] = pool.box || [];
+        if (x < x0 || x > x1 || z < z0 || z > z1) continue;
+        return { pool, level: pool.level, floor: pool.level - pool.depth, steps: poolSteps(pool) };
+    }
+    return null;
 }
 
 // ---------------------------------------------------------------------

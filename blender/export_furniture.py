@@ -313,10 +313,12 @@ PIECES = [
     for scheme in ("ochre", "sage") for kind, length in (("hob", 2.4), ("sink", 1.8))
 ] + [
     # Under a window: no wall units, no upstand (plain), or a low one (sink).
+    # The plain ones stand between the upper north kitchen and the flat's
+    # east wall, so their doors hang away from both ends.
     ("ld-counter-ochre-plain-22", "Kitchen counter, ochre, plain, 2.2 m", "kitchen",
-     lambda c, mats: LD.counter(c, mats, 2.2, "ochre", "plain")),
+     lambda c, mats: LD.counter(c, mats, 2.2, "ochre", "plain", walls=(True, True))),
     ("ld-counter-sage-plain-22", "Kitchen counter, sage, plain, 2.2 m", "kitchen",
-     lambda c, mats: LD.counter(c, mats, 2.2, "sage", "plain")),
+     lambda c, mats: LD.counter(c, mats, 2.2, "sage", "plain", walls=(True, True))),
     ("ld-counter-sage-low-24", "Kitchen counter, sage, 2.4 m, no back panel", "kitchen",
      lambda c, mats: LD.counter(c, mats, 2.4, "sage", "low")),
     ("ld-counter-sage-low-24-r", "Kitchen counter, sage, 2.4 m, no back panel, sink left", "kitchen",

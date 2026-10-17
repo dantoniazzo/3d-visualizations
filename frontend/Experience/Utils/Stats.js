@@ -16,6 +16,10 @@ import { versionLabel } from "../../../shared/publishOptions.js";
  * say which is which — and how long it took to be ready to walk round, and
  * whether it built the house to get there or had it all in the version's
  * runtime file.
+ *
+ * With the colliders shown (Experience/Colliders.js, C), how many of their
+ * triangles are drawn, by what they are, and how long they last took to
+ * gather — the view's own cost is then the readout's frame time.
  */
 export default class Stats {
     static enabled() {
@@ -27,12 +31,14 @@ export default class Stats {
      * @param {Sizes} sizes
      * @param {() => object|null} [published]  the published version on show, if any
      * @param {() => object|undefined} [ready]  when the world was ready, and how
+     * @param {() => object|null} [colliders]  the colliders drawn, while they are (ColliderView.counts)
      */
-    constructor(renderer, sizes, published = () => null, ready = () => undefined) {
+    constructor(renderer, sizes, published = () => null, ready = () => undefined, colliders = () => null) {
         this.renderer = renderer;
         this.sizes = sizes;
         this.published = published;
         this.ready = ready;
+        this.colliders = colliders;
         renderer.info.autoReset = false;
 
         this.element = document.createElement("div");
@@ -101,6 +107,7 @@ export default class Stats {
             `loaded ${downloaded()}`,
             ...readyLine(this.ready()),
             ...describe(this.published()),
+            ...colliderLines(this.colliders()),
         ];
         this.element.textContent = lines.join("\n");
 
@@ -131,6 +138,18 @@ function describe(published) {
 function readyLine(ready) {
     if (!ready) return [];
     return [`ready ${(ready.ms / 1000).toFixed(1)} s  ${ready.built ? "house built" : "runtime file"}`];
+}
+
+/** The colliders drawn (World/ColliderView.js's counts): their triangles by kind, the doors shut, and their last gathering. */
+function colliderLines(counts) {
+    if (!counts) return [];
+    const k = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
+    const by = counts.kinds.map(([label, n]) => `${label} ${k(n)}`);
+    const lines = [`colliders ${k(counts.total)}${counts.xray ? " x-ray" : ""}  ${counts.region ? `within ${counts.region} m` : "all"}  built ${counts.built.ms.toFixed(0)} ms`];
+    // A few to a line, as the readout is narrow.
+    for (let i = 0; i < by.length; i += 3) lines.push(`  ${by.slice(i, i + 3).join("  ")}`);
+    lines.push(`  ${counts.doorsShut} doors blocking`);
+    return lines;
 }
 
 /** Bytes fetched over the network so far, as sent (compressed). */

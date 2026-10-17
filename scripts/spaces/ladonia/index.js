@@ -32,6 +32,15 @@ const PLOT_Z = [-25.5, 44.7];
 const AC_Z = -4.2;
 /** The lane off the street past C's north end (renders 12, 14): its two edges. */
 const LANE_Z = [-33.4, -27.4];
+/**
+ * B's pool's steps (shared/landscape.js's poolSteps): down from its south
+ * end, the pool's width, five treads 0.35 m deep — 1.75 m of its 8, rising
+ * 0.255 m from its floor 1.4 m down to the coping. Four would have risen
+ * 0.31 m, a climb rather than a stair. (A scene seeded before them is given
+ * them by setting its pool's `steps` alone, not by seeding it again, which
+ * would lose what has been edited in it since.)
+ */
+const POOL_STEPS = { side: "z1", count: 5, going: 0.35 };
 
 const round = (n) => Math.round(n * 1000) / 1000;
 const rect = (x0, z0, x1, z1) => [
@@ -117,8 +126,11 @@ function gardensAB(o, { pool = false } = {}) {
     } else {
         out.lawns.push({ polygon: at(o, rect(16.3, N, 19.0, 5.2)) });
         // The pool in front of the south wing, its timber deck on the
-        // house side, an outdoor kitchen at its north end.
-        out.pools.push({ id: `${tag}-pool`, box: box(o, [14.2, 10.4, 17.0, 18.4]), level: -0.06, depth: 1.4, deck: box(o, [12.4, 9.85, 14.2, 19.4]) });
+        // house side, an outdoor kitchen at its north end. Steps the pool's
+        // width down from its south end, by the lounge chairs (the renders
+        // show a plain basin: a small deviation, so a visitor can walk in):
+        // five treads 0.35 m deep, 0.255 m rises to the coping.
+        out.pools.push({ id: `${tag}-pool`, box: box(o, [14.2, 10.4, 17.0, 18.4]), level: -0.06, depth: 1.4, deck: box(o, [12.4, 9.85, 14.2, 19.4]), steps: POOL_STEPS });
         // On its parking side a pale stone terrace for the outdoor kitchen.
         // Round the pool on three sides, not over it.
         paving(`${tag}-t-pool`, "Pool terrace", [[14.2, 9.85], [19.4, 9.85], [19.4, 19.4], [14.2, 19.4], [14.2, 18.4], [17.0, 18.4], [17.0, 10.4], [14.2, 10.4]]);

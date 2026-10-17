@@ -39,6 +39,10 @@ assets/people/**/*.fbx
 # terms). A clone without them draws the stand-ins (index.standin.json).
 public/models/people/*.glb
 public/models/people/index.json
+# ...and the visitor's own swimming clips (assets/people/avatar/, made by
+# `npm run people` into avatar-clips.glb, listed here): without them the
+# visitor swims as a wader.
+public/models/people/avatar-clips.json
 !public/models/people/props.glb
 !public/models/people/standin-*.glb
 !public/models/people/clips.standin.glb

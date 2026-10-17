@@ -271,8 +271,8 @@ export default class FieldEdit {
         }
 
         if (!editor.selection && !editor.session) return;
-        // Looking stays the walkthrough's, and so do the menu and chat.
-        if (!editor.session && (event.code === "KeyV" || event.code === "KeyM" || event.code === "KeyP" || event.key === "Enter")) return;
+        // Looking stays the walkthrough's, and so do the menu and chat — and the colliders drawn (C) and the room's lights (Q).
+        if (!editor.session && (event.code === "KeyV" || event.code === "KeyM" || event.code === "KeyP" || event.code === "KeyC" || event.code === "KeyQ" || event.key === "Enter")) return;
         // Everything else belongs to the selection now — including W A S D,
         // so the visitor stands still while it is being worked on.
         event.stopPropagation();

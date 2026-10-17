@@ -296,6 +296,18 @@ body.mode-edit {
     }
 }
 
+// The colliders' toggle (Experience/Colliders.js) came after all that was
+// fitted, and is not to take its width from the floor/room menu: under about
+// 1600 px — where, with a view's lights and its day or night in it, the
+// header has nothing to spare — it is there only while they are shown, to
+// say so and to hide them. Off, they are a key (C) and a View menu item away,
+// and the hint bar says so.
+@media (max-width: 1599px) {
+    .ed-toggle[data-action="colliders"]:not(.is-on) {
+        display: none;
+    }
+}
+
 .ed-walk {
     background: var(--ed-bg-field);
     border: 1px solid var(--ed-border);

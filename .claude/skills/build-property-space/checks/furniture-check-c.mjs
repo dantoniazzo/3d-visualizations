@@ -18,8 +18,11 @@
  * at 2 cm, each cell keeping its lowest and highest y), so an L-shaped sofa,
  * a bed's frame vs its wider headboard, or a floating nightstand under it are
  * judged as drawn, not by their bounding boxes. The walk raster uses each
- * piece as the game collides with it (mesh, or its box when it has opening
- * doors/drawers or more triangles than MESH_COLLISION_BUDGET, 12000).
+ * piece as the game collides with it (SceneBuilder.collisionOf, since
+ * 2026-10-16): the catalogue's `collision` when it says box or mesh, else its
+ * box when the piece without its opening parts (the nodes under one with
+ * `extras.opens`) has more triangles than MESH_COLLISION_BUDGET, 12000, else
+ * its mesh — its parts at rest in it, where the game's shut boxes stand.
  *
  * Each furniture line carries the furnish.js call that made it (stack traces
  * of an instrumented re-run of buildingC), e.g. "furnishC:447" or
@@ -440,9 +443,13 @@ function model(id) {
     };
     const tris = [];
     let opens = false;
-    const visit = (ni, P) => {
+    // The triangles that count against the budget: the piece without its opening parts (as collisionOf counts them).
+    let body = 0;
+    const visit = (ni, P, inPart = false) => {
         const n = gltf.nodes[ni];
         if (n.extras?.opens) opens = true;
+        const part = inPart || Boolean(n.extras?.opens);
+        const before = tris.length;
         const M = mm(P, matOf(n));
         if (n.mesh != null)
             for (const prim of gltf.meshes[n.mesh].primitives) {
@@ -455,7 +462,8 @@ function model(id) {
                 };
                 for (let i = 0; i + 2 < idx.length; i += 3) tris.push([v(idx[i]), v(idx[i + 1]), v(idx[i + 2])]);
             }
-        for (const c of n.children ?? []) visit(c, M);
+        if (!part) body += tris.length - before;
+        for (const c of n.children ?? []) visit(c, M, part);
     };
     for (const ni of gltf.scenes[gltf.scene ?? 0].nodes) visit(ni, [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
     const yaw = ((item.yaw ?? 0) * Math.PI) / 180;
@@ -510,7 +518,7 @@ function model(id) {
     }
     const cells = [];
     for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) if (hi[j * nx + i] >= lo[j * nx + i]) cells.push([x0 + (i + 0.5) * cx, z0 + (j + 0.5) * cz, lo[j * nx + i], hi[j * nx + i]]);
-    const info = { tris: tris.length, opens, x0, x1, z0, z1, y0, y1, nx, nz, lo, hi, cells };
+    const info = { tris: tris.length, body, opens, x0, x1, z0, z1, y0, y1, nx, nz, lo, hi, cells };
     MODEL.set(id, info);
     return info;
 }
@@ -560,10 +568,12 @@ const furn = scene.furniture
         const level = levelOf(y);
         const kind = kindOf(f.catalog_id);
         const poly = obb(x, z, w, d, th);
-        // SceneBuilder.MESH_COLLISION_BUDGET (12000): heavier pieces, and any with opening doors, collide as their box.
+        // As SceneBuilder.collisionOf (since 2026-10-16): the catalogue's `collision`, else a box when the piece without its
+        // opening parts has more triangles than MESH_COLLISION_BUDGET (12000), else its mesh — its parts at rest, where the
+        // game's shut boxes stand (a way in, a shower's door, bars the way itself while shut: the same at rest).
         // `--budget N` checks as if it were N.
         const budget = ARGV.includes("--budget") ? Number(ARGV[ARGV.indexOf("--budget") + 1]) : 12000;
-        const mode = item.collision === "box" || item.collision === "mesh" ? item.collision : m.opens || m.tris > budget ? "box" : "mesh";
+        const mode = item.collision === "box" || item.collision === "mesh" ? item.collision : m.body > budget ? "box" : "mesh";
         return { id: f.id, cat: f.catalog_id, x, z, y, th, rot: f.rotation, w, h, d, front, level, kind, poly, bb: bbox(poly), cells, mode, origin: ORIGIN.get(f.id) ?? "?", item };
     });
 const byId = Object.fromEntries(furn.map((p) => [p.id, p]));

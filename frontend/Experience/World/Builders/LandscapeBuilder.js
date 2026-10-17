@@ -1,7 +1,7 @@
 import * as THREE from "three";
 
 import { boxUVs, mergeParts } from "./KitLibrary.js";
-import { GROUNDS, terrainHeight, terrainPaint } from "../../../../shared/landscape.js";
+import { GROUNDS, NOSING_DEPTH, POOL_RIM, poolSteps, terrainHeight, terrainPaint } from "../../../../shared/landscape.js";
 import { pointInPolygon } from "../../../../shared/vegetation.js";
 
 /**
@@ -45,9 +45,12 @@ export function buildLandscape(landscape, materials) {
     for (const pergola of landscape.pergolas || []) addPergola(parts, pergola);
     for (const planter of landscape.planters || []) addPlanter(parts, planter);
     for (const railing of landscape.railings || []) addRailing(parts, railing);
-    for (const pool of landscape.pools || []) addPool(parts, pool, live);
+    // (What is walked on but never drawn: a pool's steps' ramp.)
+    const colliders = [];
+    for (const pool of landscape.pools || []) addPool(parts, pool, live, colliders);
     addMarkings(parts, landscape.markings || []);
     group.add(...parts.meshes());
+    if (colliders.length) group.add(...colliders);
     group.traverse((node) => {
         if (node.isMesh) node.userData.keepWhole = true;
     });
@@ -331,7 +334,12 @@ vec3 ground( sampler2D map, float tile ) {
 // What stands on it
 // ---------------------------------------------------------------------
 
-/** Geometry gathered by material, each lot merged into one mesh at the end. */
+/**
+ * Geometry gathered by material, each lot merged into one mesh at the end —
+ * what is only drawn (`decor`: a pool's steps, walked by their ramp) in
+ * lots of its own, left out of the collision trees (World/Collision.js's
+ * isTransient).
+ */
 class Parts {
     constructor(materials) {
         this.materials = materials;
@@ -339,10 +347,11 @@ class Parts {
     }
 
     /** A finish's material (`finish:<id>`), or a trim's (`trim:<id>`), or one made here. */
-    add(key, geometry, { tile = null } = {}) {
+    add(key, geometry, { tile = null, decor = false } = {}) {
         if (tile) boxUVs(geometry.attributes.normal ? geometry : (geometry.computeVertexNormals(), geometry), tile);
-        if (!this.lots.has(key)) this.lots.set(key, []);
-        this.lots.get(key).push(geometry);
+        const lot = decor ? `${key}${DECOR}` : key;
+        if (!this.lots.has(lot)) this.lots.set(lot, []);
+        this.lots.get(lot).push(geometry);
     }
 
     material(key) {
@@ -354,19 +363,25 @@ class Parts {
 
     meshes() {
         const out = [];
-        for (const [key, geometries] of this.lots) {
+        for (const [lot, geometries] of this.lots) {
+            const decor = lot.endsWith(DECOR);
+            const key = decor ? lot.slice(0, -DECOR.length) : lot;
             const geometry = mergeParts(geometries);
             for (const part of geometries) part.dispose();
             const mesh = new THREE.Mesh(geometry, this.material(key));
-            mesh.name = `landscape:${key}`;
+            mesh.name = `landscape:${lot}`;
             mesh.castShadow = !key.includes("glass") && !key.endsWith("paint");
             mesh.receiveShadow = true;
-            mesh.userData = { kind: "surface", surfaceKind: "landscape", label: LABELS[key] ?? "Garden" };
+            mesh.userData = { kind: "surface", surfaceKind: "landscape", label: (decor ? DECOR_LABELS[key] : null) ?? LABELS[key] ?? "Garden" };
+            if (decor) mesh.userData.decor = true;
             out.push(mesh);
         }
         return out;
     }
 }
+
+/** What a lot of decor is told apart by, after its material's key. */
+const DECOR = "#decor";
 
 const LABELS = {
     "finish:dry_stone": "Dry-stone wall",
@@ -376,6 +391,11 @@ const LABELS = {
     "trim:glass": "Glass balustrade",
     "finish:pool_mosaic": "Pool",
     "made:paint": "Road marking",
+};
+/** ...and what is only drawn. */
+const DECOR_LABELS = {
+    "finish:pool_mosaic": "Pool steps",
+    "finish:stone_paving_floor": "Pool steps",
 };
 
 const MADE = {
@@ -628,11 +648,12 @@ function slopedPanel(a, b, height, thickness, extend = 0) {
 
 /**
  * A pool: its basin lined in mosaic, a pale stone coping round its rim,
- * a hardwood deck round that, and its water (live: it moves).
+ * a hardwood deck round that, its steps if it has them (addPoolSteps), and
+ * its water (live: it moves).
  */
-function addPool(parts, pool, live) {
+function addPool(parts, pool, live, colliders) {
     const [x0, z0, x1, z1] = pool.box;
-    const rim = 0.02;
+    const rim = POOL_RIM;
     const floor = pool.level - pool.depth;
     const t = 0.25;
     const tile = parts.materials.tileSize("pool_mosaic");
@@ -661,34 +682,446 @@ function addPool(parts, pool, live) {
         deck(d0, j0, i0, j1);
         deck(i1, j0, d1, j1);
     }
+    addPoolSteps(parts, pool, colliders, tile);
     live.add(poolWater(pool));
 }
 
 /**
- * The pool's water: a surface at its level, rippled by two scrolling
- * normals and lit by the sky it reflects; seen through, its floor tinted
- * turquoise with depth.
+ * A pool's steps (shared/landscape.js's poolSteps): each tread a block of
+ * the basin's mosaic from the floor up, a strip of the coping's stone set
+ * flush in its front edge, so a tread reads from above the water and from
+ * in it — all of it only drawn (`decor`) — and the ramp they are walked
+ * on by, invisible, which collides: the capsule cannot climb a riser
+ * (World/Builders/StructureBuilder.js's buildStairs, whose idiom this
+ * is). The ramp goes in the landscape's own group, with the rest of what
+ * is walked on there, where the building's tree and a published view's
+ * collision both find it; its label says what a ray met.
+ *
+ * Every block is sunk a centimetre into the basin's sides, its floor and
+ * the wall it stands against; a tread is its block behind the strip and
+ * a block under it, the strip set on that, so no face lies over another
+ * (a strip laid a few millimetres proud of its tread fought it in the
+ * depth buffer from fifty metres off: checks/zfight-check.mjs).
  */
-function poolWater(pool) {
+function addPoolSteps(parts, pool, colliders, tile) {
+    const steps = poolSteps(pool);
+    if (!steps) return;
+    const sink = 0.01;
+    const [ox, oz] = steps.out;
+    // A footprint [x0, z0, x1, z1] grown `aside` across the steps, and `back` and `ahead` along them: out of the
+    // pool, towards the side they come down from, and into it.
+    const grown = ([a, b, c, d], aside, back = 0, ahead = 0) => {
+        const [lo, hi] = ox + oz > 0 ? [ahead, back] : [back, ahead];
+        return ox ? [a - lo, b - aside, c + hi, d + aside] : [a - aside, b - lo, c + aside, d + hi];
+    };
+    const block = ([a, b, c, d], bottom, top, key, options) => parts.add(key, box(c - a, top - bottom, d - b, (a + c) / 2, (top + bottom) / 2, (b + d) / 2), { ...options, decor: true });
+    for (const [k, tread] of steps.treads.entries()) {
+        const under = tread.top - NOSING_DEPTH;
+        // Into the sides, and the top one into the wall behind it.
+        block(grown(tread.rest, sink, k === steps.count - 1 ? sink : 0), steps.floor - sink, tread.top, "finish:pool_mosaic", { tile });
+        block(grown(tread.nosing, sink), steps.floor - sink, under, "finish:pool_mosaic", { tile });
+        block(grown(tread.nosing, sink), under, tread.top, "finish:stone_paving_floor", { tile: 1.5 });
+    }
+    // The ramp: a slab 0.3 m thick whose top runs from the coping's top, a
+    // half going back from the edge, down through the middle of every
+    // tread to half a rise under the floor, a going past the foot.
+    const { from, to, low, high } = steps.ramp;
+    const thick = 0.3;
+    const run = to - from;
+    const pitch = Math.atan2(high - low, run);
+    const slope = Math.hypot(run, high - low);
+    const mid = (from + to) / 2;
+    const midY = (low + high) / 2;
+    const geometry = new THREE.BoxGeometry(steps.width, thick, slope)
+        .rotateX(-pitch)
+        // (Its top face's middle on the line, its body under it.)
+        .translate(0, midY - (thick / 2) * Math.cos(pitch), mid + (thick / 2) * Math.sin(pitch))
+        // Its local +z is the way the steps climb out.
+        .rotateY(Math.atan2(ox, oz))
+        .translate(steps.edge[0], 0, steps.edge[1]);
+    const ramp = new THREE.Mesh(geometry);
+    ramp.name = "pool-steps-ramp";
+    ramp.visible = false;
+    ramp.userData = { label: "Pool steps" };
+    colliders.push(ramp);
+}
+
+// ---------------------------------------------------------------------
+// The pool's water
+// ---------------------------------------------------------------------
+
+/**
+ * How clear water takes the light that goes through it, a metre at a time
+ * (linear red, green, blue): red goes first, so a white floor seen through
+ * a metre and a half of it, lit through as much, is turquoise, and the
+ * deeper the bluer; a tread a hand under the surface is near its own
+ * colour. Clearer than the sea, as a kept pool is (the listing's render
+ * 15: the mosaic and the light on it plain to see the length of the pool).
+ */
+const ABSORB = new THREE.Vector3(0.3, 0.06, 0.045);
+/**
+ * The water's own body: the light it scatters back up, lit from above
+ * (linear), and how fast a look through it gathers that glow and loses
+ * what is behind to it, a metre at a time (`[dims, glows]`) — the haze a
+ * clear pool has, the turquoise of its body over a dark floor, more the
+ * deeper the look goes.
+ */
+const BODY = new THREE.Color().setRGB(0.05, 0.26, 0.28, THREE.LinearSRGBColorSpace);
+const HAZE = new THREE.Vector2(0.12, 0.5);
+/** What stands round a pool — its deck, coping, hedges and walls — as the water mirrors it low down, in the sky's light (linear albedo). */
+const SURROUND = new THREE.Vector3(0.2, 0.19, 0.15);
+/** The surface seen from under it: a deeper blue, letting little through (as it has been since swimming came: World/Player/Swim.js). */
+const UNDERSIDE = new THREE.Color("#6fc6c9").multiply(new THREE.Color().setRGB(0.42, 0.78, 0.86, THREE.LinearSRGBColorSpace));
+const UNDERSIDE_ALPHA = 0.93;
+/**
+ * The sun's caustics on the basin, by day (updatePoolWater): how bright
+ * their lines are, over the light the basin is lit by there — taken from
+ * the cells between them, so the basin is as bright on the whole — and
+ * the two nets of them, a coarser and a finer, laid across each other,
+ * each `[cell, turn, drift]`: its cells' size in metres, how far it is
+ * turned (radians), how fast it slides across the floor (metres a second,
+ * x and z). Both are the one tile of cells (poolNet), read from a texture:
+ * worked out for every pixel, the cells cost a pool filling the view
+ * 0.3 ms a frame at 2048 × 1536.
+ */
+const CAUSTICS = 0.9;
+const NETS = [
+    [0.34, 0, [0.11, 0.07]],
+    [0.23, 0.7, [-0.05, -0.13]],
+];
+/** The tile of cells: this many a side, this many texels each. */
+const NET_CELLS = 8;
+const NET_TEXELS = 32;
+/** The water's own glow at night, from the lamp under it (lightPoolWater). */
+const NIGHT_GLOW = "#1fa9c4";
+const NIGHT_GLOW_INTENSITY = 0.7;
+/** The most treads a pool's steps have (shared/landscape.js's poolSteps): the shaders' loop. */
+const MAX_TREADS = 12;
+
+/** What every pool's water shares, moved once a frame (updatePoolWater). */
+const WATER = {
+    uTime: { value: 0 },
+    // Towards the sun, in the world.
+    uSunDir: { value: new THREE.Vector3(0, 1, 0) },
+    uCaustics: { value: 0 },
+    // 1 while the water reflects the bare sky (whose horizon the surroundings hide); 0 under a probe that saw them.
+    uHorizon: { value: 1 },
+    uAbsorb: { value: ABSORB },
+    uHaze: { value: HAZE },
+    uNet: { value: null },
+};
+
+/** Each pool's water surface (poolWater): what updatePoolWater and lightPoolWater look for. */
+const POOLS = new WeakSet();
+
+/**
+ * The tile the caustics' nets are read from (poolNetEdge): NET_CELLS ×
+ * NET_CELLS cells, each with a point somewhere about its middle (the same
+ * every time: a seeded sequence), wrapping at its edges; each texel how
+ * near it is to a line where two cells meet — its distance to the
+ * second-nearest point less the nearest, in cells — as a byte. Made once
+ * a page, the first time a pool is, in a few milliseconds.
+ */
+function poolNet() {
+    if (WATER.uNet.value) return WATER.uNet.value;
+    const size = NET_CELLS * NET_TEXELS;
+    let seed = 7;
+    const random = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const points = Array.from({ length: NET_CELLS * NET_CELLS }, () => [0.12 + 0.76 * random(), 0.12 + 0.76 * random()]);
+    const data = new Uint8Array(size * size);
+    for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+            const px = (x + 0.5) / NET_TEXELS;
+            const py = (y + 0.5) / NET_TEXELS;
+            const cx = Math.floor(px);
+            const cy = Math.floor(py);
+            let near = 8;
+            let next = 8;
+            for (let j = -1; j <= 1; j++) {
+                for (let i = -1; i <= 1; i++) {
+                    const [ox, oy] = points[((cy + j + NET_CELLS) % NET_CELLS) * NET_CELLS + ((cx + i + NET_CELLS) % NET_CELLS)];
+                    const dx = cx + i + ox - px;
+                    const dy = cy + j + oy - py;
+                    const d = Math.sqrt(dx * dx + dy * dy);
+                    next = Math.min(next, Math.max(near, d));
+                    near = Math.min(near, d);
+                }
+            }
+            data[y * size + x] = Math.min(255, Math.round((next - near) * 255));
+        }
+    }
+    const texture = new THREE.DataTexture(data, size, size, THREE.RedFormat, THREE.UnsignedByteType);
+    texture.name = "pool-caustics";
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    texture.magFilter = THREE.LinearFilter;
+    texture.minFilter = THREE.LinearMipmapLinearFilter;
+    texture.generateMipmaps = true;
+    texture.needsUpdate = true;
+    WATER.uNet.value = texture;
+    return texture;
+}
+
+/**
+ * Where a pool's water is, and its basin, as both its passes ask of it:
+ * the box, the level and the floor, and each tread of its steps (if any)
+ * as a block from the floor up — `[x0, z0, x1, z1]` and its top.
+ */
+function basinUniforms(pool) {
     const [x0, z0, x1, z1] = pool.box;
-    const geometry = new THREE.PlaneGeometry(x1 - x0, z1 - z0, 1, 1).rotateX(-Math.PI / 2).translate((x0 + x1) / 2, pool.level, (z0 + z1) / 2);
-    const material = new THREE.MeshPhysicalMaterial({
-        // A clear turquoise, as the renders' pool reads in the sun.
-        // See-through by its opacity, not by transmission, which has three
-        // draw every opaque thing a second time each frame.
-        color: "#6fc6c9",
-        roughness: 0.04,
-        metalness: 0,
+    const steps = poolSteps(pool);
+    const treads = Array.from({ length: MAX_TREADS }, () => new THREE.Vector4());
+    const tops = new Array(MAX_TREADS).fill(0);
+    for (const [k, tread] of (steps?.treads ?? []).slice(0, MAX_TREADS).entries()) {
+        treads[k].set(...tread.box);
+        tops[k] = tread.top;
+    }
+    const count = Math.min(steps?.count ?? 0, MAX_TREADS);
+    return {
+        ...WATER,
+        uPoolBox: { value: new THREE.Vector4(x0, z0, x1, z1) },
+        uPoolDepth: { value: new THREE.Vector2(pool.level, pool.level - pool.depth) },
+        // All the steps' blocks in one, and the highest top among them.
+        uSteps: { value: count ? new THREE.Vector4(...steps.box) : new THREE.Vector4() },
+        uStepsTop: { value: count ? Math.max(...tops.slice(0, count)) : pool.level - pool.depth },
+        uTreads: { value: treads },
+        uTreadTops: { value: tops },
+        uTreadCount: { value: count },
+    };
+}
+
+/**
+ * The basin seen through the water, for both passes' shaders: how far a
+ * look goes through the water before it meets the basin — a wall, the
+ * floor or a tread — worked out from the box and the treads (no depth
+ * buffer to read: the frame being drawn is the one it would come from),
+ * bent at the surface as light into water is (sin r = sin i / 1.333), so
+ * a look along the pool from its edge goes down into it rather than for
+ * ever under its surface; and the caustics on what it meets.
+ */
+const BASIN_GLSL = /* glsl */ `
+#define POOL_TREADS ${MAX_TREADS}
+#define WATER_ETA 0.75
+uniform vec4 uPoolBox;
+uniform vec2 uPoolDepth;
+uniform vec4 uSteps;
+uniform float uStepsTop;
+uniform vec4 uTreads[ POOL_TREADS ];
+uniform float uTreadTops[ POOL_TREADS ];
+uniform int uTreadCount;
+uniform float uTime;
+uniform vec3 uSunDir;
+uniform float uCaustics;
+uniform vec3 uAbsorb;
+uniform vec2 uHaze;
+uniform sampler2D uNet;
+varying vec3 vWaterWorld;
+
+// The way the eye looks at a point of the surface, in the world.
+vec3 poolEye( const in vec3 at ) {
+    if ( isOrthographic ) return normalize( - vec3( viewMatrix[ 0 ][ 2 ], viewMatrix[ 1 ][ 2 ], viewMatrix[ 2 ][ 2 ] ) );
+    return normalize( at - cameraPosition );
+}
+
+// Where a ray from p along d (1 / d: \`inv\`) goes into a box, and comes out.
+vec2 poolSlab( const in vec3 p, const in vec3 inv, const in vec3 lowest, const in vec3 highest ) {
+    vec3 a = ( lowest - p ) * inv;
+    vec3 b = ( highest - p ) * inv;
+    vec3 lo = min( a, b );
+    vec3 hi = max( a, b );
+    return vec2( max( max( lo.x, lo.y ), lo.z ), min( min( hi.x, hi.y ), hi.z ) );
+}
+
+// How far from p, in the water, along d (downwards) the basin is: out through
+// the nearer of the walls it goes towards or the floor, unless a tread is
+// first — each tried only by a look that goes through the steps at all.
+float poolRun( const in vec3 p, const in vec3 d ) {
+    vec3 inv = 1.0 / mix( d, vec3( 1e-5 ), lessThan( abs( d ), vec3( 1e-5 ) ) );
+    vec2 wall = max( ( uPoolBox.xy - p.xz ) * inv.xz, ( uPoolBox.zw - p.xz ) * inv.xz );
+    float run = min( min( wall.x, wall.y ), ( uPoolDepth.y - p.y ) * inv.y );
+    vec2 steps = poolSlab( p, inv, vec3( uSteps.x, uPoolDepth.y, uSteps.y ), vec3( uSteps.z, uStepsTop, uSteps.w ) );
+    if ( uTreadCount > 0 && steps.x <= steps.y && steps.y > 0.0 && steps.x < run ) {
+        for ( int i = 0; i < POOL_TREADS; i ++ ) {
+            if ( i >= uTreadCount ) break;
+            vec4 tread = uTreads[ i ];
+            vec2 slab = poolSlab( p, inv, vec3( tread.x, uPoolDepth.y, tread.y ), vec3( tread.z, uTreadTops[ i ], tread.w ) );
+            if ( slab.x <= slab.y && slab.y > 0.0 ) run = min( run, max( slab.x, 0.0 ) );
+        }
+    }
+    return max( run, 0.0 );
+}
+
+// How near x (metres) is to a line of the net of light the ripples focus
+// the sun into on the basin: the tile of cells (poolNet), \`cell\` metres
+// each, turned \`turn\` and slid \`drift\` metres a second.
+float poolNetEdge( const in vec2 x, const in float cell, const in float turn, const in vec2 drift ) {
+    vec2 turned = mat2( cos( turn ), sin( turn ), - sin( turn ), cos( turn ) ) * x + drift * uTime;
+    return texture2D( uNet, turned / ( cell * ${NET_CELLS.toFixed(1)} ) ).r;
+}
+
+// The caustics at \`hit\`, \`deep\` under the surface: how much more (or
+// less) light than the basin is lit by there, while the sun shines
+// (uCaustics) — its lines sharp deep down, where the rays have come to
+// their focus, soft and faint a few centimetres under the surface. None
+// where the sun's way to it came in over the coping (the walls shade it),
+// nor where a pixel spans more than a line's width (far off, or edge on:
+// they would flicker), which is their average.
+float poolCaustics( const in vec3 hit, const in float deep ) {
+    vec3 ray = refract( - uSunDir, vec3( 0.0, 1.0, 0.0 ), WATER_ETA );
+    float run = deep / max( - ray.y, 0.05 );
+    vec2 entry = hit.xz - ray.xz * run;
+    float span = length( fwidth( entry ) );
+    vec2 inside = smoothstep( uPoolBox.xy, uPoolBox.xy + 0.03, entry ) * ( 1.0 - smoothstep( uPoolBox.zw - 0.03, uPoolBox.zw, entry ) );
+    float strength = uCaustics * inside.x * inside.y * ( 1.0 - smoothstep( 0.015, 0.06, span ) ) * smoothstep( 0.02, 0.4, run );
+    // (None at night, under the plain light, in the walls' shade or far off: nothing to read.)
+    if ( strength <= 0.0 ) return 0.0;
+    // (Its lines a little wavy, as the ripples' are, and moving with them, not a cracked pane's.)
+    vec2 bent = entry + 0.035 * sin( entry.yx * 5.3 + uTime * vec2( 0.7, - 0.9 ) );
+    float width = mix( 0.24, 0.075, smoothstep( 0.1, 1.2, run ) );
+    float lines = 0.0;
+    float mean = 0.0;
+${NETS.map(([cell, turn, [dx, dz]], k) => `    {
+        float edge = poolNetEdge( bent, ${cell.toFixed(2)}, ${turn.toFixed(2)}, vec2( ${dx.toFixed(2)}, ${dz.toFixed(2)} ) );
+        float w = width * ${(1 + k * 0.2).toFixed(1)};
+        lines += ${k ? "0.7 * " : ""}exp( - edge * edge / ( w * w ) );
+        // (What a net's lines come to over its cells: its lines' width × √π, their length a cell's area being about two.)
+        mean += ${k ? "0.7 * " : ""}1.77 * w;
+    }`).join("\n")}
+    return strength * ( lines - mean );
+}
+`;
+
+const DEPTH_VERTEX = /* glsl */ `
+varying vec3 vWaterWorld;
+#include <common>
+#include <fog_pars_vertex>
+#include <clipping_planes_pars_vertex>
+void main() {
+    vec4 world = modelMatrix * vec4( position, 1.0 );
+    vWaterWorld = world.xyz;
+    vec4 mvPosition = viewMatrix * world;
+    gl_Position = projectionMatrix * mvPosition;
+    #include <clipping_planes_vertex>
+    #include <fog_vertex>
+}
+`;
+
+const DEPTH_FRAGMENT = /* glsl */ `
+#include <common>
+#include <fog_pars_fragment>
+#include <clipping_planes_pars_fragment>
+${BASIN_GLSL}
+void main() {
+    #include <clipping_planes_fragment>
+    vec3 down = refract( poolEye( vWaterWorld ), vec3( 0.0, 1.0, 0.0 ), WATER_ETA );
+    float run = poolRun( vWaterWorld, down );
+    vec3 hit = vWaterWorld + down * run;
+    float deep = max( uPoolDepth.x - hit.y, 0.0 );
+    // What of the basin's light reaches the eye: the light that lit it came
+    // down through the water to it, and goes back up through it, a little
+    // lost in its haze on the way — and the sun's, focused by the ripples.
+    vec3 through = exp( - uAbsorb * ( run + deep ) - uHaze.x * run ) * max( 1.0 + poolCaustics( hit, deep ), 0.0 );
+    #ifdef USE_FOG
+        #ifdef FOG_EXP2
+            float fogFactor = 1.0 - exp( - fogDensity * fogDensity * vFogDepth * vFogDepth );
+        #else
+            float fogFactor = smoothstep( fogNear, fogFar, vFogDepth );
+        #endif
+        // (Far off, the haze is what is seen, as it was drawn over the basin.)
+        through = mix( through, vec3( 1.0 ), fogFactor );
+    #endif
+    // Drawn as twice the colour under it times this (DstColor, SrcColor):
+    // half of it, in the frame's own colour space, so it can brighten (a
+    // caustic) as well as dim, and a frame to the screen, gamma-encoded,
+    // is dimmed as much as one in linear light.
+    gl_FragColor = vec4( 0.5 * linearToOutputTexel( vec4( min( through, vec3( 2.0 ) ), 1.0 ) ).rgb, 1.0 );
+}
+`;
+
+/**
+ * The first of the water's two passes (poolWater): what is under the
+ * surface — the basin, its steps, a swimmer — dimmed as the water between
+ * it and the eye dims it, multiplied into the frame as it was drawn, and
+ * moved about by the sun's caustics. Drawn from above only (FrontSide):
+ * from under the water, nothing is under the surface.
+ */
+function poolDepthMaterial(uniforms) {
+    const material = new THREE.ShaderMaterial({
+        name: "pool_water_depth",
+        uniforms: { ...THREE.UniformsUtils.clone(THREE.UniformsLib.fog), ...uniforms },
+        vertexShader: DEPTH_VERTEX,
+        fragmentShader: DEPTH_FRAGMENT,
         transparent: true,
-        opacity: 0.78,
+        depthWrite: false,
+        fog: true,
+        clipping: true,
+        toneMapped: false,
+        blending: THREE.CustomBlending,
+        blendEquation: THREE.AddEquation,
+        blendSrc: THREE.DstColorFactor,
+        blendDst: THREE.SrcColorFactor,
+        blendSrcAlpha: THREE.ZeroFactor,
+        blendDstAlpha: THREE.OneFactor,
     });
+    return material;
+}
+
+/**
+ * The second pass: the surface itself, three's own physical shading with
+ * the water's ways added (onBeforeCompile). Drawn over what the first pass
+ * left as light added on top (CustomBlending: one, one minus alpha):
+ *
+ *   - its reflection: the sky's (Sky.share gives the pool the sky, or the
+ *     probe outside), rippled, as strong as water reflects at that angle
+ *     (Fresnel: 2% looking straight down, all of it edge on) — which is
+ *     also how much of what is under it the reflection hides (its alpha);
+ *     low down, the bare sky's horizon is what stands round the pool
+ *     (SURROUND in the sky's light), as the deck, the hedges and the walls
+ *     stand in the way of it — or the sky would show where they are, a
+ *     white sheet over the far end;
+ *   - its body: the light the water itself sends back up, turquoise, the
+ *     more the deeper the look goes (BODY, by the same path the first pass
+ *     takes); at night the pool's lamp (Flora: its emissive).
+ *
+ * Its roughness is a little over reflections.js's clear glass (≤ 0.1),
+ * which would hand it the studio to reflect instead of the sky. Both its
+ * faces are drawn, in one pass: from under it — a swimmer's camera
+ * plunged below the surface (World/Player/Swim.js) — it is the surface
+ * seen from below, darker, bluer and nearly opaque (UNDERSIDE), by the
+ * face the fragment is on (gl_FrontFacing) in its own shader, so going
+ * under changes no material and compiles nothing.
+ */
+function poolSurfaceMaterial(uniforms) {
+    const material = new THREE.MeshPhysicalMaterial({
+        color: BODY,
+        roughness: 0.12,
+        metalness: 0,
+        ior: 1.333,
+        transparent: true,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        blending: THREE.CustomBlending,
+        blendEquation: THREE.AddEquation,
+        blendSrc: THREE.OneFactor,
+        blendDst: THREE.OneMinusSrcAlphaFactor,
+    });
+    // (One pass, both faces: a flat quad never hides itself.)
+    material.forceSinglePass = true;
     material.name = "pool_water";
-    const uniforms = { uTime: { value: 0 } };
-    material.userData.time = uniforms.uTime;
+    const own = {
+        uSurround: { value: SURROUND },
+        uUnderside: { value: new THREE.Vector3(UNDERSIDE.r, UNDERSIDE.g, UNDERSIDE.b) },
+    };
     material.onBeforeCompile = (shader) => {
-        shader.uniforms.uTime = uniforms.uTime;
+        Object.assign(shader.uniforms, uniforms, own);
         shader.fragmentShader = shader.fragmentShader
-            .replace("#include <common>", "#include <common>\nuniform float uTime;\nvarying vec3 vWaterWorld;")
+            .replace(
+                "#include <common>",
+                `#include <common>
+${BASIN_GLSL}
+uniform float uHorizon;
+uniform vec3 uSurround;
+uniform vec3 uUnderside;`
+            )
             .replace(
                 "#include <normal_fragment_maps>",
                 `#include <normal_fragment_maps>
@@ -701,17 +1134,135 @@ function poolWater(pool) {
     ) * 0.06;
     normal = normalize( normal + ( viewMatrix * vec4( g.x, 0.0, g.y, 0.0 ) ).xyz );
 }`
+            )
+            .replace(
+                "#include <color_fragment>",
+                `#include <color_fragment>
+if ( ! gl_FrontFacing ) diffuseColor = vec4( uUnderside, ${UNDERSIDE_ALPHA.toFixed(2)} );`
+            )
+            .replace(
+                "#include <lights_fragment_maps>",
+                `#include <lights_fragment_maps>
+#if defined( USE_ENVMAP ) && defined( ENVMAP_TYPE_CUBE_UV ) && defined( RE_IndirectSpecular )
+if ( gl_FrontFacing && uHorizon > 0.0 ) {
+    vec3 mirrored = inverseTransformDirection( reflect( - geometryViewDir, normal ), viewMatrix );
+    // (The sky's light on them: what the surface itself takes from above, three's own sample of it.)
+    vec3 around = uSurround * iblIrradiance * RECIPROCAL_PI;
+    radiance = mix( radiance, around, uHorizon * ( 1.0 - smoothstep( 0.04, 0.32, mirrored.y ) ) );
+}
+#endif`
+            )
+            .replace(
+                "#include <aomap_fragment>",
+                `#include <aomap_fragment>
+float waterAlpha = diffuseColor.a;
+if ( gl_FrontFacing ) {
+    vec3 down = refract( poolEye( vWaterWorld ), vec3( 0.0, 1.0, 0.0 ), WATER_ETA );
+    float glow = 1.0 - exp( - uHaze.y * poolRun( vWaterWorld, down ) );
+    float fresnel = 0.02 + 0.98 * pow( 1.0 - saturate( dot( normal, geometryViewDir ) ), 5.0 );
+    float body = glow * ( 1.0 - fresnel );
+    reflectedLight.directDiffuse *= body;
+    reflectedLight.indirectDiffuse *= body;
+    totalEmissiveRadiance *= ( 1.0 - fresnel ) * mix( 0.35, 1.0, glow );
+    waterAlpha = fresnel;
+}`
+            )
+            .replace(
+                "#include <opaque_fragment>",
+                `#include <opaque_fragment>
+gl_FragColor = gl_FrontFacing ? vec4( outgoingLight, waterAlpha ) : vec4( outgoingLight * diffuseColor.a, diffuseColor.a );`
+            )
+            .replace(
+                "#include <fog_fragment>",
+                `#ifdef USE_FOG
+    #ifdef FOG_EXP2
+        float fogFactor = 1.0 - exp( - fogDensity * fogDensity * vFogDepth * vFogDepth );
+    #else
+        float fogFactor = smoothstep( fogNear, fogFar, vFogDepth );
+    #endif
+    // (Its light is added, not laid over: the haze over only as much of the pixel as the water hides.)
+    gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor * gl_FragColor.a, fogFactor );
+#endif`
             );
         shader.vertexShader = shader.vertexShader
             .replace("#include <common>", "#include <common>\nvarying vec3 vWaterWorld;")
             .replace("#include <worldpos_vertex>", "#include <worldpos_vertex>\nvWaterWorld = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;");
     };
     material.customProgramCacheKey = () => "pool-water";
-    const water = new THREE.Mesh(geometry, material);
+    return material;
+}
+
+/**
+ * A pool's water: a surface at its level, clear — the basin, its steps
+ * and a swimmer seen through it, turquoise with depth, the sun's caustics
+ * on them — and reflecting the sky, rippled. Drawn as two passes over one
+ * quad, as no refraction is (three's transmission draws every opaque thing
+ * again a frame): the first (poolDepthMaterial) dims what is under it as
+ * the water between it and the eye does, the second (poolSurfaceMaterial)
+ * lays the reflection and the water's own colour over that. The first is
+ * a child of the second — drawn first, being made first, as three sorts
+ * two see-through things at one distance by their ids — and a `helper`:
+ * nothing picks it, collides with it, merges, bakes or publishes it.
+ * Neither writes depth: the basin's own is what the frame's ambient
+ * occlusion works from (PostProcessing), and nothing is drawn after the
+ * water under its surface.
+ *
+ * The time, the sun and whether the sky is what is mirrored are moved
+ * once a frame (updatePoolWater); the night's glow set by lightPoolWater.
+ */
+function poolWater(pool) {
+    const [x0, z0, x1, z1] = pool.box;
+    const geometry = new THREE.PlaneGeometry(x1 - x0, z1 - z0, 1, 1).rotateX(-Math.PI / 2).translate((x0 + x1) / 2, pool.level, (z0 + z1) / 2);
+    poolNet();
+    const uniforms = basinUniforms(pool);
+    const under = new THREE.Mesh(geometry, poolDepthMaterial(uniforms));
+    const water = new THREE.Mesh(geometry, poolSurfaceMaterial(uniforms));
+    under.name = "pool-water-depth";
+    // (A ray never meets it: the surface is what a look at the pool finds.)
+    under.raycast = () => {};
+    under.userData = { helper: true, treatAsOpaque: true };
+    water.add(under);
     water.name = "pool-water";
     water.receiveShadow = true;
     water.userData = { kind: "surface", surfaceKind: "water", label: "Pool" };
+    POOLS.add(water);
     return water;
+}
+
+/**
+ * The pools' water (`live`, a landscape's moving part) brought up to the
+ * frame: the ripples' time; the sun the caustics are cast by — none
+ * under the editor's plain light, which has no sun, or with the sun gone
+ * — and whether the sky the water mirrors is the bare one (its horizon
+ * then the surroundings') or a probe's. Once a frame (World/Flora).
+ *
+ * @param {THREE.Object3D|null} live
+ * @param {number} delta  seconds
+ * @param {{ sun?: THREE.DirectionalLight, plain?: boolean }} [light]
+ */
+export function updatePoolWater(live, delta, { sun = null, plain = false } = {}) {
+    WATER.uTime.value += delta;
+    const shining = sun && sun.visible && !plain ? THREE.MathUtils.clamp(sun.intensity / 3, 0, 1) : 0;
+    WATER.uCaustics.value = CAUSTICS * shining;
+    if (shining > 0) WATER.uSunDir.value.copy(sun.position).sub(sun.target.position).normalize();
+    for (const node of live?.children ?? []) {
+        if (POOLS.has(node)) WATER.uHorizon.value = node.material.envMap ? 0 : 1;
+    }
+}
+
+/**
+ * Day, or night: at night the pools glow from their lamps under the
+ * water — the basin lit by them (the bake's night, or World/Flora/lights.js
+ * live) and seen through the water, the water's own body glowing with
+ * them (NIGHT_GLOW: no more, or the basin is lost in a white-blue sheet) —
+ * under the editor's plain light no more than by day.
+ */
+export function lightPoolWater(live, night) {
+    for (const node of live?.children ?? []) {
+        if (!POOLS.has(node)) continue;
+        node.material.emissive.set(night ? NIGHT_GLOW : "#000000");
+        node.material.emissiveIntensity = night ? NIGHT_GLOW_INTENSITY : 0;
+    }
 }
 
 /** A box [x0, z0, x1, z1] as a polygon, grown by `grow`. */

@@ -49,10 +49,18 @@
 //         a clip        __mixamo.CLIP       { format: "fbx7_2019", skin: "false" (Without Skin),
 //                                             fps: "30" (24|30|60), reduction: "0" (0|1|2) }
 //       `chosen` is what the selects ended at: check it.
+//   __mixamo.inPlace(on = true)        → "in place" | "not in place" | "none": the clip panel's
+//       In Place checkbox (beside Mirror in the clip's panel, not in the Download
+//       dialog) set, then 2.5 s for the preview; "none" where the clip has none
+//       (2026-10-16: every clip of the visitor's set but Swimming Underwater).
+//       Tick it on a loop only (a stroke, treading water): a climb or a sit/stand
+//       transition keeps its travel, which the app follows. Call it after
+//       pickAnimation and before download.
 //   __mixamo.batch(list)               starts a job in the page and returns at
 //       once (a javascript_tool call stops at 45 s). Each item:
 //         { kind: "characters", name: "<file name>", tile: "<character's name>" }
-//         { kind: "animations", name: "<file name>", query: "<search>", tile: "<the tile's whole text>" }
+//         { kind: "animations", name: "<file name>", query: "<search>", tile: "<the tile's whole text>", inPlace: true? }
+//         (kind "avatar" for the visitor's own clips, the same fields: they go to assets/people/avatar/)
 //       Poll every 30 s or so:
 //   __mixamo.take()                    → { state, done, of, failed, ready:
 //       [{ file: "<kind>__<name>", url, age }] } — the links ready since the
@@ -61,13 +69,15 @@
 //   __mixamo.results                   every link the hook has seen: { t, url, type }.
 //
 // The hook, pickCharacter, pickAnimation and download are the code that
-// fetched Ladonia's 12 characters and 17 clips on 2026-10-06. list()'s
-// paging, pickCharacter looking on page 2, batch() and take() were written
-// for this file and have NOT run against the site: it cannot be tested
-// without the user's session. The selectors (.product, .product-character,
-// .product-selected, .modal-dialog, the buttons' texts) are the site's of
-// that day; if one finds nothing, read the page (read_page / find) and fix
-// the selector here.
+// fetched Ladonia's 12 characters and 17 clips on 2026-10-06; list() with the
+// Motion search, pickAnimation, inPlace (then a hand-written window.__inPlace)
+// and download ran again on 2026-10-16, one clip at a time, for the visitor's
+// six clips. pickCharacter looking on page 2, batch() and take() have still
+// NEVER run against the site: it cannot be tested without the user's session.
+// The selectors (.product, .product-character, .product-selected,
+// .modal-dialog, the buttons' texts, the In Place checkbox's label) are the
+// site's of those days; if one finds nothing, read the page (read_page /
+// find) and fix the selector here.
 //
 // Ladonia's set (everyday clothes, chosen by thumbnail; no swimwear exists):
 // characters lewis sophie shannon megan kate elizabeth martha remy bryce brian
@@ -79,6 +89,17 @@
 // Reclining Female; Laying Hands Behind Head ("Male Laying Pose: On Back,
 // Legs Crossed, Hands Behind Head"), Laying Idle ("Laying On Back Idle"),
 // Laying Propped Female. A clip's file name is its name in the app.
+//
+// The visitor's own set (2026-10-16, on whatever character the page had — Mixamo's default, Ch31_nonPBR: the
+// pipeline keeps only the turns and the hips' path, so the character does not matter; written as
+// avatar__<name>.url for mixamo-fetch.sh, into assets/people/avatar/, which
+// `npm run people -- --avatar-clips` reads), file name (tile): Swimming
+// ("SwimmingDescription: Swimming Underwater", In Place), Breaststroke
+// ("Swimming To EdgeDescription: Swimming Breastroke To Edge Of Pool"),
+// Treading Water ("Treading WaterDescription: Floating"), Climbing
+// ("ClimbingDescription: Pulling Up To A Ledge"), Stand To Sit ("Stand To
+// SitDescription: Standing To Sitting Transition"), Sit To Stand ("Sit To
+// StandDescription: Sitting To Standing").
 (() => {
     const M = (window.__mixamo ??= {});
     M.results ??= [];
@@ -200,6 +221,16 @@
         return { chosen, url: null };
     };
 
+    M.inPlace = async (on = true) => {
+        const box = all("input[type=checkbox]").find((c) => /in place/i.test(c.closest("label")?.textContent || c.parentElement?.textContent || ""));
+        if (!box) return "none";
+        if (box.checked !== on) {
+            box.click();
+            await sleep(2500);
+        }
+        return box.checked ? "in place" : "not in place";
+    };
+
     M.job = { state: "idle", done: 0, of: 0, failed: [] };
     M.ready = [];
     M.batch = (list) => {
@@ -211,6 +242,10 @@
                 try {
                     const picked = item.kind === "characters" ? await M.pickCharacter(item.tile ?? item.name) : await M.pickAnimation(item.query ?? item.name, item.tile);
                     if (picked !== "ok") throw new Error(`pick: ${picked}`);
+                    if (item.kind !== "characters" && item.inPlace) {
+                        const placed = await M.inPlace(true);
+                        if (placed !== "in place") throw new Error(`in place: ${placed}`);
+                    }
                     const got = await M.download(item.options ?? (item.kind === "characters" ? M.CHARACTER : M.CLIP));
                     if (!got?.url) throw new Error(`download: ${typeof got === "string" ? got : `no link (selects ${got.chosen})`}`);
                     M.ready.push({ file: `${item.kind}__${item.name}`, url: got.url, t: Date.now(), chosen: got.chosen });

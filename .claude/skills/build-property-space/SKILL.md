@@ -23,7 +23,12 @@ append duplicates.
 **The user's standing terms.** Realism first, performance as their choice
 (the quality slider) — and, since 2026-10-10, the highest frame rate that
 keeps the most realism: the editor under a plain working light until the
-look is asked for, a published view drawn from its bake by default (§12).
+look is asked for, a published view drawn from its bake by default (§12);
+since 2026-10-16, in their words, "I want the frame rate both in the
+editor and in the public view to be as high as possible": a new feature
+must not slow down what was there, and must cost as little as possible
+when used. Measure that against HEAD at the same spots, both ways round
+(§12; `app-notes.md`, Measuring).
 A listing is built *exactly* — structure, scenery and
 interiors — so a buyer has the feel of the real property; where the plans
 can't be followed (a door too narrow to walk through), deviate as little as
@@ -39,15 +44,51 @@ downloads stay git-ignored in `assets/`, and whether what is built from
 them is committed is the user's decision: ask (this repository is public,
 and for Mixamo they chose to keep the converted files out of git too:
 `.gitignore`). Furniture is modelled in
-Blender, not downloaded. Never restart
-their server on port 3000 nor build into the `dist/` it serves while work
-is in progress (§0), never touch `scenes/wrenfield-house.json`, never
-deploy, spend or contact anyone, and commit, open PRs or merge only when
-asked. Big work goes as a plan
+Blender, not downloaded. Never restart or touch their server on port
+3000, never act on a tab of it, never `preview_start` its `walkthrough`
+entry in `.claude/launch.json`, and never build into the `dist/` it
+serves while work is in progress: work is built into scratch folders and
+`dist/` only at delivery (§0). Never touch `scenes/wrenfield-house.json`;
+back up any other scene before writing it, and never undo the user's
+edits (§0). Never write the repo's `published/`: a test server may read
+it, but publish and bake into a scratch `PUBLISH_DIR` (§0, §10b) unless
+the user asks for theirs. Never deploy, spend or contact anyone, and
+commit, open PRs or merge only when asked. Big work goes as a plan
 first (doable? steps, alternatives, questions), then step by step, quick
 wins first, with measured before/after numbers; "do it" after a proposal
 means build it, not publish the plan. If a request sets a time limit, track
 it with `date` and report before it runs out.
+
+For new features in the app, the plan that worked (2026-10-16):
+- First, a read-only survey: one reader per area, whose file:line facts
+  the plan and every brief then cite.
+- Then the plan:
+  - what each new key does;
+  - the defaults the user may accept wholesale;
+  - the stages, quick wins first;
+  - only the questions the survey could not answer. That time there were
+    four: the Mixamo sign-in, the TV's content, steering from above, and
+    which kitchen fronts open.
+- Their answers go word for word into the design file every agent reads.
+- Each stage ends with a report whose "Still short" is split into:
+  - the user's to decide;
+  - found and left;
+  - not yet done;
+  - unseen (a phone, a visible tab, two visitors);
+  - left for the user (a build, a reload, a publish and bake, a commit).
+
+**What a visitor can do in a space**, as the user answered on 2026-10-16
+(standing until they say otherwise):
+- Each visitor has their own state: no sharing of doors, lights, taps,
+  the TV or the cars.
+- No sound.
+- Every kitchen front opens but the dishwasher's and the ovens'.
+- Sitting, but no lying down. Swimming, but no diving. Both by Mixamo
+  clips, downloaded through their own sign-in (§4b).
+- A television plays a real video loop: public domain or CC, about 3 MB,
+  fetched when it is first switched on.
+- From above, the car's keys are the car's.
+- Edit mode gets only the colliders' wireframes.
 
 Supporting files in this folder:
 
@@ -64,18 +105,40 @@ Supporting files in this folder:
   and when it draws a frame, lights and fittings, people, publishing, what
   a visitor's device is given, how a baked view is drawn and exposed, the
   live room, baking, measuring, tone mapping, cars, Blender, in-page
-  audits, the browser pane's limits, the shell, git. Read "The spec, the
-  validator and the editor", "The editor's plain light and view scope",
-  "When the editor draws" and "The browser pane" before the first seed and
-  test session; "Rays and the collision trees" before adding a ray or
-  anything that moves by itself; "Measuring" before timing anything or
+  audits, the browser pane's limits, the shell, git — and since
+  2026-10-16 the colliders drawn as wireframes (C), what the visitor acts
+  on (the one picker behind E and F, its providers, the list of keys, Q
+  and which room the visitor is in) and driving from above, and since its
+  waves A and B windows that open, sitting and the televisions, running
+  water and steam, and swimming and the pool's steps, and since wave C
+  the pool's water and what a baked view runs every frame (the editor's
+  stand-ins holding still what they draw too). Read "The
+  spec, the validator and the editor", "The editor's plain light and
+  view scope", "When the editor draws" and "The browser pane" before the
+  first seed and test session; "Rays and the collision trees" before
+  adding a ray or anything that moves by itself; "Furniture: the
+  catalogue, its height and its collision" and "Doors" (the furniture's
+  parts: labels, axes, how far each opens, the light inside a piece, ways
+  in) before modelling a piece whose fronts open; "Windows that open"
+  before choosing a space's windows; "What the visitor acts
+  on" before adding something to sit on, turn on or open, a key or a
+  touch button ("Running water and steam" for a shader of its own, and
+  how to make its programs before they are wanted), and "The colliders
+  drawn" before adding anything that
+  collides outside the trees; "How a baked view is drawn" (what runs every
+  frame) before adding anything that moves under a group held still or a
+  light that comes and goes; "Measuring" before timing anything or
   comparing two builds; the rest when you publish, bake, light, place
   people, add a car or use Blender.
 - `briefs.md` — reusable templates for the agents of a round (§11): the
   read-only auditor, the model builder in a Blender copy, the placement
   builder in a generator copy, the floor reviewer, the model and render
   reviewer, the final integrity reviewer and the RESUMING preamble, with
-  lessons on writing briefs.
+  lessons on writing briefs; and, for work on the app's own code in the
+  one checkout (§11), (h)–(p): the code survey reader, the lane builder,
+  the reviewers, the integrator, the measurer and end-to-end verifier, the
+  docs fact-checker, the scratch-publish lane, the targeted pass and the
+  verifier of what moves the visitor's figure.
 - `checks/` — node checkers run against the seeded scene (or the generator):
   furniture reach and spacing, every stair and route, the street steps,
   z-fighting, C at street level, and small GLB and plan helpers
@@ -85,9 +148,15 @@ Supporting files in this folder:
   against the furniture and the other leaves (§8). `people-plans.mjs
   <scene-id> [--seeds 20]` holds the people planner to its own rules over
   many seeds, and reads the scene's saved people the same way (§4b); it
-  works on any seeded scene. As shipped most of the others audit Ladonia;
-  read `checks/README.md` before §8 for how to run each and what to change
-  for a new project.
+  works on any seeded scene. `_hands.mjs <glb | catalog-id>…` gives each
+  furniture part's label, shut box, hinge edge and swing or slide;
+  `part-sweep.py <scene.json>` sweeps every placed part against the other
+  pieces' boxes and the walls (§4). Run it with Blender's own
+  `python3.13`, which has numpy. As shipped most of the others audit
+  Ladonia; read `checks/README.md` before §8 for how to run each and what
+  to change for a new project. Its last section, "Every tool in this
+  skill's folder", gives one line of use for every tool here, by group,
+  and the order a test tab loads them in.
 - `models/` — model QA (commands, and what a good piece reads, in
   `models/README.md`):
   - `views.py` renders four views of each id: front 3/4, orthographic
@@ -99,12 +168,116 @@ Supporting files in this folder:
     split normals), `contacts.py` (one part's vertices inside another, and
     gaps), `flatbase.py` (flat faces where a part sits) and `coplanar.py`
     (coplanar overlapping faces of different parts).
+  - Parts that open: `sweep.py` (each part swept shut to open against its
+    own piece's static parts, about its hinge's axis), `openview.py` (GLBs
+    rendered with their parts open or shut; `--flat 1` flattens textures
+    to their mean, `FIX=1` draws the water, control and steam anchors),
+    `imgdiff.py` (the share of pixels over 2, 8 and 24 levels apart, and
+    an amplified difference) and `export_scratch.py` (export_furniture.py
+    into a scratch folder: `B2_OUT`, refused inside `public/`).
 - `walk.js` — in-page: walks the real player physics through every door
   both ways and along routes (`__walk.doors()`, `__walk.to()`,
   `__walk.free()`). It walks the collision as it stands, and first
   finishes a tree an edit left being built a slice a frame
   (`sceneBuilder.settleCollision()`: `app-notes.md`, Rays and the
   collision trees).
+- `openables.js`, `sit.js`, `tv.js` — in-page, through the sink after
+  act.js: the furniture's parts as the visitor meets them (`walkIn` every
+  part, `freeSpots` between a kitchen's arms, `sameTriangles` the
+  editor's tree against a publish's — these three in an editor tab
+  alone —, `stops()` what stops each part,
+  `everyE()` E on one part of each kind or on all, `sashes()` every window
+  turned or tilted and shut), sitting (`await __sit.ready()` first — the
+  clips worn, the seats dressed, their catalogue read — or the first E
+  only queues the sit), the televisions (`app-notes.md`, In-page audits;
+  Sitting and the televisions).
+- `water.js`, `steam.js`, `wtime.js`, `gtime.js` — in-page, through the
+  sink after act.js: the taps and showers (`__water`: `list`, `go`,
+  `inside`, `press`, `sweep` every control, `sheet`, `view`, `inject`
+  anchors into an older publish), a shower's steam over time as sheets and
+  what the water costs (`__steam`), a frame's wall time and its draws over
+  all of the frame's renders (`__wtime`: `info.render.calls` holds the
+  last pass's alone) and its GPU time by the timer query (`__gtime`)
+  (`app-notes.md`, Running water and steam; Measuring).
+- `jump.js` — in-page, through the sink: runs and jumps at every upstairs
+  window with a sill and says whether the capsule got out (`__jump.all()`;
+  `app-notes.md`, Rays and the collision trees).
+- The usability work's in-page tools (2026-10-16/17), through the sink
+  after `boot.js` and `act.js`; one line each in `checks/README.md`, Every
+  tool in this skill's folder:
+  - Q and the room the visitor is in: `lights.js` (`__lights`; `walk`
+    counts the readout's changes across a threshold) and `hud.js` (the
+    HUD's top row measured).
+  - Driving from above: `birdcar.js` (`__bc`; `behind()` is the byte for
+    byte drive across two builds) and `holes.js` (culled faces the view
+    from above would see). `count-views.mjs` counts a published version's
+    bird's-eye samples, its drive ones included (read-only).
+  - The pool and swimming:
+    - `pool.js` (`__pool`) and `pool-look.js` (`__poolLook`, its poses
+      worked out from the pool's box and steps);
+    - `clips.js` (`__clips`: the figure against the water);
+    - `swim-trace.js` (`__trace`: bones, facing, waterline and limbs a
+      frame);
+    - `swim-checks.js` (`__swim`: walls, corners, taps, the climb).
+  - What other visitors see: `others.js` (`__others`: mirrored in the
+    page, or sent and received by two real pages), with `net.py`.
+  - Sitting:
+    - `seat-sweep.js` (`__seats`: every seat sat on and got up from, the
+      limbs against all but the seat's own piece), with `seat-sweep.py`
+      and Ladonia's `ladonia-seat-starts.json` and `ladonia-w-boxes.json`;
+    - `figure-fade.js` (`__fade`: sat on from afar, got up mid-fade, the
+      very materials worn after).
+  - Measuring:
+    - `pair-time.js` (`__pair`: two tabs in turns through the baton) with
+      `pair.py`;
+    - `ladonia-spots.js` (the timing spots: copy it as
+      `<project>-spots.js`);
+    - `frame-split.js` (`__frame`: where a frame's time goes);
+    - `hold-check.js` (`__hold`: the editor's held units against three's
+      own walk and against the frame let go);
+    - `cold.js` (before boot.js) and `coldsplit.js` (a first visit's
+      shaders, and what each frame built);
+    - `light-in.js` (a fridge opened as a first visitor opens it);
+    - `glass-race.js` (the glass-door race forced, §13);
+    - `vshot.js` (a frame with the page's own HUD over it).
+- `serve.py`, `boot.js`, `fast.js`, `pick.js` — the tools server and a test
+  tab's start (§0). `python3 <skill>/serve.py <scratch>/frames 3187` serves
+  this folder's files as the sink does, saves POSTs and passes the baton
+  that timing tabs take in turns (`take?me=`, `give?to=`, `ready`, `prog`,
+  `status`, `wait`). `boot.js` is the first call after every navigation
+  of a test tab (`await window.__dvBoot; window.__dvBooted`). It:
+  - stubs every non-GET but the tools' own, and a publish unless
+    `window.__bootPublish`;
+  - loads `fast.js` (short timers for a throttled tab; it needs serve.py)
+    and `drive.js`, and drives the frames;
+  - passes the name prompt, with the avatar `window.__pickSkin` names;
+  - in an editor tab, loads harness.js and sets the pace to "always".
+
+  Both servers serve this folder's top-level files only: nothing in
+  `checks/` or `models/` can be loaded by a page.
+- `encode-video.py` — `<blender> --background --python
+  <skill>/encode-video.py -- <src> <out.mp4> <t0> <t1> <w> <h> <kbps>
+  [fps]`: an H.264 loop for a television, in Blender's sequencer (this
+  Mac has no ffmpeg); its header has Ladonia's cut.
+- `patch-pool-steps.mjs` — `node <skill>/patch-pool-steps.mjs <scene.json>
+  [--pool b-pool] [--steps JSON] [--backup dir] [--dry-run]`: a seeded
+  scene's pool given its `steps` and nothing else, without seeding it
+  again (a backup first; refuses a file not as the server writes it, or
+  one changed while it ran). Reload every editor tab on the scene first,
+  and give it `--backup`: its default, `backups/` beside it, is in the
+  repo and not git-ignored (§0).
+- `act.js` — in-page, through the sink (in an editor tab after
+  harness.js, or in a public view): drives what E, F and Q do, as walk.js
+  drives the walk — `__act.doors()`, `drawers()`, `switches()` list what
+  there is, `stand`, `aim`, `look`, `press("E" | "F" | "Q")` and `spot`
+  stand the capsule (`stand` resets a swimmer first, as `Player.placeAt`
+  does), turn the camera on a thing, run the look ray and the
+  prompt and press, keeping every event told; `run()` does Ladonia's
+  spots (a door, a drawer, two switches, the BMW) and times the look ray.
+  It reads the build before 2026-10-16 and after alike, so the same spots
+  on two builds can be compared; a kind added later passes its own
+  `state` to `spot` (`app-notes.md`, In-page audits; What the visitor
+  acts on).
 - `zfight.js` — in-page: `__zfight({ limit })` finds coplanar or near
   coplanar triangles drawn on the same depth layer, clustered. It tests
   what is shown, so in an editor tab it first sets the view's scope to All
@@ -210,10 +383,13 @@ Supporting files in this folder:
   (paste its text into `javascript_tool`: that page cannot reach the
   sink): `__mixamo.pickCharacter`, `pickAnimation` and `download` pick
   characters and clips, drive the Download dialog and catch each
-  export's link; `__mixamo.batch(list)` and `take()` do a list of them.
-  `mixamo-fetch.sh <links-dir> <repo>/assets/people` is the background
-  watcher that curls those links into `assets/people/` (§4b;
-  `app-notes.md`, The browser pane).
+  export's link; `__mixamo.inPlace(on)` sets a clip's *In Place* box;
+  `__mixamo.batch(list)` and `take()` do a list of them (never yet run on
+  the site). `mixamo-fetch.sh <links-dir> <repo>/assets/people` is the
+  background watcher that curls those links into `assets/people/<kind>/`
+  — `characters`, `animations`, or `avatar` for the visitor's own clips,
+  from links named `avatar__<name>.url` (§4b; `app-notes.md`, The browser
+  pane).
 
 ## Starting a new space (in this order)
 
@@ -248,25 +424,76 @@ Supporting files in this folder:
    6. `node -e "import('./scripts/spaces/<project>/index.js').then(() =>
       console.log('ok'))"`, then `npm run seed -- <id>`, and read its notes
       and counts.
-   7. A views file (`<project>-views.js`, see the list above) and your own
-      copies of the checkers (`checks/README.md`).
+   7. A views file (`<project>-views.js`, see the list above), a spots
+      file for timing (`<project>-spots.js`, from `ladonia-spots.js`) and
+      your own copies of the checkers (`checks/README.md`).
 5. Build in milestones, seeding and walking (§8) after each: one building's
    shell; every building at its site level with the street, lanes and
    entrances; landscape; furniture; light; people, where the user wants
    them (§4b); then critic rounds (§11).
+6. Give every feature of the app what it needs of the space (since
+   2026-10-16), and try each (§8.6–9):
+   - **Windows that turn or tilt**: slim windows with sills of 0.3 m or
+     more (§3).
+   - **Fronts that open**: modelled with parts, each labelled for the
+     prompt; a fridge's door labelled exactly "fridge", for its light; the
+     body under 12,000 triangles; swept against its piece and the scene
+     (§4).
+   - **Taps, showers and steam**: water, control and steam anchors on
+     every wet piece (§4).
+   - **Sitting and the televisions**: new pieces measured into
+     `seats.json` and `screens.json` (§4).
+   - **Swimming**: a pool's `steps` on the loungers' side (§5), and the
+     visitor's clips packed (§4b).
+   - **Q**: a switch in every room.
+   - **Driving from above**: a car and a terrain or ground plane (§8.6).
+   - **Speed**: what a new piece or feature costs, measured against HEAD
+     at the same spots, both ways round (§12).
 
 ## 0. Session hygiene
 
-- Back up `scenes/*.json` to the scratchpad before each write after the
-  first seed (a new space has none before), and `cmp` before every later
-  one: the user keeps editing in their own tab and their server saves too
-  (Ladonia, overnight: a counter scaled to 0.8, a sofa nudged, a terrace
-  sofa turned round). Before any reseed, diff the generator's validated
-  output against the scene; carry the user's edits into the generator, or
-  patch only your own entries with node. A reseed's spec has no `people`:
-  copy them out of the scene first and write them back after (§4b). Never
-  delete user edits that look accidental (a coffee table on the lawn) —
-  name them in the report.
+- Back up `scenes/*.json` before each write after the first seed (a new
+  space has none before), somewhere a restart keeps:
+  `~/.claude/projects/<project>/<session>/snapshots/scene-backups/`, not
+  the scratchpad (below). `cmp` before every later write: the user keeps
+  editing in their own tab and their server saves too (Ladonia,
+  overnight: a counter scaled to 0.8, a sofa nudged, a terrace sofa turned
+  round; on 2026-10-17, hours after the pool steps' patch, five dining
+  chairs moved or turned and a sixth scaled to 0.88). Give any tool that
+  writes a scene that folder: the default of `patch-pool-steps.mjs
+  --backup`, `backups/` beside the tool, is in the repo and not
+  git-ignored. Before writing the user's own file:
+  - their server on 3000 not running (`lsof -nP -iTCP:3000
+    -sTCP:LISTEN`; never stop it yourself);
+  - the file's md5 the one you last saw;
+  - a dry run first;
+  - the restore command in the report.
+
+  Before any reseed, diff the generator's validated output against the
+  scene; carry the user's edits into the generator, or patch only your
+  own entries with node (next). A reseed's spec has no `people`: copy them
+  out of the scene first and write them back after (§4b). Never delete
+  user edits that look accidental (a coffee table on the lawn) — name
+  them in the report.
+- **Patching the user's scene.** When the generator comes to emit a field
+  that a reseed would bring in at the cost of every edit (a pool's
+  `steps`), never edit the file by hand. Write a tool on the pattern of
+  `patch-pool-steps.mjs`. It:
+  - refuses a file that does not read back byte for byte as the server
+    writes it (`JSON.stringify(…, null, 2)`);
+  - copies the file first (`--backup <dir>`);
+  - writes through a temporary file and a rename, and refuses if the file
+    changed on disk while it ran;
+  - reads the result back and shows that the one field is all that
+    differs;
+  - with `--dry-run`, prints the size before and after and writes
+    nothing.
+
+  Try it first on the lanes' copies of the scene, each byte-identical to
+  the user's before the patch. Reload every editor tab on the scene before
+  the real run, or its next save writes the old field back. Check the
+  field in a reloaded tab before publishing from it. Run it on the user's
+  file at delivery, and name the backup in the report.
 - `npm run seed -- <id>`, never bare `npm run seed` (it rewrites every
   space). Import the generator with node first to catch module errors.
 - **The user's own server, on port 3000, serves the repo's `dist/`**, and
@@ -278,8 +505,20 @@ Supporting files in this folder:
   once, at the end, when the work is finished and checked (`npm run
   build`), or left to the user and said so: until then their server shows
   none of it. Wherever this file says `npm run build` for something to be
-  looked at in a test tab, it means that scratch build. One build at a
-  time where several agents share the folder.
+  looked at in a test tab, it means that scratch build.
+  - Never run two builds into one outDir. Lanes building at once each
+    build into their own (`<scratch>/<job>/<lane>-dist`) from the one
+    checkout. Vite reads the tree as it stands, so a build may catch
+    another lane mid-edit: if it fails in a file you do not own, wait a
+    minute and build again.
+  - After integration, clone one merged build into every lane's dist, so
+    that every server serves the same tree: `npx vite build --outDir
+    <scratch>/<job>/merged-dist --emptyOutDir`, then for each lane `rm -rf
+    <lane>-dist && cp -c -R merged-dist <lane>-dist` (APFS clones).
+  - Before trusting a served build, show it is current. Either no file
+    under `frontend`, `shared`, `public`, `scripts` or `server` is newer
+    than its `index.html` (`find … -newer`), or a fresh build into another
+    folder comes out byte-identical.
 - Test on a server of your own, started in a folder of its own: the
   server takes `dist`, `scenes` and `published` from its working directory,
   and `SCENES_DIR` and `PUBLISH_DIR` move the last two (server/index.js,
@@ -298,15 +537,21 @@ Supporting files in this folder:
   only, never to publish from or bake against. To compare with the app as
   the user has it, copy `dist/` to `<scratch>/dist-before` before
   anything is built and serve it the same way on another port (§12).
-  Start this folder's sink by its path, in the background:
-  `python3 <repo>/.claude/skills/build-property-space/sink.py
-  <scratch>/frames` (run_in_background). Open
+  Start this folder's sink and tools server by their paths, in the
+  background: `python3 <repo>/.claude/skills/build-property-space/sink.py
+  <scratch>/frames` and `python3 <…>/serve.py <scratch>/frames 3187`
+  (run_in_background). Open
   `http://localhost:3108/?scene=<id>`, pass the name prompt and front the
   tab (`app-notes.md`, The browser pane), then load helpers with
   `await eval(await (await fetch("http://127.0.0.1:3199/harness.js")).text())`
   — the harness first, in every editor tab: it stops a save, which over a
   copy of the scenes is the second guard and over the repo's own the only
-  one — likewise your views file and `walk.js`. That tab opens under the
+  one — likewise your views file and `walk.js`. Or, first after every
+  navigation, `boot.js` from the tools server
+  (`await eval(await (await fetch("http://127.0.0.1:3187/boot.js?" +
+  Date.now())).text()); await window.__dvBoot`), which stubs the saves in
+  any tab, passes the prompt, drives a hidden tab's frames and loads the
+  harness in an editor tab (the list above). That tab opens under the
   editor's plain light with the houses alone drawn, by stand-ins, and at
   rest draws nothing: for what a visitor will see, `?preview=1` in the
   link or `await __K.realistic()`; for a helper of your own, §10. A
@@ -314,8 +559,32 @@ Supporting files in this folder:
   frontend or `public/` change, and restart the test server after a
   catalogue, finish or validator change (it runs the repo's `server/` and
   `shared/` as they stood when it started).
-- After a usage-limit break or reconnect: `preview_list`, `lsof` ports 3108
-  and 3199, restart what died (the sink only when you next need frames,
+- **Several lanes at once** (2026-10-16/17): a test server per lane, named
+  `<job>-<lane>`, each on its own port — `ux-base` 3130, `ux-p` 3131,
+  `ux-c` 3133, `ux-s` 3134, `ux-w` 3135, `ux-b` 3136 — over
+  `<scratch>/<job>/<lane>-srv/`, with `dist` a link to the lane's own
+  `<lane>-dist` and `scenes` its own copy, `BAKE=off`.
+  - The base server serves HEAD, built once before the first edit
+    (`base-dist`; `HEAD-at-start.txt` names the commit). It reads the
+    user's `published/` read-only, and is the "before" of every
+    comparison.
+  - Lanes that need a public view's new code paths share one scratch
+    `PUBLISH_DIR` (`pub-w`): a copy of the user's latest version, which
+    `?version=<v>` still reaches after newer publishes there.
+  - At most five preview servers run at once: stop those a wave no longer
+    needs (`preview_stop`).
+  - Only the lead edits `.claude/launch.json`; agents are told not to.
+    Its `walkthrough` entry is the user's own server on 3000: never
+    `preview_start` it.
+  - A rebuilt dist needs only a reload. Restart a server (`preview_stop`,
+    then `preview_start`) only after a change to the `server/` or `shared/`
+    code it runs. A restart may navigate some other tab of the pane to it
+    (twice on 2026-10-17): leave tabs that are not yours alone.
+  - Agents open tabs of their own (`tabs_create`, then every call with
+    its `tabId`), never another's, and close them at the end.
+- After a usage-limit break or reconnect: `preview_list`, `lsof` the test
+  servers' ports (3108, or the lanes'), the sink's 3199 and the tools
+  server's 3187, restart what died (the sink only when you next need frames,
   `run_in_background` with the longest timeout, 7200000 ms), re-check the
   scene file against the backup, redo the tab setup before trusting a
   frame, relaunch any critic that failed, and resume stopped bakes (delete
@@ -338,7 +607,29 @@ Supporting files in this folder:
     `agent-<agentId>.jsonl` beside it is the agent's whole transcript.
     Write the reports out again from there;
   - a vetted plan or patch goes into the report's text, entry by entry,
-    not only into a scratch file.
+    not only into a scratch file;
+  - a tool worth keeping goes into this skill's folder the same session,
+    with a header in the style of the others (the usability work's
+    hundred-odd scratch tools were in no snapshot until they were brought
+    here on 2026-10-17);
+  - and keep a copy as you go in
+    `~/.claude/projects/<project>/<session>/snapshots/`, which is what
+    saved the work across the restart of 2026-10-13:
+    - `reports/`: the design files every agent reads, the surveys, each
+      agent's report, each workflow's result JSON;
+    - `tree-<stage>.tgz` after each stage: the changed and new files
+      (`git ls-files -m -o --exclude-standard | tar czf …`);
+    - the job's measuring tools as a tarball;
+    - `scene-backups/` (above);
+    - `assets/`: downloads not in git (the TV's clip and its encoding,
+      copies of the Mixamo files);
+    - `frames/<stage>/`: the pictures shown to the user;
+    - before editing the skill, a tarball of it.
+
+    The harness keeps each Workflow's script
+    (`<session>/workflows/scripts/<name>-<wf>.js`) and its run
+    (`<session>/workflows/<wf>.json`, with its `result`) beside the
+    journals.
 
   After any break — a restart, a limit, a night — take the scene backups
   and their md5s again before the next write, and run `git log -3` and
@@ -351,17 +642,38 @@ Supporting files in this folder:
   older `kit.js` removed the door widening; 57 narrow doors came back). Back
   up the scripts, apply one patch at a time with `git apply --check`, diff
   key files against the backup, and re-run every check after each.
+- **Before saying a change to the app is done**, run three checks:
+  - The no-undef lint: `node <eslint>/bin/eslint.js -c
+    <skill>/undef.config.mjs --no-ignore frontend/Experience
+    frontend/index.js shared scripts server`, with an ESLint 9 from the
+    npx cache (`~/.npm/_npx/*/node_modules/eslint`), or `npx eslint`. It
+    must give 0 errors and the one old warning (`EditorUI.js:1358`, an
+    unused eslint-disable).
+  - Every node test: `for t in scripts/test-*.mjs; do node "$t" | tail -1;
+    done`, 14 of them, about a minute. On 2026-10-17:
+    - bake-batches: 40 made-up sites, by the rules;
+    - capsule-through 9; collider-view 32; collision-tree 77;
+      frame-guard 27; interact 51;
+    - light-regions: 55 atlases, 0 differ;
+    - openables 46; screens 19; seats 39; shut 31; standins 19; water 44;
+      windows 30.
+
+    A test that covered behaviour since taken out is changed with it, and
+    the report says so.
+  - `JSON.stringify(__act.run())` in an editor tab and a public view,
+    against the base server's: the same, but for what was meant to change.
 - End every report that changed a scene, the app or the server with the
   user's steps: `npm run build` if frontend or `public/` changed and the
   repo's `dist/` was left as it was; reload every open app tab before
   editing (an old tab autosaves its old scene over the fix, and keeps the
   old build); restart `npm start` if server code changed; and re-publish
   and bake to see it in `/view/<id>`.
-- Clean up: stop the test server, kill the sink, restore
-  `.claude/launch.json`, close your tabs, clear the `localStorage` keys set
-  while testing (`render-quality`, `view-lighting`, `view-scenery`,
-  `view-lost-graphics`, `editor-preview`, `editor-scope`,
-  `publish-options`: `reference.md`), and reset a viewport set with
+- Clean up: stop the test servers, kill the sink and the tools server,
+  restore `.claude/launch.json`, close your tabs, clear the `localStorage`
+  keys set while testing (`render-quality`, `view-lighting`,
+  `view-scenery`, `view-lost-graphics`, `editor-preview`, `editor-scope`,
+  `editor.trackpad`, `publish-options`; and `view-reloaded-at` in
+  `sessionStorage`: `reference.md`), and reset a viewport set with
   `resize_window`.
 
 ## 1. Research the listing first, exhaustively
@@ -486,6 +798,28 @@ Signatures and numbers: `reference.md`.
   its own pendants or tracks, glass corners (the storey walls of one face
   run on to where the other face's glass stands; the bands above keep their
   square corner). Roof terraces stop at voids open to the sky.
+- **Windows that open** (`World/Sash.js` `windowOpens`; `app-notes.md`,
+  Windows that open). Only a slim window (`style: "slim"`) opens.
+  - With a sill of 0.3 m or more (`OPENS_FROM_SILL`; Ladonia's `win()`) it
+    turns in by itself, a sash a pane. Where its turn would meet anything
+    on the room's side it tilts 10° instead. Glazing down to the floor
+    stays fixed.
+  - A kit-framed window (Wrenfield's, Ashgrove's) never opens, whatever
+    `opens` asks: its frame and sash are one moulded ring, and the
+    editor's *Opening* says "Fixed". A listing whose windows open needs
+    slim windows.
+  - `opens: { type: "turn" | "tilt" | "fixed", hinge }` on the window's
+    opening (`{ ...win(…), opens: {…} }`: kit's helpers know nothing of
+    it) makes a pane only tilt, or stay fixed, or open in a low window (a
+    French window). A low window has no invisible "Window" pane behind
+    it: its sash bars the way until it is turned, as a door's leaf does.
+  - `hinge: "left"` is towards the wall's emitted start, as a door's swing
+    is named, and `outside` turns it round: check it against the seeded
+    wall's `start` and `end` (`checks/doors-dump.mjs` gives them for
+    doors, not windows).
+  - Whatever stands beside a window makes it tilt: a wardrobe, a
+    headboard, a wall unit, a tap. Ladonia turns 41 of its 59 sashes and
+    tilts 18. List the tilts after furnishing (§8).
 - Photographed finishes in `shared/catalog.js` via `pbr(id)` with `tint`
   (linear, may brighten) or `color` (fetching textures: §6). Never retune a
   finish or generator default another space uses: add a space-specific
@@ -525,8 +859,69 @@ Signatures and numbers: `reference.md`.
    - Fitted units have real fronts: carcass 21 mm short of the front, 19 mm
      doors and drawers with 3 mm gaps, handles out; a sink base has no top
      panel under the bowl. Build a run's sink, hob and ovens into the run.
-     Export fitted kitchens and wardrobes shut (`_fixed(parts)` in
-     `blender/lib/ladonia.py`): each part that opens is its own draw call.
+     Since 2026-10-16 every front opens (`_fixed` is gone): hollow
+     carcasses, white inside with their front edges in the carcass colour
+     (`_board`, `_faced`), so a shut piece looks as it did; drawers on white
+     trays (`_drawer`); doors swung a right angle about the outer corner of
+     their face (`K_SWING`), hung away from what a run ends against (`walls`,
+     `_hands`), pairs from the middle; a door with a pull swung
+     `_pull_swing` short of that, so the pull never passes back over its
+     hinge line; a wide low door a flap (`geometry.hinged(…, axis=(1, 0,
+     0))`). The dishwasher, the ovens, blind corners, fillers and the hob
+     cabinet's flaps stay shut. A kitchen's fridge is integrated: its first
+     `"fridge_col"`, else a base `"fridge"` beside the sink, else
+     `"fridge_drawers"`. Label every part for the prompt
+     (`geometry.hinged/sliding(label=)`: door, drawer, fridge, freezer,
+     wardrobe, closet, washing machine, dryer, detergent drawer, shower
+     door, microwave).
+   - A fridge's light is a `g.fixture("light", at, { "light": { power,
+     color, reach } }, aim=…)` on its body, never on a moving part. It
+     follows the doors labelled exactly "fridge" (a freezer's "freezer",
+     a cupboard's "door", so that they leave it off), or every part where
+     none is; one light to a piece (`app-notes.md`, Doors).
+   - Sweep every part shut to open against its own piece's static parts
+     (`models/sweep.py`) *and* against the scene's other placements and
+     walls (`checks/part-sweep.py`) before exporting: a piece alone hides
+     the nightstand 0.4 m before a wardrobe, the ceiling track before
+     cupboards to the ceiling, the chair before a kitchen (`app-notes.md`,
+     Blender). The other hand of a piece with a fridge or a spot is built
+     by its builder's `hand=`, as the `-r` kitchens are, never by
+     `ladonia.mirrored()` (§13).
+   - Shut, a piece's parts are drawn with it, so it costs its materials,
+     not its parts (§12). Give a part glass only where the real piece has
+     it: glass on a part draws itself, two-sided, in two renders, wherever
+     it is in view, behind walls too (Ladonia's portholes and shower
+     doors: 48 draws a frame at A1's living room).
+   - Wet pieces carry the water, control and steam anchors their taps and
+     showers run from (`app-notes.md`, Blender, Water anchors; Running
+     water and steam): a wet piece without them has no water, and a
+     shower without a steam box no steam.
+   - Never move a television's glass; after exporting a piece with one,
+     `npm run screens -- --check`.
+   - Re-exporting a placed piece (to make its fronts open, or any change):
+     its catalogue entry stays byte for byte (`git diff
+     public/models/furniture/catalog.json` empty), because furnish.js and
+     the saved scene placed it by that `size`. Its shut look stays too:
+     render it shut before and after with its textures flattened to their
+     mean (`models/openview.py --open 0 --flat 1`; re-exports reshuffle
+     them, `app-notes.md`, Blender) and compare (`models/imgdiff.py`).
+     Ladonia's kitchens differed by ≤ 0.03 % of their pixels, its
+     wardrobes by ≤ 0.5 %, on the joints only. Try an export into a
+     scratch folder first (`models/export_scratch.py`).
+   - What a visitor uses needs its data:
+     - A new piece one sits on needs `npm run seats -- <id>`: a piece
+       missing from `seats.json` is no seat, for the people or the
+       visitor. A visitor sits only 0.3–0.62 m high (`SEAT_HEIGHT`: no
+       bar stool).
+     - Its catalogue id or name says how it is sat on. `lounge|daybed|club`
+       is soft, and out of doors sat back in — but only where a loose
+       pillow lies on it (`seats.json`'s `room` ≥ 0.5 m). `arm|lounge|club|
+       desk` is a chair with arms, never sat on turned. A lone chair or
+       stool may be turned, where that meets nothing.
+     - A new television: its face an upright block of `tv_glass` (or
+       `screen`) facing −z, at least 20 cm a side, then `npm run screens --
+       <id>` to add it. `--check` (exit 1 when a screen moved, came or
+       went) is for re-exports.
    - Curved fittings as lofted shells (`geometry.py` `rounded_rect` + `loft`,
      `sweep` + `catmull_rom` for taps and arms, `lathe`), not stacked boxes;
      parts that meet overlap 1–2 mm instead of sharing a face.
@@ -559,7 +954,11 @@ Signatures and numbers: `reference.md`.
      L-shaped sofa, where the plans put the coffee table. Give such pieces
      `{"collision": "mesh"}` (a dict at the end of the registration
      tuple becomes extra catalogue fields; `SceneBuilder` honours it).
-     Never on a piece with parts that open (`app-notes.md`, Furniture).
+     Since 2026-10-16 that is safe on a piece with parts that open too: it
+     collides as itself without them and a box for each, shut, and only
+     its body without them counts against the budget (`app-notes.md`,
+     Furniture). Keep a fitted kitchen's body under 12,000 triangles, or
+     its box walls off the floor inside an L's arms.
    - joinery's `vanity` and `vanity-small` are floating vanities whose
      export stands them on the floor: place them at y + 0.34.
    - **Model QA** for every new or changed piece, in three steps:
@@ -597,7 +996,24 @@ Signatures and numbers: `reference.md`.
    along a wall and keep the other side clear (two fittings facing each
    other leave nothing between). Beds against inside walls, not across
    windows; nothing fitted across glazing; showers 1 cm off their walls; a
-   towel rail or basin never in a door's way.
+   towel rail or basin never in a door's way. Nothing in a part's way
+   either: a door or drawer opens only until it meets something
+   (`Openable.plan`), so a chair, nightstand or WC inside its swing reads
+   as a broken door. Ladonia's placements left 32 of 475 parts stopping
+   short (`app-notes.md`, Doors):
+   - keep a dining chair's back further from a cupboard's or an
+     under-counter fridge's front than the door is wide;
+   - keep the 0.8 m before a wardrobe clear: nightstands go beside its
+     doors, not in front;
+   - hang a ceiling track's spots further from cupboards to the ceiling
+     than their doors are wide (A1's 1.12 m doors: 1.15 m; wall units:
+     0.6 m);
+   - keep a vanity's drawers clear of the WC beside it, and garden chairs
+     clear of an outdoor kitchen's doors.
+
+   Never scale a piece that has parts (a placement `scale` other than 1):
+   its drawers slide scale × distance in the editor and distance in a
+   public view.
 
 Facing: a catalogue piece faces north (−z) at rotation 0 when modelled with
 its front to Blender +Y (loose.py, ladonia.py); joinery.py's `wc`,
@@ -629,6 +1045,10 @@ neighbourhood: { enabled: false } }`.
 - Terrain sits 3–5 cm under paving (pads −0.03 / −0.05); holes under
   flights and pools. A level change between plots is a hard pad plus a wall
   (`rw-ac`).
+- A pool one swims in needs a way in and out: `steps` (`reference.md`,
+  pools) on the side by the loungers — treads of the pool's mosaic walked
+  on an unseen ramp, as a flight is. A scene seeded before them is given
+  them with `patch-pool-steps.mjs`, never a reseed.
 - Pergola louvres stay about half open — the builder draws aluminium blades
   at 0.17 pitch tilted 0.72 rad, timber slats (`louvres: "timber"`,
   Ladonia's) at 0.22 pitch tilted 0.95 rad: nearly shut blades lose the
@@ -705,12 +1125,26 @@ never `public/` (deployed).
   Exposure in a baked view): never judge one at a fixed exposure, and say
   of every frame which of the three it is — plain, lit live, or baked and
   in which mode.
+- **What a visitor of a published view can switch to is judged against
+  the baked frame**, not against the editor (2026-10-15). With **K** the
+  rooms round the visitor keep their true materials and take the bake's
+  own light, only the sun and the nearest lamps live
+  (`World/RoomBakeLight.js`; `app-notes.md`, Live room light). Compare
+  them with the baked frame of the same pose by the room's own pixels (a
+  mask of where each pixel's nearest surface is): mean, warmth ((R − B) /
+  sum, G − B) and shade. A change asked of the published view leaves the
+  editor and the unbaked publish as they were, byte for byte: show it.
 - **No refractive glass anywhere** (`transmission`): one pane in view
   darkens the whole frame through the post-processing — a shower's glass
   door left a bathroom near black and every room 15–40 % darker. Glass
   trims default to `transmission: 0`; furniture and cars get plain
   see-through glass on load (`Utils/reflections.js` `plainGlass`). Pool
-  water is see-through by opacity.
+  water is clear without transmission (since wave C, 2026-10-16;
+  `app-notes.md`, The pool's water). A first pass multiplies what is under
+  it by a turquoise that deepens with the path through the water, worked
+  out from the pool's box and steps (no depth read). Then a surface whose
+  alpha is its Fresnel reflectance, its roughness kept over 0.1. An
+  opacity hides the steps: 0.78 did.
 - A balustrade's glass must not match Sky.js's `GLASS` (`/^glass_solar/`),
   or it reads as a dark panel; a new room finish must match `ROOM`, or its
   rooms take the full outdoor sky.
@@ -736,8 +1170,10 @@ never `public/` (deployed).
 The walking character is a capsule 0.7 m wide and 1.9 m tall. It climbs
 invisible ramp colliders with no step-up (treads don't collide); furniture
 collides as its mesh up to `SceneBuilder.MESH_COLLISION_BUDGET` (12000
-triangles) and as its box when it has more or any part that opens
-(`checks/_modes.mjs` says which; the catalogue's `collision` overrides).
+triangles) and as its box when it has more — a piece with parts that
+open as its body without them and a box for each part, shut, a shower's
+door barring the way itself until opened (`checks/_modes.mjs` says which;
+the catalogue's `collision` overrides).
 Ladonia's beds, 14–24k with their pillows, collide as boxes, which works
 because the headboard is its own piece. Rugs (under 3.5 cm) don't
 collide; a shut door is an oriented box, an open one (0.3 open or more)
@@ -751,7 +1187,10 @@ nothing. Floors are zero-thickness sheets in the static octree.
      blockers), `entrance-check.mjs` (the street flights), `c-grade.mjs`.
      As shipped these audit Ladonia — on a new space they can look like a
      pass while checking nothing of yours: use your own copies
-     (`checks/README.md`) and see your building ids in their output.
+     (`checks/README.md`) and see your building ids in their output. They
+     collide a piece as `SceneBuilder.collisionOf` does (since
+     2026-10-17), so an ACCESS at a walk-in shower behind its shut glass
+     door (Ladonia's c-f071) is a note, not a fault.
   2. `walk.js` in the page: `__walk.doors()` — every door both ways from
      free standing spots (only a door opening straight onto a flight
      should report `noSpot`) — and `__walk.to()` along each route from the
@@ -778,6 +1217,79 @@ nothing. Floors are zero-thickness sheets in the static octree.
      hung as drawn, left 0.21 m beside the open leaf. The north flat's now
      opens onto the landing (declared). The south flat's stays as drawn,
      because on the landing it would cross the common stair's side exit.
+  6. **Look at what collides, and press what can be pressed.** **C**
+     (Shift C to see through everything; in a public view, `?debug`)
+     draws every collider in its kind's colour (`app-notes.md`, The
+     colliders drawn). Walk the rooms with it on after each furnishing
+     pass, looking for:
+     - a piece colliding as its box where its mesh was meant;
+     - a stairwell's blocker missing;
+     - a leaf or a shower's door barring a way.
+
+     Then run `act.js`'s spots for the space's own doors, drawers, a
+     switch on each floor and the car (E, F, Q), in the editor and a
+     public view, against the base build. What a new space needs for them:
+     - **Q**: a switch in every indoor room (Fittings gives each its
+       ceiling light). In a public view only lamps in the bake switch:
+       Ladonia's terrace lamps are not, so Q there has nothing.
+     - **E with nothing aimed at** opens the nearest door whose foot (its
+       wall's base) is at most 0.85 m under the visitor's feet and not
+       above their head (`doorOnFloor`, `DOOR_BELOW` 2.4 m under the eye):
+       hang each door in a wall that starts on its own floor.
+     - **Driving from above** needs a car and a terrain or ground plane
+       (`shared/drive.js` `driveBounds`). Without them the view keeps to
+       the floor's rooms ± 1.5 m (`BirdView.withinReach`), and a car driven
+       off that leaves the frame. Publish after it, so that
+       `driveViewpoints` samples the view from out there.
+  7. **The furniture's parts and the windows** (`openables.js`, after
+     act.js):
+     - list every part that stops short and what stopped it
+       (`__openables.stops()`);
+     - press E on one part of each catalogue kind and label, and on every
+       part after a furnishing change (`everyE()`);
+     - `walkIn` at an L or U kitchen's parts, `freeSpots` between its arms,
+       and `sameTriangles()`: the editor's tree must be what a publish
+       collides;
+     - every sash's plan (turn or tilt, and what is in its way) and E on
+       each (`sashes()`).
+
+     On a new space each stop and each tilt is a placement to move, unless
+     the plans put it there (§4.5). Ladonia: 32 stops and 18 tilts; 74 of
+     74 kinds and 475 of 475 parts open and shut with E; 59 of 59 sashes;
+     6 and 23 free spots in its L and U; 971,018 triangles each way.
+  8. **Use it as a visitor does**, with both avatars
+     (`.avatar-option[data-avatar="male"]`, then `"female"`, a fresh page
+     each; `window.__pickSkin` with boot.js), in the editor and the public
+     view. First `await P.avatar.wear(experience)`, `await
+     w.seats.dress(P.avatar)` and `await w.seats.catalogue()`
+     (`__sit.ready()` does all three), or the first E only queues the
+     sit. Then:
+     - sit at a seat of each kind and get up (`sit.js`): a dining chair at
+       its table, a sofa's middle place behind its coffee table, a pouf,
+       an outdoor lounge chair, a chaise's deep end; from above too;
+     - switch every television, and sit before one (`tv.js`);
+     - swim into each wall of every pool, up its steps, and out at each
+       side (`pool.js`, `swim-checks.js`);
+     - open every kind of part (`openables.js`) and run every tap
+       (`water.js`).
+
+     Sweep every seat for limbs more than 2.5 cm into anything but the
+     seat's own piece (`seat-sweep.js`, `seat-sweep.py`). Take the starts
+     (`makeStarts`) and, for a public view, the editor's boxes
+     (`takeBoxes`) once, and use them for every build compared; take them
+     again after the furniture moves. Read the
+     result against Ladonia's: 214 seats a run; the seated pose meets
+     something at 124–149 of them (every tucked-in dining chair:
+     accepted); the walks meet something at 85–111 (`app-notes.md`,
+     Sitting).
+  9. **Run and jump at every upstairs window with a sill** (`jump.js`,
+     `__jump.all()`), in the editor and a public view. No run may end
+     outside the building or a floor up, and no frame may rise more than
+     climbing onto furniture does (Ladonia 0.53 m). three's capsule
+     resolve pushes a head that crosses a one-sided ceiling up through the
+     slab, and shoves it out over a sill. Player holds it under (`from`,
+     `headroom`: `app-notes.md`, Rays and the collision trees). Before
+     that fix Ladonia let the visitor out at 24 of its 32 such windows.
 - **Spawns on free floor** (`__walk.free`); move them after any furniture
   change. A spawn camera inside a TV or wardrobe gives a one-colour frame
   and a false "too dark". Give each building a ground-level spawn just
@@ -852,6 +1364,31 @@ draws them, and what is still short, is `app-notes.md`, People.
    Talking.fbx": the pose is read from the name). They go in
    `assets/people/characters/` and `assets/people/animations/`,
    git-ignored.
+
+   The visitor's own clips go in `assets/people/avatar/`, never
+   `animations/`, where the people's pipeline would take them for the
+   people's (its `settle` cut "Stand To Sit", a sitting clip by its name,
+   to half a second). Six were downloaded on 2026-10-16, 3.5 MB, once the
+   user had signed in; confirm the list with them first, as for the rest.
+   Take them as FBX Binary, without skin, 30 fps, all on one character,
+   each file named after what it is played as (the tile, then its
+   description):
+   - "Swimming" (Swimming: Swimming Underwater);
+   - "Breaststroke" (Swimming To Edge);
+   - "Treading Water" (Treading Water: Floating);
+   - "Climbing" (Climbing: Pulling Up To A Ledge);
+   - "Stand To Sit" and "Sit To Stand".
+
+   *In Place* is a checkbox in the clip's panel, beside Mirror, not in the
+   Download dialog (`__mixamo.inPlace`). Tick it on a loop alone: only
+   Swimming Underwater has one. The climb and the two transitions keep
+   their travel, which the app follows. The pipeline prints each clip's
+   travel as downloaded and warns of none — its "NOT In Place" check is
+   never reached for a clip it knows (`import_people.py`): read the
+   travel. Mixamo has no front crawl. `npm run people -- --avatar-clips`
+   packs them (git-ignored, as the rest): it cuts a travelling stroke to a
+   loop held in place and swum heads-up, and keeps a climb's travel
+   (`reference.md`, The npm scripts; `app-notes.md`, People).
 3. **Choose** characters by thumbnail: everyday and summer clothes, as
    many women as men, no uniforms, kits or costumes (Ladonia's shannon
    came in a football strip). Mixamo has no swimwear:
@@ -963,7 +1500,12 @@ for current work — plain `/view/<id>` is the last publish), the walkthrough
   `layers.enable(12)` or it passes through the house; a mesh hidden or
   re-dressed by hand inside a wall or a piece needs
   `world.standIns.hear()` before the next still (it is otherwise in the
-  picture for up to 16 frames more); whatever waits on the app's own
+  picture for up to 16 frames more); something added inside a piece or a
+  wall below its root's own children (a test's marker) is not drawn at all
+  until the stand-ins look that unit through again — four units a frame,
+  on Ladonia about 320 frames — so hang it on the root, or in a group of
+  your own in the scene (`StandIns.drawnScene`, since wave C); whatever
+  moves under a held unit works out its own world matrix; whatever waits on the app's own
   frames needs `experience.pace.set("always")` first, `set(null)` after;
   and a tool that reads the collision after an edit, `sceneBuilder
   .settleCollision()` (`app-notes.md`: The editor's plain light and view
@@ -1102,6 +1644,51 @@ What the people work added (2026-10-09), for anything built by agents:
   people nudged in the editor now has an arm in the grass the checker
   had moved him out of.
 
+What the app work added (2026-10-10/17: the performance work, the live
+room and the usability request), for the app's own code built by
+agents:
+
+- **Survey before the plan.** One read-only reader per feature area
+  (`briefs.md` (h)). Their
+  file:line facts are what the plan and every brief then cite (the
+  session's `snapshots/reports/survey-<area>.json`).
+- **Lanes in one checkout, each owning its files** (`briefs.md` (i)), not copies: app code
+  does not merge the way placements do, and two lanes in one file is a
+  conflict nobody sees until the build. Write the contracts between lanes
+  into every brief word for word. What a lane needs of another goes in its
+  report, never into the other lane's files. Two or three lanes a wave,
+  then a reviewer per lane or two, one integrator or fixer, and one
+  verifier: still under 10 agents.
+- **Each lane builds into a scratch outDir of its own** and tests on a
+  server of its own beside HEAD's build (§0), one tab timing at a time, by
+  the baton.
+- **After the builders**: a code reviewer and an in-use reviewer, then a
+  fixer, then a measurer who built nothing (`briefs.md` (j)–(m)). On 2026-10-13 the measurer
+  after the fixer found what the fix cost: Wrenfield's walk indoors 5 ms a
+  frame slower. In wave C a first timing within target did not reproduce
+  for two others. Run every comparison both ways round, by another agent,
+  with the GPU timer beside it (§12).
+- **A fix pass can make things worse.** The third clips pass:
+  - sat 67–71 chairs a run sideways into their own backs and shells;
+  - sent a clock that left others' figures still one frame and doubled
+    the next;
+  - took least-contact walks that went deeper at more seats than they
+    helped.
+
+  The next verifier, rerunning the last verifier's sweep, showed all
+  three, and the fourth pass took them out, from the copies kept before
+  the third (`<scratch>/<job>/<pass>-before/`: `briefs.md` (o)). So keep the files a pass
+  will touch as they were before it, give its verifier the last
+  verifier's instruments, and revert what measures worse rather than
+  mending forward.
+- **A verifier's instrument can be wrong too.** The public view's female
+  "before" counts came from a sweep whose figure still lay back from the
+  pool. Take the figure's state from the page before each case, and
+  strike from the docs any numbers made that way.
+- **Last, a docs fact-check against the code**: every identifier, every
+  `Owner.member` pair and every quoted constant checked in its owner's
+  file, and every figure traced to a report.
+
 ## 10b. Bake, and check the bake
 
 The bake is what every device draws a published version from — a
@@ -1133,16 +1720,23 @@ unbaked publish checked (§10). Details, numbers and causes: `app-notes.md`,
    Wrenfield's is — add `--version <v>`, or it stops on a file it does not
    find. One bake at a time. A house's draft is
    minutes (Wrenfield: 7 at 128 samples and 2048). Ladonia's took 1 h
-   55 min on 2026-10-04, nearly all of it handing the scene to Cycles —
-   some 1,400 times as the code then was (1,542 as committed), 423 now by
-   its settings' arithmetic, so about an hour less: not run to see. To try
-   one thing on a big site in minutes,
+   55 min on 2026-10-04 (16 samples at 1024), nearly all of it handing the
+   scene to Cycles — some 1,400 times as the code then was (1,542 as
+   committed then). On the code since 2026-10-12 it is 423 hand-overs (230
+   for lightmap passes, 193 for the vertices' and the probes' light), and
+   with its 475 opening parts and 59 sashes a draft at 128 samples and
+   2048 took 61–68 min (wave B, 2026-10-16, three drafts: 3,640–4,065 s;
+   `PUBLISH_DIR=<scratch>/pub node scripts/bake-public.mjs <id> --samples
+   128 --size 2048`, detached): view 35.4 MB, lightmaps 0.5 + 0.5 MB,
+   probes 1.3 MB. Blender holds the GPU the whole time: take no timings
+   meanwhile. To try one thing on a big site in minutes,
    bake part of it (`--variants night --no-switches --no-doors`,
    `BAKE_CUT`, `BAKE_BOX`: never a bake to keep).
 3. **Read the log's health lines**: `unwrapped … 100.0% … even texel
-   density`; `margins narrowed` (fine); `atlas N% filled; zones' texels per
-   metre within ≤ ~50%`; no `zone short of texels`; `house texels` a few cm
-   at 4096 (Ladonia 5.5); `sky <hdr> turned <turn>°, strength 1, N sun
+   density` (Ladonia's draft: 8.3 s); `margins narrowed` (fine); `atlas N%
+   filled; zones' texels per metre within …` ≤ ~50% (Ladonia's draft:
+   30% filled, within 24–33%); no `zone short of texels`; `house texels` a few cm at 4096
+   (Ladonia 5.5; 10.3 at a draft's 2048); `sky <hdr> turned <turn>°, strength 1, N sun
    pixels clipped` for a site sky; `the scene was handed to Cycles N times`
    (Wrenfield 148: far more than its passes means something is baked an
    object at a time again); `Baked in …`. Any Python traceback stops the
@@ -1188,12 +1782,27 @@ unbaked publish checked (§10). Details, numbers and causes: `app-notes.md`,
    a phone is given; `?rated=1` shows the rest of what a device rated low
    gets); from above (**B**: always the bake's); at night (**N**); with a
    door shut and a light switched; with **K**, the rooms round the visitor
-   drawn live — unbaked, as the editor's preview draws them: the room
-   stood in, the rooms seen through its open doors, a door opened onto
-   the next and walked through (nothing in view should change but at the
-   first press), in from the garden, and K off again (the bake's, to the
-   pixel). `?lighting=live` draws the old whole house lit live, to
-   compare. Then tell the user what is still short (§ Corrections log).
+   in their own materials, the editor's, lit by the bake's own light
+   (`World/RoomBakeLight.js`, since 2026-10-15): the sun and the nearest
+   lamps live with their shadows; the sky through the windows, every
+   bounce and the lamps not drawn live the bake's. Judge them against the
+   baked frame of the same pose, not against the editor (§7): the room's
+   own pixels within a few levels of it in mean, warmth and shade, and
+   dark at night with its lamps off. Check:
+   - the room stood in, and the rooms seen through its open doors;
+   - a door opened onto the next and walked through: nothing in view
+     should change but at the first press;
+   - in from the garden;
+   - a lamp turned off and on standing under it: every frame of the fade
+     further than the last, the exposure the bake's;
+   - a room with a sheer curtain;
+   - K off again: the bake's, to the pixel.
+
+   A bake without its light apart (an older one, a "static" one),
+   `?lightmap=rooms` or `?merge=off` draws K's rooms as the unbaked view
+   does (`RoomBakeLight.usable`). `?lighting=live` draws the old whole
+   house lit live, to compare. Then tell the user what is still short (§
+   Corrections log).
 7. **Baking again** changes what the bake holds, not how the view draws
    it: a version baked before a fix to the bake shows the old fault until
    it is baked again (`app-notes.md`, Baking, "What baking a version again
@@ -1205,7 +1814,9 @@ unbaked publish checked (§10). Details, numbers and causes: `app-notes.md`,
 
 The user's terms since 2026-10-10: the highest frame rate in the editor
 and in the public view with the most realism kept, and a published view
-drawn from its bake by default. What the app does for that now — a space
+drawn from its bake by default; since 2026-10-16, a new feature must not
+slow down what was there, and must cost as little as possible when used
+(the standing terms). What the app does for that now — a space
 gets it without asking, and can spoil it (the numbers and how they were
 taken: `app-notes.md`, "What a visitor is given", "How a baked view is
 drawn", "Measuring"):
@@ -1232,7 +1843,15 @@ drawn", "Measuring"):
   see-through or moving; nothing gained in a view of one room, and a room
   in focus half a millisecond slower (3.7 → 4.2 ms). Wrenfield's walk
   indoors, found slower by the final measurement, was mended on the 14th
-  (§ Corrections log, 2026-10-13).
+  (§ Corrections log, 2026-10-13). Since wave C (2026-10-16) what the
+  stand-ins draw is also held still, and the units they draw entirely are
+  left out of three's own pass over the scene (`StandIns.hold`,
+  `drawnScene`; `?still=0` compares; `node scripts/test-standins.mjs`):
+  1.6–1.9 ms a frame, three's walk of the matrices 1.52 → 0.22 ms. With
+  the opening furniture in, the editor is at or under HEAD at A1's
+  kitchen and living room, the upper U kitchen and in edit mode.
+  Whatever moves or is added deep inside a held unit must work out its
+  own world matrix (§10, §13).
 - **A baked version is drawn from its bake on every device**: "baked" at
   slider steps 2–4 (what moves shades the sun and is lit by the bake's
   probes, a shut door dims its rooms), "static" at steps 0–1 and on
@@ -1242,9 +1861,15 @@ drawn", "Measuring"):
   into one house (Ladonia 3,952 meshes → 670). Ladonia baked at step 4:
   25–44 ms a frame → 13–17 (the living room 79 a second, the pool 59), at
   night 39–64 → 13–17; at step 0, 10–22 → 4–8; Wrenfield 8–10 → 5–6. The
-  rooms round the visitor drawn unbaked — their own materials, the sun,
-  their lamps, real shadows — are theirs to ask for (**K**: +1.7–4.2 ms a
-  frame standing; a walk through four rooms 14.3 → 17.3).
+  rooms round the visitor in their true materials, lit by the bake's own
+  light with the sun and the nearest lamps live and real shadows, are
+  theirs to ask for (**K**; `app-notes.md`, Live room light). Cost, at
+  2560 × 1440 standing: +2.0–3.4 ms a frame (2026-10-15; +3.0–4.2 when K
+  drew them unbaked), and 0.7–1.0 ms more while a sheer curtain of a room
+  shown is in sight. It holds a second lightmap, 64 MB at 4096², from the
+  first press until K is off. A first press at night on a fresh load is
+  lit 1.75 s after it (K before: 2.7 s). After K off nothing of it is
+  drawn or run, but it keeps about 14 MB so that K again builds nothing.
 - **Nothing takes a device above the step it is rated for** (touch 1,
   integrated graphics 2, other Apple chips and discrete cards 3, Apple
   Pro/Max/Ultra and RTX 4; `?uncapped` lifts it for a developer), each
@@ -1260,9 +1885,59 @@ drawn", "Measuring"):
   costs every lit pixel what a lit one does, and three builds each lit
   shader for the number of lights there are: a light that is off is out
   of the scene, hidden, never dimmed to 0; in the editor anything that
-  makes a light hands it to `world.plainLight?.keepOut`. Each opening door
-  or drawer stays its own draw call (export fitted pieces shut, §4), and
-  so does every window pane, lamp glass and door leaf of a baked view.
+  makes a light hands it to `world.plainLight?.keepOut`. A light inside a
+  piece (a fridge's) is one light lent round, not one each (Ladonia's 15
+  dark fridge lights cost 4–6 ms a frame). It stays out of the scene,
+  hidden, until one of its kind is lit (at intensity 0 it cost 0.2 ms of
+  A1's living room). It comes in only once its shaders, and the shadow
+  maps' for the new count of lights, are built (`Openables.warmAll` at
+  load: about 70 programs paced over 2.4 s on a first visit). It goes out
+  4 s after the last is shut (`LINGER`).
+- A furniture part or a window's sash is a draw call of its own only
+  while it moves or stands open. Ladonia has 475 parts (every front of
+  its kitchens, wardrobes and storage since 2026-10-16) and 59 sashes;
+  drawn one by one they took a baked view's kitchen frame from 13.1 to
+  16–17 ms (+609 calls).
+  - Shut, the editor draws a piece whole, one mesh a material, by a model
+    shared by every piece of the same file and finishes
+    (`World/StandIns.js`): 170 pieces from 45 models; A1's kitchen 1,138
+    → 910 draws.
+  - A public view merges every shut part and sash by look as it loads
+    (`World/ShutBatcher.js`): 534 entries in 21 meshes, each part's floor
+    kept for the view from above, a window's panes one glass mesh while
+    its sashes are shut. A1's kitchen 1,499 → 1,056 draws, against 1,038
+    for the version before. Their own shaders are made ahead, since
+    nothing draws them until one opens. `?shut=0` compares.
+  - So a fitted piece costs its materials, not its fronts: give it no
+    more than its look needs (a Ladonia kitchen has about 20, its
+    fridge's liner and glass among them).
+  - Still a draw each: glass on a part (a washer's porthole, a shower's
+    door: two-sided, in two renders — 48 draws a frame at A1's living
+    room, most behind walls); lamp glass; door leaves; a baked view's
+    fixed panes.
+  - Over the 12 October version the shut fronts also cost their light:
+    lit by the probes where the house was lightmapped (the upper U kitchen
+    1.1 ms). A bake output for shut parts is the user's to decide
+    (`app-notes.md`, How a baked view is drawn).
+- **What is left, and the user's to decide** (wave C, 2026-10-16/17;
+  2048 × 1536, step 4; the final check, each comparison run both ways
+  round: `app-notes.md`, How a baked view is drawn › Measured):
+  - A public view of the version with the opening furniture, windows and
+    water costs +0.08 to +0.35 ms over the user's 12 October version at
+    the same spots with no water running (A1's living room +0.35, GPU
+    +0.24), and +0.62 with a hot shower running, about +0.5 of it the
+    water. Earlier sittings read A1's living room at +0.1, +0.8 to +1.15
+    and 0.0 / +0.45 by their tab set-up; the GPU's +0.2–0.25 and the
+    draws (+30–36) held in every one.
+  - The 12 October version itself is 0.15–0.53 ms faster on this build
+    than on HEAD; the editor −0.55 to +0.08.
+  - The rest is new content: part glass drawn two-sided in two renders,
+    more draws, a longer look ray. Two-sided transparent glass costs
+    1.1–1.7 ms of CPU at A1's living room in either version, because
+    three draws it twice a draw.
+  - Cutting that changes the look (`forceSinglePass` on part glass, or
+    shut part glass merged across pieces, which changes how glass sorts):
+    ask before doing it.
 - What a space can spoil: a room drawn without its window is "without
   daylight" and starts lit (§10b.1); anything new drawn out of doors that
   is no collection's shows in the editor's House scope until `Scope.apply`
@@ -1280,7 +1955,12 @@ drawn", "Measuring"):
   warm-up; the work's own cells were nine frames after three warm-ups,
   best and median), the load average noted (`app-notes.md`, Measuring). The same
   frames time twice as slow while Chrome or Blender is busy: compare
-  within one sitting, never during an export or a bake.
+  within one sitting, never during an export or a bake. Since wave C,
+  run every comparison both ways round (which tab holds which build
+  swung a millisecond of CPU), with the GPU timer beside it and the
+  draws counted over all of a frame's renders (`pair-time.js` with
+  `pair.py`, `gtime.js`, `wtime.js`'s `draws`; the spots in
+  `<project>-spots.js`); a first run within target did not reproduce.
 - Trees whole < 24 m, light < 48 m, impostors beyond at slider step 3
   (× `QUALITY.flora.reach`, 0.6–1.5 by step); AO half-res, kept over a
   bake (without it a room is a tenth brighter and nothing is seated on
@@ -1373,7 +2053,12 @@ drawn", "Measuring"):
   Raycaster of its own passes through what they draw
   (`layers.enable(12)`), and a mesh hidden by hand inside a wall or a
   piece stays in the picture for up to 16 frames
-  (`world.standIns.hear()`).
+  (`world.standIns.hear()`). Since wave C, something added inside a piece
+  or a wall below its root's own children (a test's marker, a helper) is
+  not drawn at all until the stand-ins look that unit through again: the
+  unit is left out of what three is handed (`StandIns.drawnScene`), and
+  they look through four units a frame, so on Ladonia about 320 frames.
+  Hang such a thing on the root, or in a group of your own in the scene.
 - Never give a scene object a property of its own (`mesh.foo = …`): it is
   another kind of object to the engine from then on, and three's loops
   read them all — 2 ms a frame on one ray, measured.
@@ -1387,10 +2072,664 @@ drawn", "Measuring"):
   scripts/test-collision-tree.mjs`).
 - A build into `dist/` is a deploy to the user's own tabs: build work in
   progress somewhere else (§0).
+- A published furniture part's slide (`opens.direction`) is in its
+  piece's frame while its holder is put in the world: every drawer of a
+  turned piece slid into it or sideways in the public view until the
+  loader turned it (`app-notes.md`, Doors). Check a public view's
+  drawers against the editor's, all of them.
+- A collision tree's floors in a public view have tops and no
+  undersides: a ray from below goes through, and whatever it meets
+  upstairs is behind the ceiling. Test what is aimed at against the
+  two-sided sight, as the lights always were (`app-notes.md`, What the
+  visitor acts on).
+- Clips taken by index break the day the list changes (the visitor's
+  avatar had no "waving" at its index, and a network name like
+  `toString` threw): bind them by name and fall back to idle.
+- What clamps a walker's camera does not suit a car: from above, the
+  floor's box held the view while a car drove off it, out of the frame.
+  Follow a car over all the ground it can drive on (`shared/drive.js`),
+  stop it where that ground ends, and sample the publish from there too
+  (`app-notes.md`, The bird's-eye view › Driving from above).
+- A rule for the nearest thing "within 2.2 m" measured across the floor
+  reaches through ceilings: give it the floor too (`doorOnFloor`) — and
+  through walls: from above, E sat the visitor on the next flat's sofa
+  through the party wall until the seat had to be in sight
+  (`Seats.inSight`).
+- A door with something proud of its face (a pull, a handle), swung 90°
+  about the face's outer corner, carries it back past the hinge line by
+  its height: into an end wall, or into the next door. Swing it by
+  atan(nearest point along the door / its height) at most (`_pull_swing`).
+- A lamp's target is its piece's box (`Fittings.gatherLights`), and a
+  light's box beats a door within 5 cm: a lamp on a piece with doors
+  (ld-cabinet) took every press of E until its target became the lamp
+  alone (`aimedAt`). A turned piece's world box stands out in front of its
+  doors.
+- Anything that comes over the network is unchecked (the server relays a
+  visitor's `animation` as it was sent): a number there threw in every
+  other visitor's frame. Take it as a string or a default where it arrives.
+- What the HUD is told "only as it changes" must be keyed on all of what
+  it shows: the prompt's signature left out its `also`, and "Space Stand
+  up" stayed on screen after standing.
+- A hundred-odd small parts that each ask something every frame (the
+  probes' light, a matrix brought up to date) add up to milliseconds:
+  skip what is at rest (`ProbeLight` 3.2 → 0.3–0.5 ms with 475 parts).
+- GLSL `smoothstep` with edge0 > edge1 is undefined, and on ANGLE/Metal it
+  drew nothing: write `1.0 - smoothstep(a, b, x)`.
+- A camera-facing quad built with `cross(axis, toPoint)` is wound
+  backwards and culled by FrontSide: make particle materials DoubleSide.
+- A ShaderMaterial whose `side` is flipped at run time keeps the program it
+  was built with until something else rebuilds it; then it is built again
+  keyed by the side it has: make both ahead.
+- three keys every program by how many lights of each kind the scene has
+  — a ShaderMaterial that takes no light included — but only rebuilds the
+  programs of materials that take light when the lights change. A shader
+  made ahead "at load" is made for the load's lights: one first drawn
+  after N was built in that frame. Make a new mesh's programs before it is
+  first drawn, for the lights there are then, and hold it back till then
+  (`Water.hold`, through `Renderer.build`).
+- That includes the shadow maps' depth materials, which read no light:
+  their programs are keyed by the light counts too, three draws the shadow
+  maps before it takes the frame's lights, and its one shared depth
+  material changes program at each change of the kind it draws (rigged,
+  instanced, plain — 17 times a pass at A1's kitchen). A light let in by
+  day therefore built six programs in the frame after it, where every lit
+  material's had been built ahead. Build those too (`Renderer.shadowDraws`,
+  `shadowTwins`: the next pass watched, its programs built again with the
+  light in, in an empty scene, into a picture).
+- A group's `matrixWorldAutoUpdate = false` holds nothing still while the
+  Scene over it has `matrixAutoUpdate` true: three's `updateMatrixWorld`
+  forces the walk down from every node whose matrix it composes, so all of
+  Ladonia's 5,876 objects were walked and multiplied every frame. Hold the
+  Scene itself still (`SceneBuilder.holdStill`); then whatever moves under
+  a held group must update its own world matrix (Door.update,
+  WindowSash.place, Openables.lend).
+- reflections.js gives every transparent MeshStandard/Physical material of
+  roughness ≤ 0.1 its studio to mirror as Environment is made, and the
+  material keeps it ("its own reflections" in Sky.share). Something meant
+  to mirror the sky — the pool's water — needs a roughness over 0.1: at
+  0.04 the water mirrored the studio's softboxes.
+- A fragment shader cannot read the depth of the frame it is drawn into:
+  the pool's water works out what is under it analytically, from the
+  pool's box and its steps.
+- A pass that multiplies the frame (DstColor × SrcColor) must write its
+  factor through `linearToOutputTexel`, or it dims less on the
+  gamma-encoded screen (steps 0–1, no post-processing) than into the
+  linear post-processing picture.
+- Timing two versions in two tabs: which tab holds which counts (an
+  old-version tab at A1's living room swung a millisecond of CPU from round
+  to round). Run every comparison both ways round and give the GPU timer
+  beside it (`app-notes.md`, Measuring); a first run within target did not
+  reproduce.
+- What nothing draws is never built: parts merged away into one mesh
+  (`World/ShutBatcher.js`) built their own programs in the frame they were
+  first opened. Build such shaders ahead, by one mesh a program, and again
+  when a light comes in (`ShutBatcher.prepareOwn`, `Renderer.buildFor`).
+- Whatever depends on where the eye is — which faces to draw, a depth test,
+  an order against glass, the frustum — must be worked out after the
+  camera is placed for the frame (`World.afterCamera`), not in
+  World.update before it: the third-person boom snaps, and a frame drew a
+  shower's steam inside out.
+- OrbitControls takes its radius from where the camera is: move the camera
+  after it and the next update reads a shorter boom. Limit it instead
+  (`maxPolarAngle`, `Camera.dryOrbit`).
+- A view's helpers are drawn into everything the scene is drawn into — a
+  room probe's cube faces too. Hide what is drawn for the eye alone around
+  such a draw (`RoomProbe.drawFace`).
+- A copy of a material that something else changes in place every frame
+  takes what it shows at that moment, and keeps it. The probes' dressing
+  (`ProbeLight.dress`) cloned a glazed door's glass while `Sky.glaze` had
+  it darkened for a view from outside. In about one load in four all 20
+  of Ladonia's glazed leaves kept that look (0.78, #4b545a) indoors for
+  the visit. Copy through the owner's record of its own values
+  (`Sky.withoutGlaze`, as `withoutGlow` does for the glow).
+- A fault in one load of several is an order of arrival, and a tab loaded
+  beside another receives things in another order: there, the probes'
+  file came after the sky's first glazing. Don't reload until it shows.
+  Make each order happen on purpose and read the result, before the fix
+  and after (`glass-race.js`: right is one look throughout, Ladonia's 20
+  leaves at 0.62, #6a7f8a).
+- A test that reads a list checks only the list. The touch icons are
+  checked from `ICONS` (`shared/interact.js`), and the touch button runs
+  by the prompt's key (`index.js` `runAction`). So an icon drawn in CSS
+  but not listed (the pool's) is checked by nothing, and a prompt on a
+  new key passes every test and does nothing on a touch screen. Add the
+  list's entry and the key's line with the provider (`app-notes.md`, What
+  the visitor acts on › Adding a kind).
+- The checkers carry the app's rules in copies of their own. When
+  `SceneBuilder.collisionOf` changed (2026-10-16), `checks/_modes.mjs`
+  was updated, but `furniture-check-c.mjs` and `stairs-check.mjs` walled
+  every piece with parts in as its box until 2026-10-17 (Ladonia's C:
+  ACCESS 12 → 13, NARROW 27 → 26 once mended). After changing how anything
+  collides, grep `checks/` for the old rule.
+- `blender/lib/ladonia.py`'s `mirrored()` reverses an aimed light's aim.
+  It turns each marker to (rx, −ry, −rz): right for a hinge and, with
+  π − rz, for a slide. But an aimed fixture's X is its aim
+  (`geometry.fixture`), and that comes out pointing back the wrong way.
+  Build the other hand of a piece with a fridge or a spot by its
+  builder's `hand=`, as the `-r` kitchens are.
+- `Player.placeAt` and `teleport` take `spawn.yaw` in degrees. The
+  scratch tools of 2026-10-16/17 passed radians (`yaw: Math.PI`, 3.14°),
+  hidden because they set the camera's angles after.
+- three's `crossFadeFrom` fades the clip played last out from all of the
+  pose, whatever share it holds. A change during a fade (a tap of W, a
+  stroke flicking to treading at a wall) put the pose back in a frame:
+  bones 0.25–0.55 m, the root 0.58 m. Blend every change from each clip's
+  share now (`Avatar.animation.play`, `blend`).
+- The mixer sets a bone only where its value has changed. Whatever is
+  added on top of a pose (a knee bent to lift a foot) is added again each
+  frame to a bone the clip holds still: 20 cm higher a frame. Put back
+  what you turned (Swim.js `unliftLegs`).
+- Pose a figure last, after its turn and its clip for the frame
+  (`Player.updateAvatarPose`): posed before the turn, a swimmer's head ran
+  7–10 cm off the camera's through every turn.
+- Measure a figure by its skin, from the frame before the key:
+  - the toe bones stop 10–15 cm short of the soles (feet "off" the pool's
+    floor were 0.14–0.24 m in it);
+  - measures begun after Space missed a climb's first-frame snap of
+    0.25–0.46 m.
+- Try both avatars. `avatar_male.glb` hangs from an Armature turned +90°
+  at scale 0.01 and has no eye bones: a clip fitted in the skeleton's own
+  frame laid him on his back under the floor (`fitClip`'s `into`). What
+  passes on one fails on the other.
+- Clear what a test leaves on the figure before a baseline. A capsule
+  placed by hand out of the pool without `swimmer.reset()` kept the
+  float's lay-back while it sat, and a sweep counted shins 0.42–0.47 m
+  into tables that were not (`act.js`'s `stand` resets it now).
+- What a contact check leaves out as "its own" it cannot see.
+  - A seat's own piece taken as what the triangles round its cushion are
+    mostly of was the dining table, a corner sofa or a curtain.
+  - The whole chair taken as its own let the figure sit turned with its
+    torso 0.22 m into the backrest (0.39 m on the editor's meshes), which
+    no sweep saw.
+  - Take it by label within the piece's catalogue footprint, and narrower
+    still for what must not be touched (`Seats.own`, its `side`).
+- A "least bad" rule where nothing is clear — the way of sitting or
+  walking that meets least — went deeper at more seats than it helped.
+  Sweep such a rule seat by seat against the rule it replaces, everything
+  else the same, before keeping it: a comparison with the seating changed
+  between the two runs hid it.
+- A figure seen must never move faster than it could. A 0.35 s glide onto
+  a seat ran up to 14 m/s through the table, and a seat clicked from
+  across the room cut the figure 3.8–4.6 m in a frame. Walk it, facing
+  its way, at a walking pace, or fade it out and in and cut only at
+  opacity 0.
+- A fade by material copies must give back the very material each mesh
+  wore, and look every frame it is not fading. The probes and the live
+  room copy what a mesh wears mid-fade, and a copy of a copy left the
+  figure at 0.991 for the visit (`Avatar.setOpacity`, `whole`).
+- Another visitor's figure is played by the receiving page's own frames,
+  from the place and the clip's name alone (sent every 20 ms whatever
+  changed). Played by the sender's clock, sent along, it stood still
+  between messages and doubled the next frame, and still sank 0.46–0.56 m
+  after a hold-up.
+- A pipeline that sorts by name misfiles a new kind: the people's `settle`
+  cut "Stand To Sit" — a sitting clip by its name — to half a second.
+  Keep the visitor's clips apart (`assets/people/avatar/`).
 
 ## Corrections log
 
 Newest first. Each: what the user said, what was changed, where.
+
+- **2026-10-16/17** — Ladonia (`kosinozici-villas`); one request in five
+  stages. The user: "I need to be able to see debug mode on the objects,
+  rather wireframes to see where the colliders are"; "Lights should be
+  switchable with a keyboard key when entering the room instead of
+  pointing to the light, as it needs to be easier to simply switch the
+  lights on and off"; "Cars should be drivable in birds view without the
+  camera switching to the driving view when entering the car from
+  birdview, but rather staying in birdview the entire time"; "Add stairs
+  in the pool and the ability to swim with proper character animations";
+  "User should have the ability to sit in chairs, open drawers, wash
+  machine doors, shower doors, turn the water on and off in the shower
+  with steam appearing inside rendered with custom shaders, also turn
+  water on and off in bathroom and kitchen sinks, open a fridge, closet
+  and wardrobe doors, open windows and also watch tv".
+  - Their answers: the swimming clips from Mixamo, through their own
+    sign-in; the TV a real video loop, public domain or CC, about 3 MB,
+    loaded when first watched; from above the car's keys are the car's,
+    the view swinging round behind it about 1.4 s after the last drag; in
+    the kitchens every front opens.
+  - The defaults they accepted: each visitor's own state, no sound, the
+    dishwasher and the ovens shut, no lying down or diving, the insides
+    plain (shelves, rails, a fridge's shelves and bins, no props), edit
+    mode the wireframes only. Answers and defaults now stand at the top
+    of this file.
+  - Before wave C they added their standing word on speed, "I want the
+    frame rate both in the editor and in the public view to be as high as
+    possible" (the standing terms).
+
+  → How it was worked: a read-only survey (eight readers), the plan (the
+  approvals pattern at the top), then:
+  - stage 1 (the colliders, Q, driving from above, the groundwork for the
+    rest): two lanes;
+  - wave A (sitting and the TV; the furniture in Blender; opening
+    furniture and windows): three lanes;
+  - wave B (fixes and speed; water and steam; the pool's steps, swimming
+    and the jump-out bug): three lanes;
+  - wave C (speed; the pool's water and the swimmer): two lanes.
+
+  Each lane owned its files in one checkout, and each wave had a review,
+  an integrator or fixer, and a verifier. The user signed in to Mixamo
+  after wave B, on the evening of the 16th, and the visitor's six clips
+  were downloaded (3.5 MB; §4b). On the 17th they were wired in, then
+  four passes more, one lane each, on what each pass's verifier had
+  found.
+
+  Built only into the scratch folder, tried on test servers of their own
+  beside HEAD 5876694's build (§0), with scratch publishes and three
+  draft bakes into a scratch folder; every figure this M4 Pro's, its pane
+  hidden. Nothing published or committed; the repo's `published/`
+  untouched. The user's scene was given the pool's steps and nothing else
+  at the end of wave C (`patch-pool-steps.mjs`; the backup
+  `kosinozici-villas.2026-10-17T02-58-24-844Z.json` in the session's
+  `snapshots/scene-backups/`). Lessons folded into the standing terms, §0,
+  §3, §4, §4b, §7, §8.6–9, §11, §12 and §13.
+  - *The colliders as wireframes* (**C**, **Shift C** seen through
+    everything; `Experience/Colliders.js`, `World/ColliderView.js`;
+    `app-notes.md`, The colliders drawn; README, Seeing the colliders):
+    - every kind in its colour: the building, blockers, stairs, furniture
+      as its mesh or its box, people, trunks, door leaves while they
+      block, cars driven and parked, the visitor's capsule;
+    - in the editor always: a region round the visitor, and in edit mode
+      a moved piece's would-be collider live;
+    - in a public view only with `?debug` or `?colliders`: the whole house,
+      92,799 triangles, cut above the floor shown from above.
+
+    Hidden it costs nothing (its code is not even downloaded); shown
+    +0.5–1.5 ms a frame, seen through +0.5–2.9 (step 4, 2048 × 1536).
+  - *Q, the room's lights* (`Player.toggleRoomLights`,
+    `World/Whereabouts.js`; `app-notes.md`, What the visitor acts on):
+    - any on → all off, else all on;
+    - a chip by the room's name, a round button on touch, and a line saying
+      what was done or that there is nothing to switch;
+    - from above, the avatar's room.
+
+    One answer now for which room the visitor is in — the readout, Q and
+    the live room — so half way up a flight it is never the bathroom
+    under it, and a threshold no longer blinks the name. A1's bedroom at
+    night: the frame's mean 103.6 → 5.0 → 103.6.
+  - *Driving from above* (`World/BirdView.js`, `Camera.js`,
+    `Vehicle/CarLights.js`, `shared/drive.js`; `app-notes.md`, The
+    bird's-eye view › Driving from above; README):
+    - F, or a click or tap on a car, gets in, and the view stays;
+    - B and V go behind the car and back mid-drive;
+    - the view follows the car over all the ground it can drive on
+      (Ladonia's whole 640 m terrain, at whose edge a car now stops), and
+      on after the visitor gets out until they are back by the house;
+    - the publish samples the view from out there too (`driveViewpoints`:
+      642 more bird's-eye samples, about 2 s);
+    - the car's lamps are the bake's pool, with no shadow pass.
+
+    Standing by the BMW 9.0–9.2 ms a frame (9.2–9.3 before), driving a
+    median 4.4. Behind the car nothing changed: a scripted drive is the
+    same byte for byte.
+  - *What the visitor acts on* (`World/Interactables.js`,
+    `shared/interact.js`; `app-notes.md`, What the visitor acts on):
+    - one picker behind the crosshair, the prompt, E and F, with seats,
+      taps, showers, a TV and windows as providers, each with its reach,
+      priority, touch icon and key;
+    - one list of keys (`KEYS`: the clash test, and the scopes of the
+      hints; the hints' words are written in `index.html`);
+    - a touch button for drawers and cupboard doors;
+    - the visitor's clips bound by name;
+    - `colliders.register` for what collides outside the trees;
+    - `interactables.busy()` asked by Pace.
+
+    With nothing aimed at, E opens the nearest door on the visitor's own
+    floor only: over Ladonia's rooms it had been another floor's at
+    7,047 of 15,235 spots.
+  - *Sitting* (`World/Seats.js`, `Player.sit`/`stand`, `sitPlan`,
+    `risePlan`, `walkPlan`, `seatPose`; `Utils/fitClip.js`;
+    `app-notes.md`, Sitting; README, Sitting):
+    - E on any of Ladonia's 219 seats; from above, a click on a seat, or
+      E by one in sight.
+    - The people's Sitting Idle is fitted to both avatars. Low seats are
+      sat on as a person would (`Seats.wayOf`): reclined on the outdoor
+      lounge chairs, knees opened on the low sofa and the poufs.
+    - Sitting down and getting up are by the clips (Stand To Sit, Sit To
+      Stand) only where the walk there, the turn and the body at eight
+      moments meet nothing but the seat's own piece. Else on foot: the
+      figure walks to where it stands at the seat, round what is in the
+      way, turns, and sits down where it stands; it stands up, turns and
+      walks back to where the visitor stood, or to the nearest free spot
+      with a clear way. Never faster than a walk, never sideways.
+    - From afar, it walks there where the way is clear and ≤ 6 m, else it
+      fades out and in beside the seat (0.3 s each, dithered, cut only at
+      opacity 0). Every fade ends in the very materials worn before.
+    - It faces the seat's way, turned to a side only where that meets
+      nothing at all, its own chair's back and shell included: one pouf,
+      for the female figure.
+    - Others see all of it.
+  - *The televisions* (`World/Screens.js`, `screens.json`,
+    `public/media/earth-tv.mp4`, NASA, public domain): twelve sets, a 40 s
+    loop of the Earth from the ISS, without sound, loaded at the first
+    switch-on, its brightness divided by the exposure, so that it reads as
+    a screen by day, at night, from above and in the live room alike.
+    Seated before one, E switches it and the view turns onto it.
+  - *Every front opens* (`blender/lib/ladonia.py`, `joinery.py`,
+    `geometry.py`; README, Doors and drawers; `app-notes.md`, Doors,
+    Furniture, Blender):
+    - what opens: Ladonia's 13 kitchens, 4 counters, the peninsula and the
+      outdoor kitchens; its wardrobes, nightstands, sideboards, cabinet,
+      media wall and TV-wall closets; the washing machines and the corner
+      showers. 475 parts, each named for the prompt ("Open fridge"); the
+      fridges integrated, with a light;
+    - every part swept against its piece and against the scene;
+    - the catalogue's sizes byte for byte the same, and the televisions'
+      glass where it was;
+    - water, control and steam anchors on every wet piece.
+  - *The app side* (`World/Openables.js`, `Openable.plan`,
+    `SceneBuilder.collisionOf`, `Publish/Runtime.js`):
+    - a hinge about any axis, and a part's label;
+    - a piece with parts collides as its body and a shut box a part, a
+      shower's door barring the way only while shut. The L and U kitchens
+      can be walked into, no carcass entered, and the editor's tree is what
+      a publish collides (971,018 triangles each);
+    - a part opens only until it meets something: 32 of 475 in Ladonia;
+      a publish carries each part's `reach`.
+  - *Windows that open* (`World/Sash.js`; README and `app-notes.md`,
+    Windows that open): 59 sashes in 45 windows turn in, or tilt where
+    something stands in the way (18). An invisible pane in each opening;
+    a window's `opens` field and the editor's *Opening* selector.
+  - *Running water and steam* (`World/Water.js`, `World/waterShaders.js`;
+    README, Running water; `app-notes.md`, Running water and steam):
+    - E on any of Ladonia's 70 taps, mixers, sinks and showers' valves, or
+      standing in a shower;
+    - streams, droplets, ripples, and rain ending on the visitor's head;
+    - the 15 indoor showers hot: steam as a volume looked through, filling
+      from the top, spilling into the room, the glass misting and
+      clearing. The rest run cold.
+
+    +0.73 ms at most at step 4, nothing while all is off.
+  - *The pool, and swimming* (`World/Player/Swim.js`,
+    `LandscapeBuilder.addPoolSteps`, `poolWater`; `shared/landscape.js`
+    `poolSteps`; `blender/import_people.py` `AVATAR_AS`; README,
+    Swimming; `app-notes.md`, Swimming and the pool's steps, The pool's
+    water, People):
+    - five steps across B's pool's south end, by the loungers (a small
+      addition: the renders show a plain basin);
+    - the water clear (§7): the mosaic, the steps and a swimmer showing
+      through, caustics by day, the pool lamp's glow at night, the sky
+      mirrored at grazing angles; +0.05–0.2 ms of GPU over the milky
+      water;
+    - wading, then swimming by the visitor's clips: the frog kick at
+      swimming pace, the breaststroke with Shift, treading water still;
+    - the figure sits in the water by what shows of it at every moment of
+      the clip — its clothes under, its eyes out — and is kept within the
+      pool's box and off the steps, its feet off the floor and the treads;
+    - out with Space at the edge, the climb fitted to the coping, or up
+      the steps;
+    - no diving.
+
+    The pipeline cuts a stroke to a loop where its pose comes back round
+    (the breaststroke's reach for the edge left out), takes out its
+    travel and swims it heads-up; the climb keeps its travel.
+  - *The jump-out bug* (`Collision.capsuleIntersect`'s `from`,
+    `headroom`; `app-notes.md`, Rays and the collision trees): running and
+    jumping at 24 of 32 upstairs sill windows threw the visitor up through
+    the wall and out. Now none, and walking, stairs, doors and cars are bit
+    for bit as before.
+  - *Speed* (`app-notes.md`, How a baked view is drawn: what runs every
+    frame; the editor's stand-ins):
+    - the editor draws a piece with parts whole (A1's kitchen 1,138 → 910
+      draws), holds still what its stand-ins draw and leaves it out of
+      three's pass (1.6–1.9 ms a frame: at or under HEAD at A1's kitchen
+      and living room, the upper U kitchen and in edit mode);
+    - a public view merges the shut parts and sashes by look (21 meshes;
+      A1's kitchen 1,499 → 1,056 draws), holds the Scene and the merged
+      house still (three's walk had gone through all 5,876 objects every
+      frame), hides the light targets and empty fixture holders, and hides
+      a fridge's glass shelves behind its shut doors;
+    - ProbeLight passes over what is at rest (3.2 → 0.3–0.5 ms with 475
+      parts);
+    - the fridges' light is one lent round, out of the scene until one is
+      opened, its shaders and the shadow maps' built ahead.
+
+    The user's 12 October version is 0.15–0.53 ms faster on this build
+    than on HEAD. The new version costs +0.08 to +0.35 ms more than it at
+    the same spots with no water running, +0.62 with a hot shower: §12,
+    What is left.
+  - *The glass-door race*: in about one load in four the 20 glazed door
+    leaves kept the outside look indoors (0.78, #4b545a); now always their
+    own (0.62, #6a7f8a): `ProbeLight.dress` copies through `Sky.withoutGlaze`
+    (§13).
+  - *Mended by the reviews, the integrators and the verifiers* — the
+    general lessons are in §13:
+    - Stage 1:
+      - in a public view every drawer of a turned piece slid into it or
+        sideways (34 of 38; the loader turns the slide now, for every
+        version published);
+      - a door upstairs was opened, and named, through the ceiling;
+      - the frame guard's `dispose` let go of half its events;
+      - the editor's header toggle squeezed the floor picker at 1280 px.
+    - Wave A:
+      - from above, E sat the visitor through the party wall;
+      - a visitor's `animation` that was not a string threw in everyone
+        else's frame;
+      - "Space Stand up" stayed after standing;
+      - ld-cabinet's lamp took every press meant for its doors;
+      - the 15 dark fridge lights cost 4–6 ms a frame.
+    - Wave B:
+      - a merged part's shaders were built in the frame it first opened
+        (50–102 ms);
+      - the water's programs were built for the load's lights only;
+      - the water was drawn for the frame before's camera, and into the
+        room probe's faces;
+      - the orbit camera's boom shrank for good over the pool;
+      - others saw a visitor on a low seat upright.
+    - Wave C:
+      - the frame after a fridge's light came in built the shadow maps'
+        programs (35–43 ms; 0.7 s cold);
+      - K drew a fridge's shelves behind its shut door;
+      - a first timing within +0.5 ms of the 12 October version did not
+        reproduce.
+    - The clips passes:
+      - a change of clip during a fade popped (bones 0.25–0.55 m);
+      - a turn jolted the swimmer's head 7–10 cm;
+      - getting up was a glide at up to 14 m/s through the table;
+      - a seat clicked from afar cut the figure 3.8–4.6 m in a frame;
+      - the climb's first frame snapped 0.25–0.46 m;
+      - the feet went 0.07–0.24 m into the pool's floor;
+      - a page's first fade, Space the next frame, left the figure at
+        0.991 opacity for good.
+  - *Tried and taken out again* (the third clips pass's; the fourth
+    reverted them from copies kept before it, §11):
+    - turning a chair's sitter to a side where every way met something:
+      67–71 seats a run sat into their own chair's back or shell, unseen
+      by a sweep that counted the whole chair as the seat's own;
+    - walking the way that met least where no way is clear: deeper at more
+      seats than it helped;
+    - playing others' figures by the sender's clock: still one frame,
+      doubled the next.
+  - **The user's own edits since** (the scene saved again 2026-10-17
+    13:54Z, after the pool steps' patch; theirs, in the editor: keep
+    them):
+    - five dining chairs moved or turned (a-f011, a-f116, b-f117, b-f119,
+      b-f120);
+    - b-f011 scaled to 0.88.
+
+    The seat sweep's starts and boxes (`ladonia-seat-starts.json`,
+    `ladonia-w-boxes.json`) were taken before these edits: take them again
+    before the next sweep.
+  - **Still short**:
+    - *The user's to decide*:
+      - Ladonia must be published again and baked (the final bake about
+        2 h) for the opening furniture, the windows, the water, the steps
+        and swimming to reach its public view. Their `published/` still
+        ends at 20261012T114849Z.
+      - What the new version still costs over the 12 October one (§12,
+        What is left): cutting the part glass's passes changes its look,
+        and a bake output for the shut parts is not built.
+      - The live room keeps about 14 MB of its own after K off, so that K
+        again builds nothing.
+      - Their placements stop 32 of 475 parts short (§4.5):
+        - A1's and B1's wall-unit doors and ld-media-ochre's top doors at
+          the ceiling tracks' spots (a-f005, a-f038, b-f005, b-f041);
+        - the L kitchens' cupboard door beside the under-counter fridge
+          (`door2` of a-f069 / b-f072, at −47.7° and −45.7°) at dining
+          chairs a-f073 / b-f076 (the fridge's own door opens fully);
+        - the outdoor kitchens a-f171 / b-f174 at garden chairs;
+        - wardrobes at nightstands 0.38–0.5 m before them;
+        - the small vanities' drawers at the WC pans.
+
+        `scenes/` was not touched for these.
+      - At a tucked-in dining chair or a four-seat table (chairs 0.355 m
+        under the top) no way of sitting is clear. The figure sits
+        forward, its forearms, thighs and most often a foot (19–24 of the
+        44 oak chairs, male) in the table's edge and base: seated depth
+        median 0.19–0.29 m, at most 0.46 m. Accepted. Garden armchairs
+        drawn up to their tables are the same.
+      - Q switches the room stood in only, not the room an open-plan room
+        runs into. It is the key marked A on AZERTY. Ladonia's terrace
+        lamps are not in its bake, so Q on a terrace has nothing to
+        switch in the public view. A1's bedroom switch stands behind its
+        wardrobe and can be reached only by Q.
+      - From above, the pedals count as moving for the follow, not speed.
+        The view leads the car by about 2 m at 16 m/s, not the 4 it aims
+        for. The keys are said once.
+    - *Found, left*:
+      - Sitting:
+        - getting up while the figure is still walking to a seat slides it
+          to the stand spot at 0.10–0.155 m a frame, seen whole;
+        - a second seat clicked within about 0.1 s of Space during a
+          fade-back draws the figure whole at 0.99 opacity 6 m away, then
+          fades it out there;
+        - K taking the figure mid-fade draws it whole for one frame;
+        - the prelude's cut frame is at ≤ 0.009 opacity, not 0;
+        - the walks meet something at 85–111 of 214 seats: tables 49–65,
+          the next seat 15–29, a wall or door 4–8 (the pouf c-f103's leg
+          0.39 m into a wall);
+        - Sitting Idle hangs the feet 3–5 cm on 0.49 m chairs;
+        - on the 37 cm lounge the toes go 4 cm under the floor for a
+          moment as the figure sits and gets up;
+        - the female figure reclines with the male's clip (the women's is
+          `LEFT_OUT`);
+        - seated sideways (the pouf), the television "in front" is the
+          seat's own facing's.
+      - Others' figures:
+        - a remote page sees the fade from afar as a cut;
+        - a receiving tab whose messages bunch or stall (hidden: 10–15
+          places a second, stalls of 0.3–2.7 s) sees a remote swimmer's
+          eyes 0.46–0.66 m under at ordinary stroke changes;
+        - a remote climb runs about 40 frames ahead of the sender's and
+          stands still 21–22 frames, held at its start and its end.
+      - Swimming:
+        - the breaststroke swum heads-up is steeper in the water than a
+          real one (the female's at 65°);
+        - the sleeves of a stroke's arms come over the water, as a
+          swimmer's arms do;
+        - B's west side, lined with loungers, offers climbing out only at
+          its ends;
+        - the deck and the house are not truly mirrored in the water, and a
+          swimmer near the surface reads a little too turquoise;
+        - the water's light, fully baked, is an estimate;
+        - the water's two programs build the first time the pool is seen.
+      - Water and steam:
+        - the steam cannot see the depth of what is inside its box;
+        - N8AO darkens it a little before a dark corner;
+        - the rain ends at the top of the head, so none is seen falling
+          past a first-person eye;
+        - the water's meshes carry a `raycast` of their own, which the
+          stand-ins' notes warn against.
+      - Furniture:
+        - the walker (0.7 m) does not fit a corner shower's 0.6 m door;
+        - there is no freezer door anywhere;
+        - re-exports are not byte-reproducible (`bake.py` seeds by
+          `hash()`);
+        - a public view's colliders draw a piece's part boxes in its mesh
+          colour;
+        - a piece with parts placed at a scale other than 1 slides its
+          drawers differently in the two views (none is so today).
+      - Televisions: a set lights nothing round it, and from above at
+        night A1's cabinet spots' bloom lies over its picture.
+      - The camera: the third-person boom ignores door leaves and passes
+        through people.
+      - Driving: the car's nose hangs over the terrain's edge (its middle
+        is the probe); going to a room or the spawn while driving is
+        undone the next frame.
+      - Where the visitor is: on `c-stair-n`/`s` the readout goes hall →
+        stair room → hall on the way up; the nearest door is still the
+        nearest across the floor, through a wall too (A2's bedroom by
+        A1's bathroom opens A1's bathroom door).
+      - The ground: a hairline crack shows along the edge of Ladonia's
+        1 m terrain grid (x 76, z 78 / −62).
+      - The colliders: in a public view under post-processing a collider
+        shows through what collides with nothing over it (a pergola's
+        slats, a car's body); the editor's region is gathered again in one
+        go, 8–12 ms every 5 m walked.
+      - First draws:
+        - a lamp's lens or halo shown for the first time is a frame of
+          29–45 ms;
+        - on a first visit, walking into a room not yet seen builds its
+          programs in the frame (A1's kitchen: 26–30 programs, a frame of
+          2.7–3.0 s simulated) — three's way, as before;
+        - the fridges' light's shaders are built at load whether or not a
+          fridge is opened (about 70 programs, 2.4–2.6 s paced, no frame
+          over 50 ms).
+      - A public view draws 6–54 more calls at the pool and seated with
+        the TV than the report before: cause not found.
+    - *Unseen*: a real phone (the mobile preset only), a visible tab at
+      the display's rate, another GPU, two visitors but through two
+      hidden tabs.
+    - *Left for the user*: `npm run build` and a reload of every open tab —
+      their server has none of it until then; a publish and a bake
+      (above); a commit when they ask. The Mixamo downloads and the
+      converted `avatar-clips` files stay out of git (`.gitignore`).
+
+- **2026-10-15** — Ladonia and Wrenfield; the live room (**K**). The
+  user: "in the public view, in the live light mode for
+  the room, when its nighttime and the lights are off, the room is still
+  clearly visible, just like in the editor mode, but it should be dark,
+  like the baked version", then "Make sure that in the editor mode it
+  stays as it is currently, only change the published view". Later the
+  same day: "There is a significant difference between baked light and
+  live light in the view mode. The baked light is more yellow and warmer
+  and live light is more white/blue, and also fewer shadows appear with
+  the live light. Make the live lights ambience look as similar as
+  possible to the baked one" — the materials to stay the true ones. →
+  Builders, verifiers and fixers in rounds, built into the scratch folder
+  and compared with the user's build room by room: each room's own
+  pixels, baked | K before | K now. Nothing published or committed.
+  Lessons folded into §7, §10b.6 and §12.
+  - *Dark at night* (`LiveRoom.measure`, RoomGlow's `shares`): as far as
+    a room's own lamps are off, its light that is not theirs is what its
+    bake measured. That is its probes' six ways, raised to its lightmap's
+    figure, no longer the unbaked view's share of the dusk. Villa A's 32
+    rooms with every lamp off went from 24–122 levels to 0–0.5 in 25 of
+    them; lamplit rooms are as before. This is now the fallback for a bake
+    that cannot give its own light (below).
+  - *In the bake's own light* (`World/RoomBakeLight.js`, with a second
+    `LightResolver` holding the light without the sun's straight light):
+    - the surfaces keep their materials and take their light from round
+      about from the bake alone;
+    - only the sun and the nearest lamps are live, each as strong as the
+      bake's probes measured it, and shading as softly as the bake's lamp
+      is big;
+    - the exposure is the baked view's own meter's, clear glass is
+      reflections only, and a sheer curtain is the baked view's own.
+
+    Nine of Ladonia's rooms, mean difference from the baked frame, K
+    before → now:
+    - at night with the default lamps: 13.1 → 3.0 levels, warmth 0.086 →
+      0.014;
+    - by day with the lamps off: 38.9 → 8.6;
+    - by day with every lamp on: 40.2 → 2.8;
+    - Wrenfield's four rooms: 13.7–69.2 → 0.0–4.9.
+
+    Standing +2.0–3.4 ms over the bake (K before +3.0–4.2), and 0.7–1.0
+    ms more with a curtain in sight. The editor, the unbaked publish and a
+    visit that never presses K are byte for byte the user's build's.
+  - **Still short**:
+    - a switch with more lights than the step's shadowed lamps (Ladonia's
+      living rooms) is all the bake's, with no moving shadow;
+    - door leaves are their true oak, where the baked view draws them
+      nearly white;
+    - by day a window's frame and pane, and a mirror or a washer, are the
+      room's, not the baked view's white sky and studio (A1's windowless
+      bathroom with its light off is black, for the bake's 45);
+    - the indoor sky's light is upside down (`Sky.indoorLight`; found, not
+      changed: mending it changes every view lit live);
+    - not seen in a visible tab, at steps 2–3, or with two visitors.
 
 - **2026-10-13** — Two requests, worked from the evening of 2026-10-12
   to the 14th. The user, on seeing K light a room's lamps live over its
@@ -1405,7 +2744,8 @@ Newest first. Each: what the user said, what was changed, where.
   measurer, reviews and a fixer; every figure this M4 Pro's, its pane
   hidden, the build before against the new one in one sitting (§12).
   - *K draws rooms unbaked* (`World/LiveRoom.js`, `World/RoomLight.js`;
-    `app-notes.md`, Live room light): the room the visitor is in, the
+    `app-notes.md`, Live room light; since 2026-10-15 lit by the bake's
+    own light where the bake allows, the entry above): the room the visitor is in, the
     rooms that always stand open to it, and every room seen from there
     through a door that is open or has glass in it, or a stairwell — their
     own materials, the sun through the windows with its shadows, the sky,

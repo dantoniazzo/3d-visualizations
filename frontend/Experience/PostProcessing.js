@@ -65,7 +65,7 @@ export default class PostProcessing {
         });
         // What is seen through, drawn here rather than by the library (drawTransparency).
         this.ao.renderTransparency = (renderer) => this.drawTransparency(renderer);
-        this.transparent = { hidden: [], passes: [[], []], targets: [null, null], drawn: [true, true] };
+        this.transparent = { hidden: [], passes: [[], []], targets: [null, null], drawn: [true, true], seen: new Set() };
         this.composer.addPass(this.ao);
 
         this.bloom = new UnrealBloomPass(new THREE.Vector2(width, height), 0.55, 0.5, 0.95);
@@ -169,30 +169,44 @@ export default class PostProcessing {
      * left them, and are kept.
      *
      * And a picture with nothing in it is cleared once, not drawn.
+     *
+     * What goes into either, and what is hidden meanwhile, is read off what
+     * the frame's own drawing of the scene has just drawn — N8AO's, a
+     * moment before this, with the same camera: three's lists of it
+     * (`renderLists`), what is shown, on the camera's layers and in its
+     * view — not looked for object by object through the whole scene, each
+     * hidden and shown again: Ladonia's version with its doors and drawers
+     * shows 3,400 objects, and that walk alone was 0.2 to 0.35 ms of every
+     * frame. Nothing else could be drawn into a picture: what is not in the
+     * lists is hidden, off the camera's layers or out of its view, and
+     * three would leave it out of the picture just the same.
      */
     drawTransparency(renderer) {
         const ao = this.ao;
         const scene = this.scene;
-        const { hidden, passes, drawn } = this.transparent;
+        const { hidden, passes, drawn, seen } = this.transparent;
         const [open, solid] = passes;
         hidden.length = open.length = solid.length = 0;
+        seen.clear();
         const sort = (object) => {
-            if (object.visible === false) return;
+            if (seen.has(object)) return;
+            seen.add(object);
             const material = object.material;
-            if (material) {
-                const opaque = Boolean(object.userData.treatAsOpaque);
-                if (Array.isArray(material)) {
-                    if (!opaque && material.some((part) => part.transparent && part.depthWrite)) solid.push(object);
-                } else if (material.transparent && !opaque) {
-                    (material.depthWrite ? solid : open).push(object);
-                }
-                if (object.userData.cannotReceiveAO && !open.includes(object)) open.push(object);
-                hidden.push(object);
-                object.visible = false;
+            const opaque = Boolean(object.userData.treatAsOpaque);
+            if (Array.isArray(material)) {
+                if (!opaque && material.some((part) => part.transparent && part.depthWrite)) solid.push(object);
+            } else if (material.transparent && !opaque) {
+                (material.depthWrite ? solid : open).push(object);
             }
-            for (const child of object.children) sort(child);
+            if (object.userData.cannotReceiveAO && !open.includes(object)) open.push(object);
+            hidden.push(object);
+            object.visible = false;
         };
-        sort(scene);
+        // (Read before either picture is drawn: drawing one begins the lists again.)
+        const list = renderer.renderLists.get(scene, 0);
+        for (const items of [list.opaque, list.transmissive, list.transparent]) {
+            for (let i = 0; i < items.length; i++) sort(items[i].object);
+        }
 
         const background = scene.background;
         const clearAlpha = renderer.getClearAlpha();

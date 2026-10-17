@@ -14,13 +14,14 @@ import { levelOf } from "./Switches.js";
  * off (World/LampPool.js, World/RoomGlow.js) rather than from a bake.
  *
  * The same to the rest of the app as a baked view's switches (Switches.js):
- * `list`, `byId`, `floors`, `isOn`, `set`, `toggle`, `allOff`, a "change"
- * event — so the lights panel, pointing at a light and the bird's-eye view
- * work alike. Besides those, `entries` (each switch's fittings and the
- * rooms its light reaches), `weights` (1 on, 0 off, by index), and what a
- * lamp's light is seen through (World/LampPool.js): what joins two rooms
- * (`between`), the doors with glass in them (`glazed`) and each room's doors
- * to the outdoors (`doorsOut`).
+ * `list`, `byId`, `floors`, `isOn`, `inRoom`, `set`, `setMany`, `toggle`,
+ * `allOff`, a "change" event — so the lights panel, pointing at a light,
+ * the room's key (Q) and the bird's-eye view work alike. Besides those,
+ * `entries` (each switch's fittings and the rooms its light reaches),
+ * `weights` (1 on, 0 off, by index), and what a lamp's light is seen
+ * through (World/LampPool.js): what joins two rooms (`between`), the doors
+ * with glass in them (`glazed`) and each room's doors to the outdoors
+ * (`doorsOut`).
  *
  * Day and night each keep switches of their own, as a baked view's do: at
  * night every room's light starts on (its ceiling light, and the lamps on
@@ -186,6 +187,11 @@ export default class LiveSwitches extends EventEmitter {
         return state.get(id) ?? this.startsOn(this.variant, item);
     }
 
+    /** A room's switches — its ceiling light's, and its lamps' of their own — by the room's id (none for null). */
+    inRoom(roomId) {
+        return roomId ? this.list.filter((item) => item.room === roomId) : [];
+    }
+
     /** Get ready to show `variant`: its switches as they were left, or as it starts. */
     async prepare(variant) {
         if (!this.states.has(variant)) this.states.set(variant, new Map());
@@ -208,6 +214,15 @@ export default class LiveSwitches extends EventEmitter {
 
     toggle(id) {
         return this.set(id, !this.isOn(id));
+    }
+
+    /** Turn several switches on or off at once — a room's (the Q key): one change, not one a switch. */
+    async setMany(ids, on) {
+        const state = this.states.get(this.variant);
+        const known = ids.filter((id) => this.byId.has(id));
+        if (!state || !known.length) return;
+        for (const id of known) state.set(id, Boolean(on));
+        this.apply();
     }
 
     /** Every switch off. */

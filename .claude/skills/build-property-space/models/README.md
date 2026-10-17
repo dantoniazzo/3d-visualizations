@@ -18,6 +18,10 @@ Ladonia's pieces and numbers below are examples.
 | `contacts.py` | what each part touches, passes into (how deep) or floats beside |
 | `flatbase.py` | flat faces at a part's lowest point (a flat-clamped base) |
 | `coplanar.py` | coplanar overlapping faces of different parts or materials (z-fighting) |
+| `sweep.py` | every opening part of a piece swept shut to open against its own static parts (built from `export_furniture.py`'s PIECES) |
+| `openview.py` | GLBs rendered with their opening parts posed open (or shut), `FIX=1` the water and steam anchors drawn |
+| `imgdiff.py` | two renders of the same camera compared pixel by pixel, an amplified difference written |
+| `export_scratch.py` | `export_furniture.py` run with its output in a scratch folder (`B2_OUT`), never `public/` |
 
 `thumbs.py` (one folder up) is the quick single view for browsing the catalogue; these are for
 review. `../copy-merge.sh` makes the Blender copies whose `glb/` these read with `--glb-dir`
@@ -201,3 +205,42 @@ The copy's export reads the repo's catalogue and writes its own `glb/` (with a `
 of its own), so measuring a copy's piece never touches `public/`. `copy-merge.sh` has the rest:
 generator copies (`gen-copy`, `merge-gen`), `diff` for a builder resuming after a break, and how
 a stale base is refused.
+
+## Opening parts: sweep.py, openview.py, imgdiff.py, export_scratch.py (2026-10-17)
+
+SKILL.md §4 asks for every part that opens (a door, a drawer, a flap, a fridge's door, a shower's
+glass) to be swept against its own piece and against the scene before a piece is placed. These do
+the piece's side; `../checks/part-sweep.py` the scene's, and `../checks/_hands.mjs` lists each
+part's hand and swing from the GLB.
+
+    PLANES=1 $B --background --python $K/sweep.py -- [--tol 0.002] [--steps 18] <piece-id> ...
+
+builds each piece from `export_furniture.py`'s PIECES before `join_piece` and samples each part's
+faces every 2 cm through 18 poses, shut to open, against every part that stays put (PLANES=1: a
+box-like part of 40 faces or fewer by its own planes, not the box round it). It prints `CLASH <id>
+<type> <label> at <pivot> <mm> mm at t <share> point <x, y, z> in <part>`, a `SWEPT` line a piece and
+`TOTAL clashes N`. Ladonia's 33 storage pieces took 23 s; it found the U kitchen's fridge door in the
+back leg's worktop (8.9 mm), the vanity's drawer through its counter (3.4 mm) and the fridge's bins in
+its shelves, and with every part swung the wrong way it caught 12 of 12. `vanity-small` and
+`ld-vanity-double-145` on 2026-10-17: 0 clashes. An id `uback-<scheme>` sweeps a U kitchen's back
+leg alone (Ladonia's `ladonia.py`).
+
+    $B --background --python $K/openview.py -- <out> [--open 1] [--views front,left,right,top,low,back] [--size 900] [--flat 1] [--only part,...] <glb> ...
+    $B --background --python $K/imgdiff.py -- <diff-dir> <a.png> <b.png> ...
+
+`openview.py` writes `<out>/<id>-<view>-<tag>.png` (tag `open`, or `shut` with `--open 0`):
+the parts posed by their own `extras.opens` (hinge angle and axis, or slide direction and
+distance), to read each hand, swing and interior. `--flat 1` replaces each base-colour texture with
+its mean colour, so two exports whose atlases differ compare by shape alone; `FIX=1` draws a
+fixture's water (blue), control (red) and steam (cyan, its screens green) as boxes. `imgdiff.py`
+gives each pair's share of pixels over 2, 8 and 24 levels and writes the difference amplified: a
+rework that changed nothing of a piece's shut look read at most 0.5 % over 2 levels, on joints.
+
+    cp public/models/furniture/catalog.json <scratch>/exp/
+    B2_OUT=<scratch>/exp $B --background --python $K/export_scratch.py -- <id-prefix> ...
+
+`export_scratch.py` runs the repo's own exporter with its `OUT` sent to `B2_OUT` (it refuses to run
+without one, or with one inside `public/`): the GLBs and their catalogue entries land there, for
+the tools above (`--glb-dir`, or a path) without a Blender copy. Use a copy (`copy-merge.sh
+blender-copy`) when the exporter's code itself is being changed.
+

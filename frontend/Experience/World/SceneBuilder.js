@@ -7,15 +7,17 @@ import KitLibrary from "./Builders/KitLibrary.js";
 import batchStatic, { hideOriginals, listStatic, materialKeys } from "./StaticBatcher.js";
 import FurnitureLibrary from "./Builders/FurnitureLibrary.js";
 import Door from "./Door.js";
-import Openables from "./Openables.js";
+import Openables, { shutBox, shutParts, shutProxy } from "./Openables.js";
 import Car from "./Vehicle/Car.js";
 import { TreeKeeper, buildOctree, isTransient } from "./Collision.js";
 import rays from "../Utils/rays.js";
 import { GROUND_TYPES, FINISHES } from "../../../shared/catalog.js";
 import { DEFAULT_CAR } from "../../../shared/cars.js";
 import { pointInPolygon, rectCorners } from "../Utils/geometry.js";
+import { planBounds } from "./Whereabouts.js";
 import { applyReflection, applyReflections, plainGlass, reflectionsOnly } from "../Utils/reflections.js";
 import { edgeDistance } from "../../../shared/roomGraph.js";
+import { doorOnFloor } from "../../../shared/interact.js";
 import { CEILING_STYLES, GLASS, SWITCH_PLATE, ceilingFitting, doorSides, wallSwitch } from "./Fittings.js";
 import { buildFence } from "./Builders/FenceBuilder.js";
 import { buildHills } from "./Builders/HillBuilder.js";
@@ -27,6 +29,7 @@ import { groundGradient, hillOutline, planFence, planHills } from "../../../shar
 import { LIGHTMAP_DECODE, LIGHTMAP_YCOCG } from "./lightmapGLSL.js";
 import LightResolver, { PACKED_16 } from "./LightResolver.js";
 import { MERGE_CELL, floatValues, mergeRooms, rewritten, tintOf } from "./HouseMerger.js";
+import ShutBatcher from "./ShutBatcher.js";
 import { LIVE_LAMPS, houseMerge, ownLayer, roomLightmap, roomLightmaps } from "../Utils/device.js";
 
 /**
@@ -42,8 +45,8 @@ import { LIVE_LAMPS, houseMerge, ownLayer, roomLightmap, roomLightmaps } from ".
  *     just the spec.
  *
  * It also owns the surface registry (so finishes can be swapped in-world),
- * the doors (which animate and collide on their own), and the two collision
- * octrees the player walks against.
+ * the doors and the windows' sashes (which animate, and collide, on their
+ * own), and the two collision octrees the player walks against.
  */
 export default class SceneBuilder {
     /**
@@ -102,20 +105,37 @@ export default class SceneBuilder {
         /** surfaceId -> { id, kind, meshes, slot, finish, label } */
         this.surfaces = new Map();
         this.doors = [];
-        /** The furniture's doors and drawers that open (Openables.js). */
-        this.openables = new Openables();
+        /**
+         * The windows' sashes that open (World/Sash.js), a pane each — kept
+         * apart from `doors` on purpose: that list is also the bake's doors,
+         * each shut in a pass of its own, the doors' probes and the doors E
+         * opens unaimed, none of which a window is.
+         */
+        this.windows = [];
+        /** The furniture's doors and drawers that open (Openables.js) — each as far as nothing is in its way. */
+        this.openables = new Openables({ world: this.experience.world });
+        this.openables.room = { collision: this.collision, own: (part) => this.ownTriangles(part) };
+        /** A public view's: those of them, and of the sashes, drawn while shut a mesh a material and a floor (World/ShutBatcher.js). */
+        this.shutBatcher = null;
         /** id -> { placement, group } */
         this.furniture = new Map();
         /** id -> { spec, group, collider } */
         this.stairs = new Map();
         /** id -> group */
         this.roomGroups = new Map();
-        /** id -> { group, doors } */
+        /** id -> { group, doors, windows } */
         this.wallGroups = new Map();
         /** node name -> { source, base } for pieces lifted out of the model */
         this.modelParts = new Map();
 
         this.build();
+
+        // A low window's sash that bars the way itself is in no tree, nor a shower's glass door: drawn with the
+        // colliders (C) as a door's leaf is.
+        this.unregisterSashes = this.experience.colliders?.register((add) => {
+            for (const sash of this.windows) for (const { centre, quaternion, half } of sash.getBlockers()) add.box(centre, quaternion, half, "door");
+            for (const part of this.openables.waysIn) for (const { centre, quaternion, half } of part.getBlockers()) add.box(centre, quaternion, half, "door");
+        });
     }
 
     /**
@@ -223,9 +243,10 @@ export default class SceneBuilder {
     /**
      * Everything movable, as the player should meet it: stair ramps, and
      * each piece of furniture as its own mesh when that is cheap enough or
-     * its bounding box when it is not. Rugs are left out — they are walked
-     * over, not into. The boxes are made for the asking: dispose of
-     * `proxies` once done.
+     * its bounding box when it is not — a piece whose doors or drawers open
+     * as its mesh without them and a box for each of them, shut. Rugs are
+     * left out — they are walked over, not into. The boxes are made for the
+     * asking: dispose of `proxies` once done.
      */
     dynamicCollisionRoots() {
         const proxies = new THREE.Group();
@@ -234,49 +255,86 @@ export default class SceneBuilder {
         for (const { placement, group } of this.furniture.values()) {
             const met = this.collisionOf(placement, group);
             if (!met) continue;
-            if (met.mode === "mesh") roots.push(group);
-            else proxies.add(boxProxy(group, met.box));
+            if (met.mode === "mesh") {
+                roots.push(group);
+                // (Among the pieces' boxes, in the pieces' order: where dynamicCollisionSources puts them.)
+                for (const part of met.parts ?? []) proxies.add(shutProxy(part, group.userData.label));
+            } else proxies.add(boxProxy(group, met.box));
         }
         return { roots, proxies };
     }
 
     /**
      * How a placed piece is met: as its own mesh, or as its box (`box`, in
-     * the piece's own space) — null for one that is walked over, or that
-     * its catalogue entry says is not met at all.
+     * the piece's own space, as it stands shut) — null for one that is
+     * walked over, or that its catalogue entry says is not met at all.
+     *
+     * A piece whose doors or drawers open (Openables.js) is hollow behind
+     * them, and they collide with nothing: they move. Met as its mesh, it
+     * is met as the rest of it and a box for each of them where it stands
+     * shut (`parts`: Openables.js's shutParts), so nobody walks through an
+     * open door into the carcass, and the floor inside an L- or U-shaped
+     * kitchen's arms is walked on, as it was when such a kitchen had no
+     * door that opened. (Until 2026-10-16 such a piece was always met as its
+     * box, and a catalogue's `"mesh"` let the visitor into it.) What counts
+     * against the budget is what goes into the tree: the piece without its
+     * parts. A way in — a shower's glass door (Openables.js's isWayIn) — has
+     * no box: it bars the way itself while shut (resolveDoorCollisions), so
+     * the shower is stepped into once it is open.
      */
     collisionOf(placement, group) {
         const item = this.furnitureLibrary.getItem(placement.catalog_id);
-        const box = localBox(group);
+        const parts = shutParts(group, this.openables);
+        const box = parts.length ? shutBox(group, parts) : localBox(group);
         if (box.isEmpty()) return null;
 
         const size = box.getSize(new THREE.Vector3()).multiply(group.scale);
         if (size.y < SceneBuilder.FLAT_HEIGHT || item?.collision === "none") return null;
 
-        const triangles = countTriangles(group);
-        // A piece whose doors or drawers open (Openables.js) is hollow
-        // behind them, and they collide with nothing: it is met as its
-        // box, shut, or a wardrobe would be walked into through its doors.
-        let opens = false;
-        group.traverse((node) => {
-            if (node.userData?.opens) opens = true;
-        });
+        const triangles = countTriangles(group, parts.length ? isOpeningPart : null);
         const mode =
             item?.collision === "box" || item?.collision === "mesh"
                 ? item.collision
-                : opens || triangles > SceneBuilder.MESH_COLLISION_BUDGET
+                : triangles > SceneBuilder.MESH_COLLISION_BUDGET
                   ? "box"
                   : "mesh";
-        return { mode, box };
+        return mode === "mesh" && parts.length ? { mode, box, parts: parts.filter((part) => !part.wayIn) } : { mode, box };
+    }
+
+    /**
+     * Which triangles of the collision trees are of a part's own piece
+     * (Openables.js's plan: its piece is made to clear them, so they are
+     * never in its way as it opens), as a test of a triangle — or null. In
+     * the editor, those its piece's sources of the kept tree made
+     * (dynamicCollisionSources): its mesh, its parts' boxes, or its box. A
+     * public view's tree was made from a runtime file's meshes, one for
+     * each thing a triangle can be called (Publish/Runtime.js), and knows
+     * only that: those called as the piece is — which leaves another of the
+     * same piece beside it out of its way too. (Only for a version
+     * published before its parts' `reach`, since 2026-10-16: with it, the
+     * view does not look.)
+     */
+    ownTriangles(part) {
+        if (this.runtime) {
+            const label = part.node.userData?.label;
+            return label ? (triangle) => triangle.label === label : null;
+        }
+        const group = this.furniture.get(part.piece)?.group;
+        if (!group) return null;
+        const keys = new Set([group]);
+        for (const other of this.openables.parts) if (other.piece === part.piece) keys.add(other.node);
+        return (triangle) => keys.has(triangle.source?.key);
     }
 
     /**
      * The same, piece by piece, for the tree that is kept in step with
      * them (buildDynamicCollision): a source for each ramp and each piece,
      * in the order a tree built from scratch over dynamicCollisionRoots
-     * visits them — the ramps, the pieces met as boxes, the pieces met as
-     * themselves. A box is made only when its piece has moved (`stamp`:
-     * where the piece stands and the box round it).
+     * visits them — the ramps, the pieces met as boxes and the boxes of the
+     * parts that open of the pieces met as themselves, then those pieces. A
+     * box is made only when its piece has moved (`stamp`: where the piece
+     * stands and the box round it; for a part, where it stands shut and its
+     * box).
      */
     dynamicCollisionSources() {
         const sources = [];
@@ -291,6 +349,20 @@ export default class SceneBuilder {
             if (!met) continue;
             if (met.mode === "mesh") {
                 meshes.push({ key: group, root: group });
+                const label = group.userData.label;
+                for (const part of met.parts ?? []) {
+                    boxes.push({
+                        key: part.node,
+                        label,
+                        stamp: [...part.matrix.elements, ...part.box.min.toArray(), ...part.box.max.toArray()],
+                        mesh: () => {
+                            const holder = new THREE.Group();
+                            holder.add(shutProxy(part, label));
+                            holder.updateWorldMatrix(true, true);
+                            return holder.children[0];
+                        },
+                    });
+                }
                 continue;
             }
             const { box } = met;
@@ -350,10 +422,10 @@ export default class SceneBuilder {
      * and the file carries the rest — what to collide with, each triangle
      * saying what it is for the crosshair's label; the materials; the glass.
      * So no wall, slab, stair or piece of furniture is made, and no piece
-     * of furniture downloaded. What moves is built as ever: the doors, in
-     * stand-ins for their walls, the car, the room lights, and a site's
-     * pools' water (`landscapeLive`, as the editor has it: World/Flora
-     * ripples it and lights it at night).
+     * of furniture downloaded. What moves is built as ever: the doors and
+     * the windows' sashes, in stand-ins for their walls, the car, the room
+     * lights, and a site's pools' water (`landscapeLive`, as the editor has
+     * it: World/Flora ripples it and lights it at night).
      */
     buildFromRuntime() {
         this.shell = new THREE.Group();
@@ -361,9 +433,14 @@ export default class SceneBuilder {
         this.root.add(this.shell);
         this.rooms = new Map(this.spec.rooms.map((room) => [room.id, room]));
 
+        // The windows whose sashes the publish left for the view to hang
+        // (Publish/Runtime.js), and how; none in a version published before
+        // windows opened, whose glass is in the file, fixed.
+        const hung = this.runtime.scene.userData?.sashes ?? {};
         for (const wall of this.spec.walls || []) {
             const openings = (wall.openings || []).filter((opening) => opening.type === "door");
-            if (!openings.length) continue;
+            const windows = (wall.openings || []).filter((opening) => opening.type === "window" && hung[wall.id]?.[opening.id]);
+            if (!openings.length && !windows.length) continue;
             // Where StructureBuilder.buildWall puts a wall: X along it, Z through it.
             const [x1, z1] = wall.start;
             const [x2, z2] = wall.end;
@@ -380,7 +457,14 @@ export default class SceneBuilder {
                 return door;
             });
             this.doors.push(...doors);
-            this.wallGroups.set(wall.id, { group, doors });
+            // Only the sashes: their frame, mullions and blind are the snapshot's, the pane that bars the way the file's collision.
+            const sashes = windows.flatMap((opening) => {
+                const tag = { kind: "opening", wallId: wall.id, openingId: opening.id };
+                return this.structure.windowSashes(opening, wall, half, tag, hung[wall.id][opening.id]);
+            });
+            for (const sash of sashes) group.add(sash.group);
+            this.windows.push(...sashes);
+            this.wallGroups.set(wall.id, { group, doors, windows: sashes });
         }
         // The cupboard doors under the flights, in stand-ins for the flights.
         for (const stair of this.spec.stairs) {
@@ -420,6 +504,7 @@ export default class SceneBuilder {
             // The frame is the snapshot's; only what swings is drawn here.
             hideFixedParts(door.group);
         }
+        for (const sash of this.windows) sash.group.updateMatrixWorld(true);
         this.buildVehicles();
         // The furniture's doors and drawers, and the lights inside it,
         // drawn live as ever (Openables.js).
@@ -432,6 +517,23 @@ export default class SceneBuilder {
             this.root.add(this.openableGroup);
             this.openableGroup.updateMatrixWorld(true);
             this.openables.add(this.openableGroup);
+            // Each part stands here in the world's frame, not its piece's
+            // (Publish/Runtime.js), but the way it moves is still said in
+            // its piece's: turned as the frame it was said in is turned —
+            // the holder's `turn` — or a drawer of a piece placed facing any
+            // other way slides into it, or sideways, and a flap swings about
+            // the wrong edge. A version published before the file said so
+            // (2026-10-16) has a drawer turned as its holder is, which is
+            // its piece's turn exactly, a drawer never being turned within
+            // its piece (blender/lib/geometry.py's join_piece), and a door
+            // about the up axis, which no piece's turn moves.
+            const turn = new THREE.Quaternion();
+            for (const holder of this.openableGroup.children) {
+                const part = this.openables.of(holder);
+                if (!part) continue;
+                if (holder.userData.turn) part.turnFrame(turn.fromArray(holder.userData.turn));
+                else if (part.opens.type === "slide") part.direction.applyQuaternion(holder.quaternion);
+            }
         }
         this.furnitureReady = Promise.resolve();
     }
@@ -658,18 +760,21 @@ export default class SceneBuilder {
     }
 
     buildWall(wall) {
-        const { group, surfaces, doors } = this.structure.buildWall(wall);
+        const { group, surfaces, doors, windows } = this.structure.buildWall(wall);
         this.shell.add(group);
         this.registerSurfaces(surfaces);
         this.doors.push(...doors);
-        this.wallGroups.set(wall.id, { group, doors });
+        // (A sash is hung in its wall as it is made: it is in no collision tree — its meshes are leaves, isTransient.)
+        this.windows.push(...windows);
+        this.wallGroups.set(wall.id, { group, doors, windows });
         return { group, doors };
     }
 
     /**
      * Rebuild one wall after an opening in it moved or changed size. The
-     * old wall's doors go with it; the new ones are hung straight away,
-     * since by now the static octree is built and leaves them out anyway.
+     * old wall's doors and sashes go with it; the new ones are hung straight
+     * away, since by now the static octree is built and leaves them out
+     * anyway. A window's sashes are new and shut, as a door's leaf is.
      */
     rebuildWall(wallId) {
         const wall = this.spec.walls.find((w) => w.id === wallId);
@@ -680,6 +785,8 @@ export default class SceneBuilder {
         this.structure.release(previous.group);
         for (const door of previous.doors) door.dispose();
         this.doors = this.doors.filter((d) => !previous.doors.includes(d));
+        for (const sash of previous.windows ?? []) sash.dispose();
+        this.windows = this.windows.filter((sash) => !previous.windows?.includes(sash));
 
         const { group, doors } = this.buildWall(wall);
         for (const door of doors) {
@@ -1415,13 +1522,18 @@ export default class SceneBuilder {
 
     updateDoors(delta) {
         for (const door of this.doors) door.update(delta);
+        for (const sash of this.windows) sash.update(delta);
         this.openables.update(delta);
         if (this.baked) this.updateDoorLight(delta);
     }
 
     /**
-     * Push the player out of any door still shut enough to block. The scene
-     * octree is static, so moving leaves have to be resolved separately.
+     * Push the player out of any door still shut enough to block — and of a
+     * low window's sash, made to open, where it bars the way itself
+     * (WindowSash.getBlockers; any other window's opening has a pane of its
+     * own in the tree), and of a shower's glass door, a way in that has no
+     * box in the tree (Openable.getBlockers). The scene octree is static, so
+     * moving leaves have to be resolved separately.
      */
     resolveDoorCollisions(capsule) {
         let moved = false;
@@ -1430,10 +1542,32 @@ export default class SceneBuilder {
                 if (Door.resolveCapsule(capsule, blocker)) moved = true;
             }
         }
+        for (const sash of this.windows) {
+            for (const blocker of sash.getBlockers()) {
+                if (Door.resolveCapsule(capsule, blocker)) moved = true;
+            }
+        }
+        for (const part of this.openables.waysIn) {
+            for (const blocker of part.getBlockers()) {
+                if (Door.resolveCapsule(capsule, blocker)) moved = true;
+            }
+        }
         return moved;
     }
 
-    /** Nearest door the player could reasonably reach and operate. */
+    /** Every window's sash shut, at once: as a space is published (Publish/Runtime.js). */
+    resetWindows() {
+        for (const sash of this.windows) sash.reset();
+    }
+
+    /**
+     * Nearest door the player could reasonably reach and operate: within
+     * `maxDistance` across the floor of `position` — the head — and on the
+     * floor they stand on (shared/interact.js's doorOnFloor: the door's foot,
+     * the group's origin, not above the head nor more than 2.4 m under it),
+     * so a door upstairs, over a bedroom below it, is not opened from there
+     * with nothing aimed at.
+     */
     nearestDoor(position, maxDistance = 2.2) {
         let best = null;
         let bestDistance = maxDistance;
@@ -1441,6 +1575,7 @@ export default class SceneBuilder {
         for (const door of this.doors) {
             const worldPosition = new THREE.Vector3();
             door.group.getWorldPosition(worldPosition);
+            if (!doorOnFloor(position.y, worldPosition.y)) continue;
             worldPosition.y = position.y;
 
             const distance = worldPosition.distanceTo(position);
@@ -1681,12 +1816,15 @@ export default class SceneBuilder {
         let bestDrop = Infinity;
 
         for (const room of this.spec.rooms) {
-            if (!pointInPolygon(x, z, room.polygon)) continue;
-            if (room.voids?.some((hole) => pointInPolygon(x, z, hole))) continue;
-
             // A little slack below, for standing on a stair nosing or a rug.
             const drop = y - room.elevation;
             if (drop < -0.6 || drop > room.height + 0.4) continue;
+            // (Its plan's bounds before its outline: most rooms are nowhere near. Asked every frame, of every room — the
+            // room's name on screen, the room drawn live, the lamps nearest — on threshold and stair in more than one place.)
+            const [minX, minZ, maxX, maxZ] = planBounds(room.polygon);
+            if (x < minX || x > maxX || z < minZ || z > maxZ) continue;
+            if (!pointInPolygon(x, z, room.polygon)) continue;
+            if (room.voids?.some((hole) => pointInPolygon(x, z, hole))) continue;
 
             if (Math.abs(drop) < bestDrop) {
                 bestDrop = Math.abs(drop);
@@ -1731,7 +1869,18 @@ export default class SceneBuilder {
                 group.add(mesh);
             }
         }
+        // Never drawn and never moved: out of what each render goes through (hidden — a ray does not ask what is shown,
+        // so pickLight meets them as ever) and out of the walk of the scene's matrices, their frames worked out once.
+        // Shown, Ladonia's 269 were each tested against the view at each of the frame's three renders of the scene, and
+        // each had its frame worked out again every frame: 0.2 ms of one at the highest step, for boxes that draw nothing.
+        group.visible = false;
+        for (const mesh of group.children) {
+            mesh.updateMatrix();
+            mesh.matrixAutoUpdate = false;
+        }
         group.updateMatrixWorld(true);
+        group.matrixAutoUpdate = false;
+        group.matrixWorldAutoUpdate = false;
         this.lightTargets = group;
         this.scene.add(group);
     }
@@ -2237,7 +2386,28 @@ export default class SceneBuilder {
         });
         // Drawn from the bake, the clear glass that stands in a room draws its reflections alone.
         // (The furniture built here too, where the version has no runtime file to draw it from: its glass is kept live as that file's is.)
-        if (this.baked) this.clearGlassIndoors([group, this.root.getObjectByName("see-through"), this.furnitureGroup]);
+        // (The furniture's doors and drawers too, drawn live from either: a shower's glass door, a washing machine's porthole.
+        // And the windows' sashes, whose panes hang in their walls, shut, as the fixed panes do: kept as those are —
+        // until a sash is turned in, and its pane stands in the room: then kept to its reflections too.)
+        if (this.baked) {
+            this.clearGlassIndoors([group, this.root.getObjectByName("see-through"), this.furnitureGroup, this.openableGroup, ...this.windows.map((sash) => sash.group)]);
+            for (const sash of this.windows) sash.glazeInRoom((material) => reflectionsOnly(material) ?? material);
+        }
+        // The furniture's doors and drawers, and the windows' sashes, drawn while they are shut a mesh a material and a
+        // floor (World/ShutBatcher.js), each lit as it is: by the light probes, the doors' probes' tint, or live.
+        if (this.openables.parts.length || this.windows.length) {
+            const box = new THREE.Box3();
+            this.shutBatcher = new ShutBatcher({
+                parts: this.openables.parts,
+                sashes: this.windows,
+                light: this.probeLit ? "probe" : this.baked && !this.liveLight ? "tint" : "plain",
+                look: (material) => lookOf(material, false),
+                levelOf: (mesh) => mesh.userData.level ?? options.levelOf(mesh, box.setFromObject(mesh)),
+                parent: this.root,
+            });
+            // ...and the glass shut inside a fridge, drawn only while a door of it is open.
+            this.shutBatcher.enclose(this.enclosedGlass());
+        }
         // The cars' headlamps' beam: a spotlight where the view takes live
         // light, a pool of light on the road where it is drawn from the bake.
         for (const car of this.cars ?? []) car.lights?.setMode(this.baked && !this.liveLight ? "baked" : "lit");
@@ -2250,7 +2420,149 @@ export default class SceneBuilder {
         }
         this.batches = group;
         this.scene.add(group);
+        this.holdStill();
         return { meshes: group.children.length, triangles, hidden: meshes.length };
+    }
+
+    /**
+     * What of a public view never moves, its frames worked out once: the
+     * root, the shell and its walls' and stairs' stand-ins and their doors'
+     * frames, the furniture's parts' group and the lights inside pieces, the
+     * glass, the fittings, the cars' group, the shut parts' meshes. three
+     * works every object's frame out again from its position, turn and scale
+     * at each render of the scene — a view drawn from its bake renders it
+     * three times a frame — and an object whose frame has been worked out
+     * again has every one under it worked out again too: the root's did, so
+     * all of the house's were, every time. Ladonia's version with its parts
+     * and sashes has 1,700 more of them than the one before (5,947 against
+     * 4,254): three's walk of the matrices alone took 1.7 ms of a frame of
+     * the highest step where the version before took 1.2 (1.4 since). What
+     * moves under them moves as ever — a door's hinge and leaf, a sash's
+     * turn and tilt, a car, a part lifted out of its floor's mesh (World/
+     * ShutBatcher.js, which holds a shut part's own frame still while it is
+     * drawn by it) — and its world matrix still follows its own.
+     *
+     * The scene itself is held still too, and the house's merged meshes
+     * (`batches`) with it. Its frame was worked out at every walk like any
+     * object's, and so — three passes the word down: an object whose frame is
+     * worked out has every one under it worked out, held still or not, and
+     * goes into every one of them, passed over (`matrixWorldAutoUpdate`) or
+     * not — all of the scene's were, every frame: the 5,876 objects of
+     * Ladonia's version with its parts, where the version before had 4,169
+     * (1.4 ms of the walk at the highest step against 1.1). Held, a walk
+     * goes into what is still only to find what has moved under it, and
+     * works out the frames of what moves alone, and of what is under that.
+     * What is added to a group passed over once this has run must have its
+     * world matrix worked out by whoever adds it.
+     */
+    holdStill() {
+        const still = (node) => {
+            if (!node?.matrixAutoUpdate) return;
+            node.updateMatrix();
+            node.matrixAutoUpdate = false;
+        };
+        still(this.scene);
+        still(this.root);
+        for (const group of [this.shell, this.openableGroup, this.lights, this.vehicleGroup, this.root.getObjectByName("see-through"), this.shutBatcher?.group, this.batches]) still(group);
+        for (const child of this.shell?.children ?? []) still(child);
+        for (const door of this.doors) still(door.group);
+        for (const pane of this.root.getObjectByName("see-through")?.children ?? []) still(pane);
+        for (const mesh of this.batches?.children ?? []) still(mesh);
+        // A light inside a piece stays where its piece was published (its holder: Publish/Runtime.js), the parts' own are the shut batcher's.
+        // A holder that is only where something is — a tap, a shower's valve, its steam: Ladonia has 171 — draws nothing:
+        // hidden, as the renders and the walk of the scene go, and read for where it is all the same (World/Water.js). Not
+        // one with a light inside a piece, which hangs the light lent to it from itself (Openables.lend).
+        for (const holder of this.openableGroup?.children ?? []) {
+            if (holder.userData.opens) continue;
+            still(holder);
+            if (holder.userData.fixture && !holder.userData.fixture.light && !holder.children.length) holder.visible = false;
+        }
+        this.root.updateMatrixWorld(true);
+        this.batches?.updateMatrixWorld(true);
+        // The glass, the shut meshes and the house's merged meshes, nothing under them moving, are not so much as visited
+        // from now on: what is merely visited at each render was still a third of a millisecond of a frame for Ladonia's
+        // parts and sashes (two thousand objects), which the shut batcher passes over in the same way while they are shut.
+        for (const group of [this.root.getObjectByName("see-through"), this.shutBatcher?.group, this.batches]) if (group) group.matrixWorldAutoUpdate = false;
+    }
+
+    /**
+     * The glass a piece's light's doors shut in — a fridge's glass shelves —
+     * with those doors (World/ShutBatcher.js's enclose): `[{ mesh, parts }]`.
+     * A publish draws a piece's glass live, merged by its material (the
+     * see-through group), and each of Ladonia's thirteen kitchens with a
+     * fridge has its shelves as one such mesh: drawn every frame they were
+     * in view, through any number of walls, from both of their sides in two
+     * of the frame's renders — 36 of the draws of a frame of A1's living
+     * room, for glass shut away in fridges, 9 of them in the other villa.
+     *
+     * A glass mesh is shut in by the doors a light inside its piece follows
+     * (the fridge's, Openables.link) only as it stands: across the doors'
+     * face no further than they reach, and wholly behind them — on the side
+     * away from the way they swing open (tried, a little open, and put
+     * back). A piece turned off the square is left as it is, its boxes in
+     * the world being no measure of it; so is one whose doors' box is deeper
+     * than a door's with its bins (ENCLOSING_DEPTH), and any glass not so
+     * shut in.
+     */
+    enclosedGlass() {
+        const glass = this.root.getObjectByName("see-through")?.children ?? [];
+        const openables = this.openables;
+        if (!glass.length || !openables?.lights.length) return [];
+        openables.link();
+        const found = [];
+        const box = new THREE.Box3();
+        const doorBox = new THREE.Box3();
+        const size = new THREE.Vector3();
+        const shut = new THREE.Vector3();
+        const ajar = new THREE.Vector3();
+        const placed = new Map((this.spec.furniture ?? []).map((item) => [item.id, item]));
+        const claimed = new Set();
+        for (const entry of openables.lights) {
+            const doors = entry.doors.filter((part) => part.opens.type === "hinge");
+            if (!doors.length || doors.length !== entry.doors.length) continue;
+            // (Square to the world's axes, as its boxes are: turned by a quarter, or not at all.)
+            const turn = (((placed.get(entry.piece)?.rotation ?? 0) % 90) + 90) % 90;
+            if (Math.min(turn, 90 - turn) > 0.01) continue;
+            doorBox.makeEmpty();
+            for (const part of doors) {
+                part.node.updateWorldMatrix(true, true);
+                doorBox.expandByObject(part.node);
+            }
+            if (doorBox.isEmpty()) continue;
+            // Its thinnest way is the way through the doors; the room is on the side they swing to.
+            doorBox.getSize(size);
+            const axis = size.x <= size.y && size.x <= size.z ? "x" : size.y <= size.z ? "y" : "z";
+            if (size[axis] > ENCLOSING_DEPTH) continue;
+            doorBox.getCenter(shut);
+            for (const part of doors) part.pose(ENCLOSING_AJAR * part.reach);
+            box.makeEmpty();
+            for (const part of doors) {
+                part.node.updateWorldMatrix(true, true);
+                box.expandByObject(part.node);
+            }
+            box.getCenter(ajar);
+            for (const part of doors) part.pose(0);
+            for (const part of doors) part.node.updateWorldMatrix(true, true);
+            const room = Math.sign(ajar[axis] - shut[axis]);
+            if (!room) continue;
+            const across = ["x", "y", "z"].filter((other) => other !== axis);
+            for (const mesh of glass) {
+                if (!mesh.isMesh || mesh.userData.helper || claimed.has(mesh)) continue;
+                box.setFromObject(mesh);
+                if (box.isEmpty()) continue;
+                const within = across.every((other) => box.min[other] >= doorBox.min[other] - ENCLOSING_SLACK && box.max[other] <= doorBox.max[other] + ENCLOSING_SLACK);
+                // (Behind them, and no further than a fridge is deep: the same kitchen in the next villa stands behind
+                // this one's doors too, twenty-four metres on.)
+                const behind =
+                    room > 0
+                        ? box.max[axis] <= doorBox.min[axis] + ENCLOSING_SLACK && box.min[axis] >= doorBox.min[axis] - ENCLOSING_REACH
+                        : box.min[axis] >= doorBox.max[axis] - ENCLOSING_SLACK && box.max[axis] <= doorBox.max[axis] + ENCLOSING_REACH;
+                if (!within || !behind) continue;
+                found.push({ mesh, parts: doors });
+                claimed.add(mesh);
+            }
+        }
+        return found;
     }
 
     /**
@@ -2505,6 +2817,34 @@ export default class SceneBuilder {
      */
     drawLight() {
         this.resolver?.flush();
+        // (What of the doors and drawers, and the sashes, is drawn shut with others: as they are now, after the world's update.)
+        const batcher = this.shutBatcher;
+        if (!batcher) return;
+        batcher.update();
+        // Their own shaders, which nothing draws while they are merged, made ahead once every part has its light — a
+        // moment after, out of the first frames' way — and again a moment after each change of the day's light
+        // (ShutBatcher.prepareOwn): opened, a door of a material drawn nowhere else is then no stop of its first frame.
+        if (!batcher.ownScheduled && batcher.allLit()) {
+            batcher.ownScheduled = true;
+            const world = this.experience.world;
+            const prepare = (again) => {
+                if (this.shutBatcher !== batcher) return;
+                const own = batcher.prepareOwn(this.experience.renderer, this.experience.camera?.activeCamera, again);
+                // ...and then those of the scene with a fridge's light in it, which is out of the scene's light while
+                // every fridge is shut (Openables.warmAll): its first opening is then no wait for its light either.
+                Promise.resolve(own)
+                    .then(() => this.shutBatcher === batcher && this.openables.warmAll())
+                    .catch((error) => console.warn("The shaders for a fridge's light could not be built ahead", error));
+            };
+            clearTimeout(this.ownTimer);
+            if (this.onOwnLight) world.off?.("lighting", this.onOwnLight);
+            this.ownTimer = setTimeout(() => prepare(false), OWN_AFTER);
+            this.onOwnLight = () => {
+                clearTimeout(this.ownTimer);
+                this.ownTimer = setTimeout(() => prepare(true), OWN_AFTER);
+            };
+            world.on?.("lighting", this.onOwnLight);
+        }
     }
 
     /**
@@ -3015,11 +3355,16 @@ export default class SceneBuilder {
         return out;
     }
 
-    /** The rooms either side of a door, as the bake's probes' sides are: the wall's +Z, then its -Z. */
+    /**
+     * The rooms either side of a door, as the bake's probes' sides are: the
+     * wall's +Z, then its -Z — or of a window, by its opening's id: its
+     * sashes' group stands where a door's would (World/Sash.js), and a room
+     * drawn live takes them as it takes a door's leaf (LiveRoom.movers).
+     */
     doorSideZones(id) {
         this.sideZones ??= new Map();
         if (!this.sideZones.has(id)) {
-            const door = this.doors.find((candidate) => candidate.spec.id === id);
+            const door = this.doors.find((candidate) => candidate.spec.id === id) ?? this.windows.find((sash) => sash.spec.id === id);
             const zones = [0.3, -0.3].map((z) => {
                 if (!door) return null;
                 const at = door.group.localToWorld(new THREE.Vector3(0, 1, z));
@@ -3172,7 +3517,10 @@ export default class SceneBuilder {
      * Drawn from the bake, the furniture's doors and drawers — which move,
      * so are not baked — are lit as the door leaves are, from the probes of
      * the nearest door on their floor. Lit live, the light probes light
-     * them (ProbeLight).
+     * them (ProbeLight). Their clear glass is not: standing in a room it
+     * draws its reflections alone (clearGlassIndoors), and lit from the
+     * probes on its own white a shower's glass door would be the milky panel
+     * that keeps it from.
      */
     tintOpenables(probes) {
         const light = new THREE.Color();
@@ -3186,7 +3534,7 @@ export default class SceneBuilder {
             part.node.traverse((mesh) => {
                 if (!mesh.isMesh) return;
                 const tint = (material) => {
-                    if (!material?.emissive) return material;
+                    if (!material?.emissive || clearGlass(material)) return material;
                     if (!material.userData.baseColor) {
                         material = material.clone();
                         material.userData.baseColor = material.color.clone();
@@ -3198,6 +3546,8 @@ export default class SceneBuilder {
                 };
                 mesh.material = Array.isArray(mesh.material) ? mesh.material.map(tint) : tint(mesh.material);
             });
+            // (Drawn shut with others, its light is its row's: World/ShutBatcher.js.)
+            this.shutBatcher?.tintPart(part, light);
         }
     }
 
@@ -3245,7 +3595,13 @@ export default class SceneBuilder {
             });
         }
 
+        clearTimeout(this.ownTimer);
+        if (this.onOwnLight) this.experience.world?.off?.("lighting", this.onOwnLight);
+        this.onOwnLight = null;
+        this.shutBatcher?.dispose();
         for (const door of this.doors) door.dispose();
+        for (const sash of this.windows) sash.dispose();
+        this.unregisterSashes?.();
         this.importedMaterial?.dispose();
         this.furnitureLibrary.dispose();
         this.structure.dispose();
@@ -3259,10 +3615,33 @@ export default class SceneBuilder {
 // ---------------------------------------------------------------------
 
 const _pick = new THREE.Raycaster();
+/** How long after every part has its light, or the day's light has changed, the parts' own shaders are made ahead (drawLight), in milliseconds. */
+const OWN_AFTER = 1500;
+/**
+ * The glass a fridge's doors shut in (enclosedGlass): at most this thick, in metres, are doors — a fridge's with its
+ * bins is 15 cm; a box of them any deeper is no front — how far open, as a share of their reach, they are tried, to
+ * see which way they swing; and how far past the doors' edges, or into their depth, the glass may come and still be
+ * taken as within, in metres.
+ */
+const ENCLOSING_DEPTH = 0.25;
+const ENCLOSING_AJAR = 0.25;
+const ENCLOSING_SLACK = 0.002;
+/** How far behind its doors' face a fridge's inside reaches at most, in metres: further back is another piece's. */
+const ENCLOSING_REACH = 0.9;
 
 /** What the dynamic octree leaves out: what isTransient does, and placeholders for missing pieces. */
 export function skipDynamic(object) {
     return isTransient(object) || object.name === "missing-model";
+}
+
+/** A part that opens (Openables.js), and everything under it: what a piece's triangles are counted without (collisionOf). */
+function isOpeningPart(object) {
+    return object.userData?.opens !== undefined;
+}
+
+/** Whether a material is clear glass, which a view drawn from its bake keeps to its reflections (Utils/reflections.js). */
+function clearGlass(material) {
+    return Boolean(material.transparent && reflectionsOnly(material));
 }
 
 /** The box a piece is met as (SceneBuilder.collisionOf's, in the piece's own space), where the piece stands: a mesh of its own. */
@@ -4062,13 +4441,18 @@ export function openingCorners(hole) {
     );
 }
 
-export function countTriangles(root) {
+/** The triangles drawn under `root` — but under whatever `skip` says (a piece's parts that open: collisionOf). */
+export function countTriangles(root, skip = null) {
     let total = 0;
-    root.traverse((child) => {
-        if (!child.isMesh || !child.geometry) return;
-        const g = child.geometry;
-        total += g.index ? g.index.count / 3 : (g.attributes.position?.count ?? 0) / 3;
-    });
+    const visit = (child) => {
+        if (skip?.(child)) return;
+        if (child.isMesh && child.geometry) {
+            const g = child.geometry;
+            total += g.index ? g.index.count / 3 : (g.attributes.position?.count ?? 0) / 3;
+        }
+        for (const next of child.children) visit(next);
+    };
+    visit(root);
     return Math.round(total);
 }
 

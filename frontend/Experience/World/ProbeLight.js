@@ -1,5 +1,8 @@
 import * as THREE from "three";
 
+import { wholeGlass } from "../Utils/reflections.js";
+import { withoutGlaze } from "./Sky.js";
+
 /**
  * What moves — the visitors, the people round the property, the car, the
  * furniture's doors and drawers — lit as the house round it is, in a
@@ -48,6 +51,11 @@ const ADAPT = 8;
 /** Reflections at least this share of their daylight strength. */
 const LEAST_REFLECTION = 0.02;
 /**
+ * A furniture's part at rest is left as it is once its light is this near what it is taking on, as a share of the
+ * open garden's daylight (update): far under what a pixel shows.
+ */
+const SETTLED = 1e-4;
+/**
  * How far to each side of its wall a door leaf's light is taken, in metres: in the room, clear of the wall's own
  * thickness — the probes there measure nothing, and a leaf that hangs on one of the grid's own planes was given
  * theirs alone.
@@ -62,6 +70,10 @@ const PERSON_LIFT = { least: 0.2, most: 1.0 };
  */
 const NEAR = 2;
 const OTHER_ROOM = 100;
+/** How many frames apart something at rest is asked whether it still wears what it was given (update, stillDressed). */
+const DRESSED_EVERY = 8;
+/** No switches (compose): one list, so that none is the same none each frame. */
+const NONE = Object.freeze([]);
 
 const _position = new THREE.Vector3();
 const _normal = new THREE.Vector3();
@@ -146,7 +158,6 @@ export default class ProbeLight {
     update(delta) {
         this.compose();
         const roots = this.roots();
-        for (const [root, entry] of this.tracked) if (!roots.has(root)) this.tracked.delete(root);
         const blend = Math.min(1, ADAPT * delta);
         // From above the rooms are brought up, and let down again, at once
         // (SceneBuilder.setIndoorGain): what stands in them with them, not
@@ -155,12 +166,32 @@ export default class ProbeLight {
         const indoors = this.builder.indoorGain?.value ?? 1;
         const lifted = indoors !== this.indoorGain;
         this.indoorGain = indoors;
-        for (const [root, lift] of roots) {
-            let entry = this.tracked.get(root);
-            if (!entry) {
-                entry = { cube: Array.from({ length: 6 }, () => new THREE.Vector3()), sun: { value: 1 }, fresh: true, factor: 1, at: null, room: null };
-                this.tracked.set(root, entry);
-            }
+        // The light everything is lit by now, as a count that moves on whenever it changes: what something at rest was
+        // last settled in (`rest`, below) — counted, not said, so that saying it costs a frame nothing.
+        if (lifted || this.settledFor !== this.key || this.settledSun !== this.sunFromProbes) {
+            this.settledFor = this.key;
+            this.settledSun = this.sunFromProbes;
+            this.epoch = (this.epoch ?? 0) + 1;
+        }
+        const now = this.epoch;
+        this.frames = (this.frames ?? 0) + 1;
+        const { list, lifts, parts, entries } = roots;
+        for (let i = 0; i < list.length; i++) {
+            const root = list[i];
+            const entry = entries[i];
+            const part = parts[i];
+            // Something that has not moved, its light settled in the light there is now, wearing what it was given: as it
+            // was, with nothing looked up. A furniture's door or drawer by its own say (Ladonia's 475, shut nearly all of
+            // them always: sampled and dressed again every frame they took 3.2 ms a frame of the main thread); anything
+            // else — the people round the property, who never leave their spots, the doors' leaves, a parked car, a
+            // visitor standing still — by its frame as the last frame drew it, which is what it has moved by: each of
+            // those sampled, its rig gone through for its materials and its light eased again every frame, was 0.5 ms
+            // of every frame of either version, all of it standing still (2026-10-16). Whether it still wears what it was
+            // given is asked of each a frame in DRESSED_EVERY: nothing but a room shown live puts other materials on
+            // them, and it gives back what it took (World/LiveRoom.js); asked of all 600 every frame, it was 60 µs.
+            const ask = (this.frames + i) % DRESSED_EVERY === 0;
+            if (entry.rest === now && (part ? !part.isMoving : sameFrame(entry.frame, root.matrixWorld)) && (!ask || this.stillDressed(entry))) continue;
+            entry.rest = null;
             root.getWorldPosition(_position);
             // Which room it is in, looked for again only once it has moved:
             // the people round the property stay where they are.
@@ -168,33 +199,67 @@ export default class ProbeLight {
                 entry.at = (entry.at ?? new THREE.Vector3()).copy(_position);
                 entry.room = this.builder.roomAt(_position.x, _position.y, _position.z);
             }
-            _position.y += lift;
+            _position.y += lifts[i];
             const door = this.leaves?.get(root);
             const target = door ? this.leafLight(door, root, _position) : this.sample(_position, entry.room?.id ?? "outside");
             // Nowhere the probes measured (up on a roof deck the grid does
             // not reach): until it is, as the scene lights it, rather than
             // dark — what has had the probes' light keeps the last of it.
-            if (!target && entry.fresh) continue;
+            if (!target && entry.fresh) {
+                this.rest(entry, root, part, now);
+                continue;
+            }
             this.dress(root, entry);
-            if (!target) continue;
+            if (!target) {
+                this.rest(entry, root, part, now);
+                continue;
+            }
             const k = entry.fresh || lifted ? 1 : blend;
             entry.fresh = false;
-            if (this.sunFromProbes) entry.sun.value += (this.sunNow - entry.sun.value) * k;
+            // (How far it is from what it is taking on, before this frame's step: what is left of that after it, 1 − k of
+            // it, says whether it has settled — under SETTLED of the garden's daylight, and of the sun's share.)
+            let towards = 0;
+            if (this.sunFromProbes) {
+                const sun = this.sunNow - entry.sun.value;
+                entry.sun.value += sun * k;
+                towards = Math.abs(sun) * this.reference;
+            }
             // Indoors, brought up from above as the room round it is (SceneBuilder.setIndoorGain) — a leaf's each side already as its own room.
-            const gain = door ? 1 : this.builder.indoorGainIn?.(entry.room, Math.max(...target)) ?? 1;
+            const gain = door ? 1 : this.builder.indoorGainIn?.(entry.room, brightest(target)) ?? 1;
             let total = 0;
             for (let f = 0; f < 6; f++) {
                 const c = entry.cube[f];
-                c.x += (target[f * 3] * gain - c.x) * k;
-                c.y += (target[f * 3 + 1] * gain - c.y) * k;
-                c.z += (target[f * 3 + 2] * gain - c.z) * k;
+                const x = target[f * 3] * gain - c.x;
+                const y = target[f * 3 + 1] * gain - c.y;
+                const z = target[f * 3 + 2] * gain - c.z;
+                c.x += x * k;
+                c.y += y * k;
+                c.z += z * k;
+                towards = Math.max(towards, Math.abs(x), Math.abs(y), Math.abs(z));
                 total += 0.2126 * c.x + 0.7152 * c.y + 0.0722 * c.z;
             }
+            if (!part?.isMoving && towards * (1 - k) <= SETTLED * this.reference) this.rest(entry, root, part, now);
             entry.factor = THREE.MathUtils.clamp(total / 6 / this.reference, LEAST_REFLECTION, 1);
             for (const material of entry.materials) {
                 if (material.envMap) material.envMapIntensity = material.userData.probeEnvMapIntensity * entry.factor;
             }
+            // ...and of a part drawn shut with others (World/ShutBatcher.js), its row of their light.
+            if (part) this.builder.shutBatcher?.lightPart(part, entry, this);
         }
+    }
+
+    /**
+     * Something settled in the light there is now (`now`, update's count):
+     * left as it is from the next frame for as long as nothing changes — a
+     * part while it does not move, anything else while it stands where the
+     * frame it settled in drew it (`frame`).
+     */
+    rest(entry, root, part, now) {
+        if (part?.isMoving) return;
+        entry.rest = now;
+        if (part) return;
+        entry.frame ??= new Float64Array(16);
+        entry.frame.set(root.matrixWorld.elements);
     }
 
     /**
@@ -204,30 +269,117 @@ export default class ProbeLight {
      * or lying, hidden or not, so each keeps the materials it was given —
      * the cars, and the furniture's doors and drawers (Openables.js), which
      * are not baked.
+     *
+     * Not a window's sashes (World/Sash.js), though they move: a window's
+     * fixed frame — a metal — and its fixed panes are drawn live in a view
+     * drawn from its bake as everywhere, unbaked, and a sash is drawn as
+     * they are, so the window reads as one. Dressed here its pane was clear
+     * where the fixed panes beside it are veiled by day (221 against 254 of
+     * 255), and a shut window not as it was published before it opened.
+     *
+     * As lists side by side — `list` the roots, `lifts`, `parts` each one's
+     * part (or null), `entries` what lights each — made again only when
+     * something has come or gone (same): made every frame, it was a map of
+     * five hundred and more, every frame, for the same five hundred.
      */
     roots() {
-        const roots = new Map();
-        for (const part of this.builder.openables?.parts || []) roots.set(part.node, 0);
+        if (this.held && this.same(this.held)) return this.held;
+        const builder = this.builder;
+        const order = new Map();
+        const byNode = builder.openables?.byNode;
+        for (const part of builder.openables?.parts || []) order.set(part.node, 0);
         // Drawn from the bake, the doors' leaves too, which lit live take
         // their light from probes of their own (SceneBuilder.tintDoors).
         if (this.sunFromProbes) {
             /** leaf -> its door: lit a side at a time (leafLight) */
             this.leaves ??= new Map();
-            for (const door of this.builder.doors || []) {
+            for (const door of builder.doors || []) {
                 for (const { leaf } of door.leaves) {
-                    roots.set(leaf, 0);
+                    order.set(leaf, 0);
                     this.leaves.set(leaf, door);
                 }
             }
         }
         const player = this.world.player;
-        if (player?.avatar) roots.set(player.avatar.avatar, 1.0);
-        for (const other of Object.values(player?.otherPlayers || {})) if (other.model?.avatar) roots.set(other.model.avatar, 1.0);
-        for (const person of this.world.people?.list ?? []) {
-            roots.set(person.group, THREE.MathUtils.clamp(person.sphere.center.y - person.group.position.y, PERSON_LIFT.least, PERSON_LIFT.most));
+        if (player?.avatar) order.set(player.avatar.avatar, 1.0);
+        for (const other of Object.values(player?.otherPlayers || {})) if (other.model?.avatar) order.set(other.model.avatar, 1.0);
+        // (Every one built, as countPeople counts them: the people's own map, not their spec's list, which is made anew each time it is asked for.)
+        for (const person of this.world.people?.people?.values() ?? []) {
+            order.set(person.group, THREE.MathUtils.clamp(person.sphere.center.y - person.group.position.y, PERSON_LIFT.least, PERSON_LIFT.most));
         }
-        for (const car of this.builder.cars || []) roots.set(car.group, 0.3);
-        return roots;
+        for (const car of builder.cars || []) order.set(car.group, 0.3);
+        for (const root of this.tracked.keys()) if (!order.has(root)) this.tracked.delete(root);
+        const held = { list: [], lifts: [], parts: [], entries: [], mark: this.markOf() };
+        for (const [root, lift] of order) {
+            let entry = this.tracked.get(root);
+            if (!entry) {
+                entry = { cube: Array.from({ length: 6 }, () => new THREE.Vector3()), sun: { value: 1 }, fresh: true, factor: 1, at: null, room: null, rest: null, frame: null };
+                this.tracked.set(root, entry);
+            }
+            held.list.push(root);
+            held.lifts.push(lift);
+            held.parts.push(byNode?.get(root) ?? null);
+            held.entries.push(entry);
+        }
+        this.held = held;
+        return held;
+    }
+
+    /**
+     * What roots was made from, said by what it is made of and how many of
+     * each there are — the lists themselves, and the visitors' and the
+     * people's own objects: told apart by those, without making anything.
+     */
+    markOf() {
+        const builder = this.builder;
+        const player = this.world.player;
+        return {
+            parts: builder.openables?.parts ?? null,
+            partCount: builder.openables?.parts?.length ?? 0,
+            doors: builder.doors ?? null,
+            doorCount: builder.doors?.length ?? 0,
+            cars: builder.cars ?? null,
+            carCount: builder.cars?.length ?? 0,
+            avatar: player?.avatar?.avatar ?? null,
+            others: this.countOthers(null),
+            people: this.countPeople(null),
+        };
+    }
+
+    /** Whether what roots was made from is as it was (markOf), the visitors and the people each among those it has. */
+    same(held) {
+        const mark = held.mark;
+        const builder = this.builder;
+        if (mark.parts !== (builder.openables?.parts ?? null) || mark.partCount !== (builder.openables?.parts?.length ?? 0)) return false;
+        if (mark.doors !== (builder.doors ?? null) || mark.doorCount !== (builder.doors?.length ?? 0)) return false;
+        if (mark.cars !== (builder.cars ?? null) || mark.carCount !== (builder.cars?.length ?? 0)) return false;
+        if (mark.avatar !== (this.world.player?.avatar?.avatar ?? null)) return false;
+        return this.countOthers(this.tracked) === mark.others && this.countPeople(this.tracked) === mark.people;
+    }
+
+    /** How many other visitors have a figure — or, given `among`, -1 if one of them is not among it. */
+    countOthers(among) {
+        const others = this.world.player?.otherPlayers;
+        let count = 0;
+        for (const id in others) {
+            const avatar = others[id].model?.avatar;
+            if (!avatar) continue;
+            if (among && !among.has(avatar)) return -1;
+            count++;
+        }
+        return count;
+    }
+
+    /** How many of the people round the property are built — or, given `among`, -1 if one of them is not among it. */
+    countPeople(among) {
+        const people = this.world.people?.people;
+        if (!people) return 0;
+        let count = 0;
+        for (const person of people.values()) {
+            if (among && !among.has(person.group)) return -1;
+            count++;
+        }
+        return count;
     }
 
     /**
@@ -239,13 +391,22 @@ export default class ProbeLight {
      */
     dress(root, entry) {
         entry.materials ??= new Set();
+        // (Its meshes, once — what stillDressed looks over: a furniture's part is always made of the same ones.)
+        const meshes = entry.meshes ? null : (entry.meshes = []);
         root.traverse((mesh) => {
+            if (meshes && mesh.isMesh) meshes.push(mesh);
             // (Drawn, for now, as a view lit live draws it — in a room its visitor has asked to see so: World/LiveRoom.js — its material is that room's to give back.)
             if (!mesh.isMesh || mesh.userData.roomLive || this.dressed.get(mesh) === mesh.material) return;
             const own = (material) => {
                 if (!material || !LIT.some((flag) => material[flag])) return material;
                 if (entry.materials.has(material)) return material;
-                const clone = material.clone();
+                // Clear glass the view keeps to its reflections (SceneBuilder.clearGlassIndoors) — a shower's glass
+                // door, a washing machine's porthole — as the room's fixed panes are: lit by the probes on its own
+                // white, a copy of it was the milky sheet that is there to keep it from (and lost what kept it so).
+                if (wholeGlass(material) !== material) return material;
+                // (A door's glass as it is of its own, not as the windows are seen at the moment it is copied: Sky.js's
+                // withoutGlaze — the copy is no longer among those glazed, and would keep that look for the visit.)
+                const clone = withoutGlaze(material.clone(), material);
                 clone.userData.probeLit = true;
                 clone.userData.probeEnvMapIntensity = material.userData.envMapIntensity ?? material.envMapIntensity ?? 1;
                 lightByProbes(clone, entry.cube, entry.sun);
@@ -256,6 +417,43 @@ export default class ProbeLight {
             mesh.material = Array.isArray(mesh.material) ? mesh.material.map(own) : own(mesh.material);
             this.dressed.set(mesh, mesh.material);
         });
+    }
+
+    /**
+     * A copy of `material` to draw many of the furniture's parts with at
+     * once, shut (World/ShutBatcher.js), as dress gives each of them its
+     * own: lit by the probes in place of the scene's ambient light, its
+     * reflections — where it has its own — at the strength dress gives them,
+     * of which each part's share (update's `factor`) is multiplied in from
+     * its row of `light`, as is the rest of its light (lightByPartProbes).
+     * Null for what dress leaves as it is.
+     *
+     * @param {THREE.Material} material  what the parts wear undressed
+     * @param {{ texture: { value: THREE.DataTexture }, rows: { value: number } }} light
+     */
+    batchMaterial(material, light) {
+        if (!material || !LIT.some((flag) => material[flag]) || wholeGlass(material) !== material) return null;
+        const clone = material.clone();
+        clone.userData.probeLit = true;
+        clone.userData.probeEnvMapIntensity = material.userData.envMapIntensity ?? material.envMapIntensity ?? 1;
+        if (material.envMap) clone.envMapIntensity = clone.userData.probeEnvMapIntensity;
+        lightByPartProbes(clone, light, { reflections: Boolean(material.envMap) });
+        return clone;
+    }
+
+    /**
+     * Whether everything under a root dressed (dress) still wears what it
+     * was given — or is a room's drawn live for now (World/LiveRoom.js),
+     * whose to give back: once given back, it is dressed again.
+     */
+    stillDressed(entry) {
+        const meshes = entry.meshes;
+        if (!meshes) return false;
+        for (let i = 0; i < meshes.length; i++) {
+            const mesh = meshes[i];
+            if (!mesh.userData.roomLive && this.dressed.get(mesh) !== mesh.material) return false;
+        }
+        return true;
     }
 
     /** What moves back as it was, lit by the scene's own ambient light. */
@@ -276,9 +474,15 @@ export default class ProbeLight {
     compose() {
         // (What the house is lit for: with it, a frame or two before the sky, as the time of day changes.)
         const variant = this.world.houseLighting;
-        const weights = this.builder.switchWeights || [];
-        const live = this.builder.switchLive || [];
-        const key = `${variant}|${weights.join(",")}|${live.map(Number).join("")}|${this.builder.doorLightVersion ?? 0}`;
+        const weights = this.builder.switchWeights || NONE;
+        const live = this.builder.switchLive || NONE;
+        const doors = this.builder.doorLightVersion ?? 0;
+        // (The switches' weights, and which of them are lit live, are each made anew as they change — SceneBuilder's
+        // setSwitchLight and setLiveSwitches — so the same lists are the same light: not said again every frame.)
+        const from = this.composedFrom;
+        if (from && from.variant === variant && from.weights === weights && from.live === live && from.doors === doors) return;
+        this.composedFrom = { variant, weights, live, doors };
+        const key = `${variant}|${weights.join(",")}|${live.map(Number).join("")}|${doors}`;
         if (key === this.key) return;
         this.key = key;
         const base = this.variants[variant];
@@ -539,6 +743,21 @@ export default class ProbeLight {
     }
 }
 
+/** Whether a frame is the one kept of it (ProbeLight.rest), to the last digit; none kept, it is not. */
+function sameFrame(kept, matrix) {
+    if (!kept) return false;
+    const e = matrix.elements;
+    for (let i = 0; i < 16; i++) if (kept[i] !== e[i]) return false;
+    return true;
+}
+
+/** The brightest of a sample's eighteen numbers (sample, leafLight): Math.max of them, without spreading them out to it. */
+function brightest(values) {
+    let most = -Infinity;
+    for (let i = 0; i < values.length; i++) if (values[i] > most) most = values[i];
+    return most;
+}
+
 /**
  * A lit material that takes its ambient light from the probes' six ways
  * (`cube`, updated as it moves): a surface facing up gets the light the
@@ -552,21 +771,72 @@ function lightByProbes(material, cube, sun) {
         previous.call(material, shader, renderer);
         shader.uniforms.probeCube = { value: cube };
         shader.uniforms.probeSun = sun;
-        const begin = THREE.ShaderChunk.lights_fragment_begin;
-        const without = [
-            ["vec3 irradiance = getAmbientLightIrradiance( ambientLightColor );", "vec3 irradiance = probeIrradiance( geometryNormal );"],
-            ["irradiance += getLightProbeIrradiance( lightProbe, geometryNormal );", ""],
-            ["irradiance += getHemisphereLightIrradiance( hemisphereLights[ i ], geometryNormal );", ""],
-            // The sun, as much of it as reaches here (sunFromProbes).
-            ["getDirectionalLightInfo( directionalLight, directLight );", "getDirectionalLightInfo( directionalLight, directLight );\n\t\tdirectLight.color *= probeSun;"],
-        ];
-        if (without.some(([line]) => !begin.includes(line))) console.warn("Probe light not applied: three's shader has changed");
-        const own = without.reduce((code, [line, instead]) => code.replace(line, instead), begin);
-        shader.fragmentShader = shader.fragmentShader.replace("#include <common>", `#include <common>\n${PROBE_GLSL}`).replace("#include <lights_fragment_begin>", own);
+        shader.fragmentShader = shader.fragmentShader.replace("#include <common>", `#include <common>\n${PROBE_GLSL}`).replace("#include <lights_fragment_begin>", probeLightsBegin());
     };
     material.customProgramCacheKey = () => `${previousKey.call(material)}|probe-light`;
     material.needsUpdate = true;
 }
+
+/**
+ * The same light as lightByProbes gives each thing on its own, for many of
+ * them drawn as one mesh (World/ShutBatcher.js: a public view's furniture
+ * doors and drawers that are shut, a material and a floor at a time): each
+ * thing's light read, where lightByProbes has it in uniforms, from a row of
+ * `light.texture` — the row its triangles' vertices say (`partRow`). A row
+ * is six texels: the six ways' light (`rgb`), and in the first two's alpha
+ * how much of the sun reaches it (`probeSun`) and the share of its
+ * reflections' daylight strength it is given (update's `factor`) — by which
+ * each thing's material's `envMapIntensity` was set, and is multiplied here.
+ *
+ * @param {THREE.Material} material  a copy of what the things drawn by it wear undressed
+ * @param {{ texture: { value: THREE.DataTexture }, rows: { value: number } }} light
+ *        the rows (`rows`: how many in a column of six texels)
+ */
+export function lightByPartProbes(material, light, { reflections = true } = {}) {
+    const previous = material.onBeforeCompile;
+    const previousKey = material.customProgramCacheKey;
+    material.onBeforeCompile = (shader, renderer) => {
+        previous.call(material, shader, renderer);
+        shader.uniforms.partLight = light.texture;
+        shader.uniforms.partRows = light.rows;
+        shader.vertexShader = shader.vertexShader.replace("#include <common>", `#include <common>\n${PART_ROW_VERTEX}`).replace("#include <begin_vertex>", "#include <begin_vertex>\n\treadPartRow();");
+        shader.fragmentShader = shader.fragmentShader
+            .replace("#include <common>", `#include <common>\n${PART_PROBE_GLSL}`)
+            .replace("void main() {", "void main() {\n\treadPartLight();")
+            .replace("#include <lights_fragment_begin>", probeLightsBegin());
+        // Its reflections' strength, as each thing's own material had it set (update, where it has reflections of its own): envMapIntensity times its row's share.
+        if (reflections) shader.fragmentShader = shader.fragmentShader.replace("#include <envmap_physical_pars_fragment>", THREE.ShaderChunk.envmap_physical_pars_fragment.replaceAll("envMapIntensity", "( envMapIntensity * probeReflect )"));
+    };
+    material.customProgramCacheKey = () => `${previousKey.call(material)}|part-probe-light${reflections ? "|reflect" : ""}`;
+    material.needsUpdate = true;
+}
+
+/**
+ * three's lights_fragment_begin with the probes' light in place of the
+ * scene's ambient, hemisphere and probe light, and the sun as much as
+ * reaches here (sunFromProbes) — and, where none of it does, not worked
+ * out at all: its shadow map is not read, nor its light shaded. Nothing it
+ * gave there was ever more than nothing (its colour times none of it), but
+ * a soft shadow is many reads of the map a pixel — and 434 of Ladonia's
+ * 475 shut doors and drawers, and everyone indoors, take none of the sun.
+ */
+function probeLightsBegin() {
+    const begin = THREE.ShaderChunk.lights_fragment_begin;
+    const without = [
+        ["vec3 irradiance = getAmbientLightIrradiance( ambientLightColor );", "vec3 irradiance = probeIrradiance( geometryNormal );"],
+        ["irradiance += getLightProbeIrradiance( lightProbe, geometryNormal );", ""],
+        ["irradiance += getHemisphereLightIrradiance( hemisphereLights[ i ], geometryNormal );", ""],
+    ];
+    const sun = begin.match(SUN_LOOP);
+    if (without.some(([line]) => !begin.includes(line)) || !sun) console.warn("Probe light not applied: three's shader has changed");
+    const code = without.reduce((text, [line, instead]) => text.replace(line, instead), begin);
+    // The sun, as much of it as reaches here (sunFromProbes): none, and it is passed over.
+    return code.replace(SUN_LOOP, (all, head, body) => `${head}\t\tif ( probeSun > 0.0 ) {\n${body.replace(SUN_INFO, `${SUN_INFO}\n\t\tdirectLight.color *= probeSun;`)}\n\t\t}`);
+}
+
+/** In three's lights_fragment_begin, the sun's turn (each directional light's): its light found, its shadow read, its light shaded. */
+const SUN_LOOP = /(\t\tdirectionalLight = directionalLights\[ i \];\n)([\s\S]*?RE_Direct\( directLight, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight \);)/;
+const SUN_INFO = "getDirectionalLightInfo( directionalLight, directLight );";
 
 /**
  * The probes' light on a surface facing `normal` (in view space): the six
@@ -574,9 +844,7 @@ function lightByProbes(material, cube, sun) {
  * (an "ambient cube"), as irradiance — π times what a probe stores, which
  * is as a lightmap stores it.
  */
-const PROBE_GLSL = /* glsl */ `
-uniform vec3 probeCube[ 6 ];
-uniform float probeSun;
+const PROBE_IRRADIANCE = /* glsl */ `
 vec3 probeIrradiance( const in vec3 normal ) {
 	vec3 n = inverseTransformDirection( normal, viewMatrix );
 	vec3 s = n * n;
@@ -586,6 +854,67 @@ vec3 probeIrradiance( const in vec3 normal ) {
 		s.z * ( n.z >= 0.0 ? probeCube[ 4 ] : probeCube[ 5 ] ) );
 }
 `;
+
+const PROBE_GLSL = /* glsl */ `
+uniform vec3 probeCube[ 6 ];
+uniform float probeSun;
+${PROBE_IRRADIANCE}`;
+
+/**
+ * A part's row read where its vertices are drawn (lightByPartProbes), not
+ * where each of its pixels is — a kitchen's fronts fill the frame, and six
+ * reads a pixel were a third of a millisecond of the GPU's at the highest
+ * step — and handed on unchanged (`flat`), twenty numbers in five: the six
+ * ways' light, the sun's share and the reflections'.
+ */
+const PART_ROW_VERTEX = /* glsl */ `
+attribute float partRow;
+uniform highp sampler2D partLight;
+uniform int partRows;
+flat varying vec4 vPartA;
+flat varying vec4 vPartB;
+flat varying vec4 vPartC;
+flat varying vec4 vPartD;
+flat varying vec4 vPartE;
+void readPartRow() {
+	int part = int( partRow + 0.5 );
+	int column = part / partRows;
+	ivec2 at = ivec2( column * 6, part - column * partRows );
+	vec4 t0 = texelFetch( partLight, at, 0 );
+	vec4 t1 = texelFetch( partLight, at + ivec2( 1, 0 ), 0 );
+	vec4 t2 = texelFetch( partLight, at + ivec2( 2, 0 ), 0 );
+	vec4 t3 = texelFetch( partLight, at + ivec2( 3, 0 ), 0 );
+	vec4 t4 = texelFetch( partLight, at + ivec2( 4, 0 ), 0 );
+	vec4 t5 = texelFetch( partLight, at + ivec2( 5, 0 ), 0 );
+	vPartA = t0;
+	vPartB = t1;
+	vPartC = vec4( t2.rgb, t3.r );
+	vPartD = vec4( t3.gb, t4.rg );
+	vPartE = vec4( t4.b, t5.rgb );
+}
+`;
+
+/** ...the same light, handed on (PART_ROW_VERTEX), as lightByProbes has it in uniforms: at the start of main, before anything asks for it. */
+const PART_PROBE_GLSL = /* glsl */ `
+flat varying vec4 vPartA;
+flat varying vec4 vPartB;
+flat varying vec4 vPartC;
+flat varying vec4 vPartD;
+flat varying vec4 vPartE;
+vec3 probeCube[ 6 ];
+float probeSun;
+float probeReflect;
+void readPartLight() {
+	probeCube[ 0 ] = vPartA.rgb;
+	probeCube[ 1 ] = vPartB.rgb;
+	probeCube[ 2 ] = vPartC.rgb;
+	probeCube[ 3 ] = vec3( vPartC.a, vPartD.rg );
+	probeCube[ 4 ] = vec3( vPartD.ba, vPartE.r );
+	probeCube[ 5 ] = vPartE.gba;
+	probeSun = vPartA.a;
+	probeReflect = vPartB.a;
+}
+${PROBE_IRRADIANCE}`;
 
 /** How bright daylight is in the open: the average light at the brightest tenth of the probes outside. */
 function reference(light, zoneOf, outside) {

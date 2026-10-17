@@ -7,7 +7,11 @@
 // (harness.js's __K.realistic: the editor opens under its plain light with
 // the houses alone drawn, and a reference is matched for its light, its
 // trees and its sky). __plans draws the tab as it is lit: under the plain
-// light a cut is evenly lit, which is what a plan cut is read for.
+// light a cut is evenly lit, which is what a plan cut is read for. Each
+// draws at its own size (1920 × 1080, 1600 × 1600) and fov, and gives the
+// page its own size and fov back after (Experience.onResize). __renderSet
+// leaves the realistic preview on: `await __K.realistic(false)` for the
+// plain light again.
 (() => {
     const K = window.__K;
     const { e, r } = K;
@@ -34,6 +38,7 @@
     };
     window.__renderSet = async (prefix, keys = Object.keys(window.__POSES), width = 1600) => {
         await K.realistic?.();
+        const fov = K.cam.fov;
         size(1920, 1080);
         const out = {};
         for (const k of keys) {
@@ -43,6 +48,10 @@
             out[k] = await K.save(`${prefix}${k}.jpg`, [K.shot("", width)], 1);
             if (night) await w.setLighting?.("day");
         }
+        // (The page's own size, aspect and fov back: left at 1920 × 1080 and the last pose's fov, every later frame of
+        // the tab was drawn at them.)
+        K.cam.fov = fov;
+        e.onResize?.();
         return out;
     };
     const Plane = w.environment.sun.shadow._frustum.planes[0].constructor;
@@ -77,11 +86,14 @@
         return status;
     };
     window.__plans = async (prefix, which = ["AB0", "AB1", "AB2", "C0", "C1", "C2"]) => {
+        const fov = K.cam.fov;
         size(1600, 1600);
         const at = { AB0: [7.5, 8.3, 0, 22], AB1: [7.5, 8.3, 3.0, 22], AB2: [7.5, 8.3, 6.0, 22], B0: [7.5, 32.5, 0, 22], B1: [7.5, 32.5, 3.0, 22], B2: [7.5, 32.5, 6.0, 22], C0: [8.7, -14.25, -1.0, 19], C1: [8.7, -14.25, 2.2, 19], C2: [8.7, -14.25, 5.4, 19] };
         const out = [];
         for (const k of which) out.push(await plan(`${prefix}${k}.jpg`, ...at[k]));
-        size(1920, 1080);
+        // (The cut's narrow fov too, else the walk goes on through a 10° lens.)
+        K.cam.fov = fov;
+        e.onResize?.();
         return out;
     };
     return "views ready";

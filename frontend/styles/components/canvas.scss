@@ -11,6 +11,27 @@
     touch-action: none;
 }
 
+/* Under a pool's water (Camera.js's updateUnderwater: a swimmer plunged
+   under, a jump in): the view tinted the water's blue-green, darker towards
+   its edges — over the canvas, so no shader changes and nothing compiles. */
+.experience-wrapper::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    background: radial-gradient(ellipse at 50% 42%, rgba(46, 156, 168, 0.3), rgba(6, 46, 64, 0.66));
+    // (Hidden, not drawn at all: over the canvas it would be composited every frame.)
+    visibility: hidden;
+    opacity: 0;
+    transition: opacity 0.15s ease-out, visibility 0.15s;
+    pointer-events: none;
+}
+
+.underwater .experience-wrapper::before {
+    visibility: visible;
+    opacity: 1;
+}
+
 /* Mobile joystick zone — only active once the walkthrough has started. */
 .joystick-area {
     position: fixed;

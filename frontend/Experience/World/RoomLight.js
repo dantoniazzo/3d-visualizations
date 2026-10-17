@@ -5,6 +5,7 @@ import Experience from "../Experience.js";
 import { QUALITY_STEP, ROOM_LIGHT_STEP, onQualityChange, roomLightOn, roomLightWithheld } from "../Utils/device.js";
 import { roomLinks } from "../../../shared/roomGraph.js";
 import LiveRoom from "./LiveRoom.js";
+import { BETWEEN } from "./Whereabouts.js";
 
 /**
  * The rooms the visitor is in and sees into drawn live, over a view drawn
@@ -53,8 +54,6 @@ import LiveRoom from "./LiveRoom.js";
  * them.
  */
 
-/** How long, in seconds, a room stays live with its visitor in no room at all: a threshold is crossed in less. */
-const BETWEEN = 0.6;
 /**
  * How many groups of rooms are drawn live at once, at most, by the slider's step: the one their visitor is in, and
  * those seen from it through what stands open (look) — nearest first; beyond these a room is the bake's, as every
@@ -62,7 +61,11 @@ const BETWEEN = 0.6;
  * step with the frames of a walk through a flat staying about 25 ms.
  */
 const LIVE_MOST = { 2: 8, 3: 8, 4: 8 };
-/** How far from a shut door, in metres, the visitor is when the room behind it is made ready: the key opens the nearest within 2.2 m (SceneBuilder.nearestDoor), and a door is a third of a second in swinging. */
+/**
+ * How far from a shut door, in metres, the visitor is when the room behind it is made ready: the key opens the nearest
+ * within 2.2 m across the floor, on the floor they stand on — its foot at most 0.85 m under theirs or 1.55 m over
+ * (SceneBuilder.nearestDoor) — which `look` counts as at most 2.2 + 0.8 m off; and a door is a third of a second in swinging.
+ */
 const AHEAD = 3.6;
 /** How many rooms behind shut doors are made ready at once: the nearest, those the visitor faces first (a corridor has a door either side and one at its end). */
 const AHEAD_MOST = 4;
@@ -71,21 +74,6 @@ const DEPTH = 3;
 /** How many times further a room in sight counts for lying behind the eye; and how many metres further for each opening it is seen through. */
 const BEHIND = 1.35;
 const DEEPER = 1;
-/**
- * How far round a visitor who stands in no room a room is looked for, in metres: half a wall's thickness and the
- * visitor's own. On a threshold — the rooms' floors stop at their walls' faces, and the strip under the door is no
- * room's — the room stays live for as long as they stand there.
- */
-const REACH = 0.3;
-/**
- * How far over a room's floor, in metres, the visitor's feet are still in it: on a rug, a stair's first steps, a
- * bed. `roomAt` finds a room from as far over its floor as its ceiling — on a threshold upstairs, whose strip is no
- * room's, the room a storey below.
- */
-const ON_FLOOR = 1.2;
-/** How far from either end of a flight of stairs, in metres of height, its visitor is on it rather than on a floor (flightAt). */
-const ON_FLIGHT = 0.3;
-const AROUND = [0, 1, 2, 3, 4, 5, 6, 7].map((k) => [Math.cos((k * Math.PI) / 4), Math.sin((k * Math.PI) / 4)]);
 
 const _here = new THREE.Vector3();
 const _ahead = new THREE.Vector3();
@@ -184,6 +172,14 @@ export default class RoomLight extends EventEmitter {
         const zones = published.lighting.zones ?? null;
         /** The rooms drawn as rooms: under a ceiling, with a part of the bake of their own. */
         this.rooms = new Map(spec.rooms.filter((room) => room.ceiling_finish !== "none" && (!zones || zones[room.id])).map((room) => [room.id, room]));
+        /**
+         * Which of the rooms near a visitor in none they are taken to be in (where): one of these, and — on a
+         * threshold — the one drawn live now, if it is one of those within reach.
+         */
+        this.near = {
+            accept: (id) => this.rooms.has(id),
+            keep: (id) => (this.plan?.zones.includes(id) ? this.plan.choice.room : null),
+        };
         // The rooms that always stand open to one another on a storey are drawn as one: with no wall between them, or
         // through a doorway that has no door — which nobody can shut, so the room beyond it is always in the picture,
         // and its light in this one's. (Not up or down a stairwell: another storey is another room.)
@@ -402,7 +398,16 @@ export default class RoomLight extends EventEmitter {
         this.emit("hint");
     }
 
-    /** Where the visitor is: the room they stand in (or drive through). */
+    /**
+     * Where the visitor is: the room they stand in (or drive through) — as
+     * the room's name on screen and the room-lights key have it
+     * (World/Whereabouts.js), of the rooms drawn as rooms here: on a flight
+     * of stairs, between two storeys, the room at the end they are nearer in
+     * height (made ready from half-way, and taking over once they stand on
+     * its floor); on a threshold, the room drawn live now, if it is within
+     * reach, else a room indoors that is (a room stays live for as long as
+     * they stand there; in no room at all, for BETWEEN seconds: update).
+     */
     where() {
         const player = this.world.player;
         if (player?.inVehicle && player.currentCar) _here.copy(player.currentCar.group.position);
@@ -412,61 +417,10 @@ export default class RoomLight extends EventEmitter {
             _here.set(body.end.x, body.start.y - body.radius, body.end.z);
         } else _here.copy(this.experience.camera.activeCamera.position);
         const { x, y, z } = _here;
-        // On a flight of stairs, between two storeys, the visitor is in no room (the one the flight climbs over lies
-        // under them, and is not theirs): what is drawn live is the room at the end they are nearer in height — made
-        // ready from half-way, and taking over once they stand on its floor.
-        const flight = this.flightAt(x, y, z);
-        const room = flight ? null : this.standsIn(x, y, z);
-        /** Where the visitor is, and the room there — as it is, a threshold or a flight of stairs being no room (look, update). */
-        this.at = { x, y, z, room };
-        if (room) return room;
-        if (flight) {
-            const ends = [flight.foot, flight.head].filter((id) => id && this.rooms.has(id));
-            if (ends.length < 2) return ends[0] ?? null;
-            return y - flight.stair.base_height < flight.stair.top_height - y ? flight.foot : flight.head;
-        }
-        // In no room — on a threshold, in a wall's thickness: the room drawn live now, if it is within reach; else a room indoors that is.
-        let near = null;
-        for (const [dx, dz] of AROUND) {
-            const id = this.standsIn(x + dx * REACH, y, z + dz * REACH);
-            if (!id || !this.rooms.has(id)) continue;
-            if (this.plan?.zones.includes(id)) return this.plan.choice.room;
-            near ??= id;
-        }
-        return near;
-    }
-
-    /** The room whose floor a point stands on (ON_FLOOR), by its id — or null: over no room, or over one from a storey above it. */
-    standsIn(x, y, z) {
-        const room = this.builder.roomAt(x, y, z);
-        return room && Math.abs(y - room.elevation) <= ON_FLOOR ? room.id : null;
-    }
-
-    /**
-     * The flight of stairs a point is on, between its foot and its head
-     * (more than ON_FLIGHT from either: nearer, it is on that floor) — and
-     * the rooms it joins: the one a step before its foot, on the floor it
-     * climbs from, and the one a step past its head, on the floor it comes
-     * up to (null where that is no room). Null off every flight. `within`:
-     * how far beyond its ends and sides, and with its ends' floors too —
-     * for whoever stands by it.
-     *
-     * @returns {{ stair: object, foot: string|null, head: string|null }|null}
-     */
-    flightAt(x, y, z, within = 0) {
-        for (const stair of this.builder.spec.stairs || []) {
-            if (within ? y < stair.base_height - 0.1 || y > stair.top_height + 0.1 : y <= stair.base_height + ON_FLIGHT || y >= stair.top_height - ON_FLIGHT) continue;
-            const yaw = ((stair.yaw ?? 0) * Math.PI) / 180;
-            const sin = Math.sin(yaw);
-            const cos = Math.cos(yaw);
-            // (Along its run from its foot, and across it: server/scene/validate.js's stairFootprint, the other way.)
-            const along = (x - stair.start[0]) * sin + (z - stair.start[1]) * cos;
-            const across = (x - stair.start[0]) * cos - (z - stair.start[1]) * sin;
-            if (along < -0.1 - within || along > stair.run + 0.1 + within || Math.abs(across) > stair.width / 2 + 0.1 + within) continue;
-            const end = (distance, height) => this.standsIn(stair.start[0] + distance * sin, height, stair.start[1] + distance * cos);
-            return { stair, foot: end(-0.4, stair.base_height), head: end(stair.run + 0.4, stair.top_height) };
-        }
-        return null;
+        const { room, floor } = this.world.whereabouts.locate(x, y, z, this.near);
+        /** Where the visitor is, and the room whose floor they stand on — a threshold or a flight of stairs being no room (look, update). */
+        this.at = { x, y, z, room: floor };
+        return room;
     }
 
     /**

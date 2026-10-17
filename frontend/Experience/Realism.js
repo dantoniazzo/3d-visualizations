@@ -724,8 +724,18 @@ export class RoomProbe {
         sky.useProbe(null);
         renderer.shadowMap.autoUpdate = false;
         renderer.setRenderTarget(this.cube, index);
-        if (this.draw) this.draw(renderer, this.camera.children[index]);
-        else renderer.render(this.scene, this.camera.children[index]);
+        // Not the running water and its steam (World/Water.js): drawn for the view's own eye — its steam's looks
+        // through it from there, and from inside a shower with no depth test — they are no light of the room's, and
+        // drawn here they lit and coloured the room's reflections until the probe was next drawn.
+        const water = this.experience.world?.water?.group ?? null;
+        const watered = water?.visible ?? false;
+        if (water) water.visible = false;
+        try {
+            if (this.draw) this.draw(renderer, this.camera.children[index]);
+            else renderer.render(this.scene, this.camera.children[index]);
+        } finally {
+            if (water) water.visible = watered;
+        }
         renderer.setRenderTarget(previous);
         renderer.shadowMap.autoUpdate = autoUpdate;
         if (this.applied) sky.useProbe(this.applied, this.appliedIndoor);

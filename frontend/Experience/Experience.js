@@ -12,6 +12,7 @@ import Renderer from "./Renderer.js";
 import Preloader from "./Preloader.js";
 import FrameGuard from "./FrameGuard.js";
 import Pace from "./Pace.js";
+import Colliders from "./Colliders.js";
 
 import World from "./World/World.js";
 import CarModels from "./World/Vehicle/CarModels.js";
@@ -55,6 +56,8 @@ export default class Experience {
         this.setResources();
         this.setPreloader();
         this.setWorld();
+        // What the visitor collides with, drawn when asked for (C; Colliders.js): the editor's, and a public link's with ?debug.
+        this.colliders = new Colliders(this);
         this.setGuard();
 
         this.sizes.on("resize", () => this.onResize());
@@ -206,6 +209,8 @@ export default class Experience {
         // two in lockstep instead of a frame apart.
         if (this.world) this.world.update();
         if (this.camera) this.camera.update();
+        // ...and what is drawn for where the eye now is (World.afterCamera).
+        if (this.world) this.world.afterCamera();
         // Publishing borrows the renderer for a while (Publish/Snapshot.js).
         if (this.renderer && !this.suspended) this.renderer.update();
         if (this.time) this.time.update();

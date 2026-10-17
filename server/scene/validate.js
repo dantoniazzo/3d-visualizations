@@ -30,6 +30,15 @@ const OPENING_SET = new Set(OPENING_TYPES);
 const SWING_SET = new Set(DOOR_SWINGS);
 const DIRECTION_SET = new Set(STAIR_DIRECTIONS);
 const TRIM_SIDES = new Set(["a", "b", "both"]);
+/**
+ * How a window opens where it is not as its frame and sill make it
+ * (frontend/Experience/World/Sash.js's windowOpens: a slim window with a
+ * sill of 0.3 m or more turns in, anything else is fixed): turned in, only
+ * tilted, or fixed; and the jamb its panes hang on, towards its wall's
+ * start or its end.
+ */
+const WINDOW_OPENS = new Set(["turn", "tilt", "fixed"]);
+const WINDOW_HINGES = new Set(["left", "right"]);
 const BALUSTRADE_SIDES = new Set(["left", "right", "both"]);
 const CLOSET_DOOR_SIDES = new Set(["left", "right", "end"]);
 
@@ -323,6 +332,12 @@ export function validateScene(raw) {
                     entry.panes = [0, 1].map((k) => Math.round(clamp(num(o.panes[k], 1), 1, 8)));
                 }
                 if (o?.cill === true) entry.cill = true;
+                // How it opens, where that is asked for: only what is known of it is kept.
+                const opens = {
+                    ...(WINDOW_OPENS.has(o?.opens?.type) ? { type: o.opens.type } : {}),
+                    ...(WINDOW_HINGES.has(o?.opens?.hinge) ? { hinge: o.opens.hinge } : {}),
+                };
+                if (Object.keys(opens).length) entry.opens = opens;
             }
             if (type === "window" || type === "door") {
                 // A modern window: a slim aluminium frame rather than a

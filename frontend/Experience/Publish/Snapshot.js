@@ -13,7 +13,8 @@ import { SCENERY_IDS, leaveOut } from "../../../shared/scenery.js";
  * Every static triangle is given an id and the scene is rendered — ids as
  * colours, both faces drawn — from every place a visitor's camera can be
  * (viewpoints.js): walking every room, the stairs and the garden, and the
- * bird's-eye view of each floor with everything above it taken away. What
+ * bird's-eye view of each floor with everything above it taken away — of
+ * the ground floor from out where a car can take that view, too. What
  * no sample ever shows is thrown away: the undersides of things standing
  * on the floor, faces pressed against walls, the insides of boxes that
  * overlap. Which face each surviving triangle was seen from decides how it
@@ -394,21 +395,25 @@ class IdPass {
             side: THREE.DoubleSide,
             uniforms: {
                 maxLevel: { value: 1000 },
+                ceilingFrom: { value: 1000 },
                 bird: { value: 0 },
             },
             // In a bird's-eye view of a floor, everything above it goes,
-            // and so do its own ceilings and the roof.
+            // and so do its own ceilings and the roof — a storey's view
+            // (viewpoints.js's driveViewpoints), the ceilings of every
+            // level of it, from `ceilingFrom` up.
             vertexShader: /* glsl */ `
                 attribute vec3 tid;
                 attribute float lvl;
                 attribute float kind;
                 uniform float maxLevel;
+                uniform float ceilingFrom;
                 uniform float bird;
                 flat varying vec3 vId;
                 void main() {
                     vId = tid;
                     bool above = lvl > maxLevel + 0.5;
-                    bool overhead = kind > 1.5 || (kind > 0.5 && abs(lvl - maxLevel) < 0.5);
+                    bool overhead = kind > 1.5 || (kind > 0.5 && lvl > ceilingFrom - 0.5 && lvl < maxLevel + 0.5);
                     bool hidden = bird > 0.5 && (above || overhead);
                     gl_Position = hidden
                         ? vec4(2.0, 2.0, 2.0, 1.0)
@@ -513,6 +518,7 @@ class IdPass {
         const target = this.birdTarget;
         this.material.uniforms.bird.value = 1;
         this.material.uniforms.maxLevel.value = view.level;
+        this.material.uniforms.ceilingFrom.value = view.ceilingFrom ?? view.level;
         this.birdCamera.position.copy(view.position);
         this.birdCamera.lookAt(view.target);
         this.birdCamera.updateMatrixWorld(true);
@@ -524,6 +530,7 @@ class IdPass {
         r.readRenderTargetPixels(target, 0, 0, BIRD_WIDTH, BIRD_HEIGHT, this.birdPixels);
         mark(this.birdWords, seen);
         this.material.uniforms.maxLevel.value = 1000;
+        this.material.uniforms.ceilingFrom.value = 1000;
         return true;
     }
 

@@ -4,7 +4,7 @@
   "summary": "Ladonia Residence, a few minutes from Poreč: the first three of eight buildings, five flats in each, every one furnished. Buildings A and B — two wings in khaki render under a stone-clad box on the roof, louvred pergolas over the ground-floor gardens, an outside stair up to the first-floor flats, whose own stairs climb into the box and out onto roof terraces with a jacuzzi, an outdoor kitchen and planters of grasses; B with a pool in front. Building C — banded in corten over sand render, a stone-clad recess through both floors on each side. Parking on the street behind dry-stone walls and photinia, the oak woods behind.",
   "brief": "",
   "notes": [],
-  "updated_at": "2026-10-15T11:19:55.096Z",
+  "updated_at": "2026-10-17T13:54:31.380Z",
   "scene": {
     "name": "Ladonia Residence, Kosinožići",
     "summary": "Ladonia Residence, a few minutes from Poreč: the first three of eight buildings, five flats in each, every one furnished. Buildings A and B — two wings in khaki render under a stone-clad box on the roof, louvred pergolas over the ground-floor gardens, an outside stair up to the first-floor flats, whose own stairs climb into the box and out onto roof terraces with a jacuzzi, an outdoor kitchen and planters of grasses; B with a pool in front. Building C — banded in corten over sand render, a stone-clad recess through both floors on each side. Parking on the street behind dry-stone walls and photinia, the oak woods behind.",
@@ -1840,7 +1840,12 @@
             34.05,
             14.2,
             43.6
-          ]
+          ],
+          "steps": {
+            "side": "z1",
+            "count": 5,
+            "going": 0.35
+          }
         }
       ],
       "lawns": [
@@ -17367,7 +17372,7 @@
         "position": [
           3.4418,
           0,
-          8.0332
+          8.03
         ],
         "rotation": 0,
         "scale": 1
@@ -18520,9 +18525,9 @@
         "id": "a-f116",
         "catalog_id": "ld-chair-shell",
         "position": [
-          9.8213,
+          10.7213,
           3.1,
-          3.194
+          3.394
         ],
         "rotation": -60,
         "scale": 0.99
@@ -19845,7 +19850,7 @@
           32.245
         ],
         "rotation": 0,
-        "scale": 1
+        "scale": 0.88
       },
       {
         "id": "b-f012",
@@ -21006,9 +21011,9 @@
         "id": "b-f117",
         "catalog_id": "ld-chair-oak",
         "position": [
-          9.775,
+          9.7154,
           3,
-          26.09
+          26.1654
         ],
         "rotation": -90,
         "scale": 1
@@ -21028,20 +21033,20 @@
         "id": "b-f119",
         "catalog_id": "ld-chair-oak",
         "position": [
-          9.775,
+          9.875,
           3,
-          26.69
+          26.9216
         ],
-        "rotation": -90,
+        "rotation": -60,
         "scale": 1
       },
       {
         "id": "b-f120",
         "catalog_id": "ld-chair-oak",
         "position": [
-          11.025,
+          10.805,
           3,
-          26.69
+          26.8216
         ],
         "rotation": 90,
         "scale": 1

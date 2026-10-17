@@ -32,6 +32,23 @@ import { Capsule } from "three/examples/jsm/math/Capsule.js";
 
 const _capsule = new Capsule();
 const _shift = new THREE.Vector3();
+const _plane = new THREE.Plane();
+
+/**
+ * The capsule being resolved: where its middle was before this frame's
+ * move (Collision.capsuleIntersect's `from`), while it is resolved — what
+ * SceneOctree.triangleCapsuleIntersect asks to tell a face that faces up
+ * met from under it. `from` false otherwise.
+ */
+const _coming = { from: false, middle: new THREE.Vector3() };
+const _middle = new THREE.Vector3();
+const _up = new THREE.Ray(new THREE.Vector3(), new THREE.Vector3(0, 1, 0));
+const _lowered = new Capsule();
+/** The box round a capsule looked at for room (Collision.meets), and the triangles in it. */
+const _met = new THREE.Box3();
+const _metList = [];
+/** Each capsule's box, as meetsAny asks: six numbers a capsule. */
+let _bounds = new Float64Array(6 * 64);
 
 /**
  * How far inside a cell a triangle must lie to be put in it, and in no
@@ -81,6 +98,9 @@ class CollisionTriangle extends THREE.Triangle {
  * cell: Box3.intersectsTriangle makes three arrays a call, and Ladonia's
  * furniture is 961 thousand triangles, each asked about eight cells at each
  * of six levels — 2.3 s. `touched` gives the same answers (below).
+ *
+ * And a capsule that has come at a triangle from behind is not pushed out
+ * through it (triangleCapsuleIntersect).
  */
 class SceneOctree extends Octree {
     static MIN_CELL = 0.25;
@@ -91,6 +111,51 @@ class SceneOctree extends Octree {
         this.count = 0;
         /** Which of its parent's eight cells it is: x * 4 + y * 2 + z. */
         this.octant = 0;
+    }
+
+    /**
+     * three's test of a capsule against one triangle, but for a capsule that
+     * came at it from behind, as the visitor's does while it is resolved
+     * (Collision.capsuleIntersect's `from`).
+     *
+     * three takes a triangle to face one way, its front, and a capsule whose
+     * middle line has gone through its plane is pushed out in front, as far
+     * as it takes for the end behind to come out a radius clear. That is
+     * the floor caught under a body falling fast onto it. But a room's
+     * ceiling here is such a triangle facing up (the floor above's
+     * underside, one-sided, is drawn from the room's side): a visitor
+     * jumping from a bed, a sofa or a window's sill pokes the top of the
+     * capsule's line through it — a head can already be a radius into the
+     * slab before it is met at all — and was then lifted up through the
+     * slab onto the floor above, or over the window's head and out (a jump
+     * at an upstairs window threw the visitor out in 24 of Ladonia's 32).
+     * The head is brought down under the face over it before the resolve
+     * (Collision.headroom); this is for a line the resolve itself takes up
+     * through one — a push off a sill's edge, a shelf's. When the middle
+     * line goes through the triangle, which faces up, and the capsule's
+     * middle was under its plane before this frame's move, it is pushed
+     * back down, its top end a radius under the face, as a head meets a
+     * ceiling.
+     *
+     * Anything else meets the triangle as three has it: a body walking,
+     * falling (onto a floor from over it, however fast), on a ramp or
+     * against a wall is never under a face it goes through; a face that
+     * faces down is fallen through from inside whatever it is the
+     * underside of as it always was; and no capsule but the visitor's (a
+     * car's, a seat's test) is given where it came from.
+     */
+    triangleCapsuleIntersect(capsule, triangle) {
+        const hit = super.triangleCapsuleIntersect(capsule, triangle);
+        if (!hit || !_coming.from) return hit;
+        triangle.getPlane(_plane);
+        const start = _plane.distanceToPoint(capsule.start);
+        const end = _plane.distanceToPoint(capsule.end);
+        // Its line through a face that faces up — three's push along the face's normal, not off an edge — from under it.
+        if (start < 0 === end < 0 || _plane.normal.y <= 0 || !hit.normal.equals(_plane.normal)) return hit;
+        if (_plane.distanceToPoint(_coming.middle) >= 0) return hit;
+        hit.normal.negate();
+        hit.depth = capsule.radius + Math.max(start, end);
+        return hit;
     }
 
     split(level) {
@@ -358,30 +423,107 @@ export default class Collision {
         this.outdoor = new SceneOctree();
         // The people round the property (World/People.js).
         this.people = new SceneOctree();
+        /**
+         * How many times each tree has been set: what a reader that keeps a
+         * copy of the triangles (World/ColliderView.js) looks at to know
+         * that its copy is out of date. A keeper mends its tree in place
+         * (TreeKeeper), so the tree being the same object says nothing; but
+         * every mend, build and finished slice is handed out through these
+         * setters.
+         */
+        this.revision = { static: 0, dynamic: 0, people: 0, outdoor: 0 };
     }
 
     setStatic(octree) {
         this.static = octree;
+        this.revision.static++;
     }
 
     setDynamic(octree) {
         this.dynamic = octree;
+        this.revision.dynamic++;
     }
 
     setOutdoor(octree) {
         this.outdoor = octree;
+        this.revision.outdoor++;
     }
 
     setPeople(octree) {
         this.people = octree ?? new SceneOctree();
+        this.revision.people++;
     }
 
     /**
      * Resolve against the building first, then against whatever the
      * building's push left the capsule touching — what moves, the people,
      * then the garden's trees — and report the sum.
+     *
+     * `from`, where the capsule's middle was before this frame's move (the
+     * visitor's: Player.updateColliderMovement, Player/Swim.js): a face that
+     * faces up met from under it — a room's ceiling, which is one — holds
+     * the capsule down rather than letting it up through onto the floor
+     * above: first the head (headroom), then any face that faces up the
+     * resolve itself takes its line through (SceneOctree.
+     * triangleCapsuleIntersect). Without it, three's resolve as it always
+     * was.
+     *
+     * @param {Capsule} capsule
+     * @param {{ from?: THREE.Vector3|null }} [options]
      */
-    capsuleIntersect(capsule) {
+    capsuleIntersect(capsule, { from = null } = {}) {
+        if (!from) return this.resolve(capsule);
+        const lowered = this.headroom(capsule, from);
+        _coming.from = true;
+        _coming.middle.copy(from);
+        let result;
+        try {
+            result = this.resolve(lowered ? _lowered : capsule);
+        } finally {
+            _coming.from = false;
+        }
+        if (!lowered) return result;
+        // The head's push and the resolve's, as one.
+        const total = new THREE.Vector3(0, -lowered, 0);
+        if (result) total.addScaledVector(result.normal, result.depth);
+        const depth = total.length();
+        return depth > 1e-9 ? { normal: total.divideScalar(depth), depth } : { normal: total.set(0, 1, 0), depth: 0 };
+    }
+
+    /**
+     * A head through a ceiling: the nearest face over the capsule's middle,
+     * no further up than its top end — if that faces up, and the middle was
+     * under it before this frame's move — and how far down the capsule goes
+     * for that end to be a radius under it, the capsule so lowered in
+     * `_lowered`; else 0. Met here, before the resolve, the head comes down
+     * through the one face over it: in the resolve, a line through a
+     * ceiling made of many triangles was shoved sideways off the edges
+     * between them, one after another, before the one it went through was
+     * met (out through the wall over an upstairs window, from its sill).
+     * Under anything else — a flight's underside, a table — the middle,
+     * a metre up, has nothing over it within the capsule's top. Only asked
+     * of a capsule this frame's move took up: a head goes up into a ceiling
+     * only so (a jump), and pressed to the floor, walking, a capsule never
+     * moves up — so walking costs no ray.
+     */
+    headroom(capsule, from) {
+        const middle = capsule.getCenter(_middle);
+        const reach = capsule.end.y - middle.y;
+        if (!(middle.y > from.y) || !(reach > 0)) return 0;
+        _up.origin.copy(middle);
+        const hit = this.rayIntersect(_up, { twoSided: true, far: reach });
+        if (!hit || hit.distance > reach) return 0;
+        hit.triangle.getPlane(_plane);
+        if (_plane.normal.y <= 0 || _plane.distanceToPoint(from) >= 0) return 0;
+        // Its end a radius under the face where the line meets it.
+        const down = capsule.end.y - (middle.y + hit.distance) + capsule.radius;
+        _lowered.copy(capsule);
+        _lowered.translate(_shift.set(0, -down, 0));
+        return down;
+    }
+
+    /** capsuleIntersect's work. */
+    resolve(capsule) {
         _capsule.copy(capsule);
         let first = null;
         let total = null;
@@ -404,6 +546,112 @@ export default class Collision {
         const depth = total.length();
         if (depth < 1e-9) return { normal: last.normal, depth: 0 };
         return { normal: total.divideScalar(depth), depth };
+    }
+
+    /**
+     * Whether a capsule meets anything — the building, what moves, the
+     * people, the garden's trees — by more than `depth`, leaving out the
+     * triangles `except` says to: each triangle it touches tested on its
+     * own, nothing resolved. What Player.js looks for room by, to sit down
+     * and get up by the clip, the seat's own piece left out (World/
+     * Seats.js's roomFor).
+     *
+     * @param {Capsule} capsule
+     * @param {{ except?: (triangle: THREE.Triangle) => boolean, depth?: number }} [options]
+     */
+    meets(capsule, { except = null, depth = 0.01 } = {}) {
+        _met.min.x = Math.min(capsule.start.x, capsule.end.x) - capsule.radius;
+        _met.min.y = Math.min(capsule.start.y, capsule.end.y) - capsule.radius;
+        _met.min.z = Math.min(capsule.start.z, capsule.end.z) - capsule.radius;
+        _met.max.x = Math.max(capsule.start.x, capsule.end.x) + capsule.radius;
+        _met.max.y = Math.max(capsule.start.y, capsule.end.y) + capsule.radius;
+        _met.max.z = Math.max(capsule.start.z, capsule.end.z) + capsule.radius;
+        for (const tree of [this.static, this.dynamic, this.people, this.outdoor]) {
+            if (!tree) continue;
+            _metList.length = 0;
+            for (const triangle of collectTriangles(tree, _met, _metList)) {
+                if (except?.(triangle)) continue;
+                const hit = tree.triangleCapsuleIntersect(capsule, triangle);
+                if (hit && hit.depth > depth) return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Whether any of `capsules` meets anything by more than `depth` — as
+     * meets asks of one — the triangles they might meet gathered once, those
+     * in `box` (which must hold all of them), and each tried against only the
+     * capsules whose own boxes it touches: a figure's body limb by limb at
+     * many moments of a clip (World/Seats.js's wayClear, turnClear), where
+     * asking the trees again for each limb was most of 30-60 ms a seat.
+     *
+     * @param {Capsule[]} capsules  the first `count` of them
+     * @param {THREE.Box3} box
+     * @param {{ except?: (triangle: THREE.Triangle) => boolean, depth?: number, count?: number }} [options]
+     */
+    meetsAny(capsules, box, { except = null, depth = 0.01, count = capsules.length } = {}) {
+        if (_bounds.length < count * 6) _bounds = new Float64Array(count * 6);
+        for (let i = 0; i < count; i++) {
+            const { start, end, radius } = capsules[i];
+            _bounds[i * 6] = Math.min(start.x, end.x) - radius;
+            _bounds[i * 6 + 1] = Math.min(start.y, end.y) - radius;
+            _bounds[i * 6 + 2] = Math.min(start.z, end.z) - radius;
+            _bounds[i * 6 + 3] = Math.max(start.x, end.x) + radius;
+            _bounds[i * 6 + 4] = Math.max(start.y, end.y) + radius;
+            _bounds[i * 6 + 5] = Math.max(start.z, end.z) + radius;
+        }
+        for (const tree of [this.static, this.dynamic, this.people, this.outdoor]) {
+            if (!tree) continue;
+            _metList.length = 0;
+            for (const triangle of collectTriangles(tree, box, _metList)) {
+                const { a, b, c } = triangle;
+                const x0 = Math.min(a.x, b.x, c.x);
+                const x1 = Math.max(a.x, b.x, c.x);
+                const y0 = Math.min(a.y, b.y, c.y);
+                const y1 = Math.max(a.y, b.y, c.y);
+                const z0 = Math.min(a.z, b.z, c.z);
+                const z1 = Math.max(a.z, b.z, c.z);
+                if (x1 < box.min.x || x0 > box.max.x || y1 < box.min.y || y0 > box.max.y || z1 < box.min.z || z0 > box.max.z) continue;
+                let left = null;
+                for (let i = 0; i < count; i++) {
+                    const k = i * 6;
+                    if (x1 < _bounds[k] || x0 > _bounds[k + 3] || y1 < _bounds[k + 1] || y0 > _bounds[k + 4] || z1 < _bounds[k + 2] || z0 > _bounds[k + 5]) continue;
+                    // (Whether it is to be left out asked once, and only of a triangle some capsule's box touches.)
+                    left ??= Boolean(except?.(triangle));
+                    if (left) break;
+                    const hit = tree.triangleCapsuleIntersect(capsules[i], triangle);
+                    if (hit && hit.depth > depth) return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Whether any triangle — of the building, what moves, the people, the
+     * garden's trees — lies even partly in `box` (the box round its corners
+     * meets it), leaving out those `except` says to: whether anything is
+     * near enough to a figure's way across a floor for its body to be looked
+     * over limb by limb (World/Seats.js's wayClear), where a capsule round it
+     * all could not take in its feet out to the side near the floor.
+     *
+     * @param {THREE.Box3} box
+     * @param {{ except?: (triangle: THREE.Triangle) => boolean }} [options]
+     */
+    anyIn(box, { except = null } = {}) {
+        for (const tree of [this.static, this.dynamic, this.people, this.outdoor]) {
+            if (!tree) continue;
+            _metList.length = 0;
+            for (const triangle of collectTriangles(tree, box, _metList)) {
+                const { a, b, c } = triangle;
+                if (Math.max(a.x, b.x, c.x) < box.min.x || Math.min(a.x, b.x, c.x) > box.max.x) continue;
+                if (Math.max(a.y, b.y, c.y) < box.min.y || Math.min(a.y, b.y, c.y) > box.max.y) continue;
+                if (Math.max(a.z, b.z, c.z) < box.min.z || Math.min(a.z, b.z, c.z) > box.max.z) continue;
+                if (!except?.(triangle)) return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -605,6 +853,34 @@ export function collectTriangles(octree, box, out = []) {
     for (const sub of octree.subTrees || []) {
         if (sub.box.intersectsBox(box)) collectTriangles(sub, box, out);
     }
+    return out;
+}
+
+/**
+ * Every triangle in an octree whose cell touches `box` — the whole tree
+ * without one — each exactly once, in the order its cells are first met.
+ * A triangle that straddles cells is listed in each of them; this is for
+ * whoever needs the set itself (World/ColliderView.js, which draws it)
+ * rather than "does any of these hit". Any tree three's walks go through
+ * will do: one `buildOctree` made, a keeper's after any number of mends,
+ * and the union a keeper hands out while it builds another (whose root
+ * has no box of its own).
+ */
+export function uniqueTriangles(octree, box = null, out = []) {
+    const seen = new Set();
+    const visit = (node) => {
+        if (box && node.box && !node.box.intersectsBox(box)) return;
+        const triangles = node.triangles;
+        for (let i = 0; i < triangles.length; i++) {
+            const triangle = triangles[i];
+            if (seen.has(triangle)) continue;
+            seen.add(triangle);
+            out.push(triangle);
+        }
+        const subTrees = node.subTrees;
+        for (let i = 0; i < subTrees.length; i++) visit(subTrees[i]);
+    };
+    if (octree) visit(octree);
     return out;
 }
 

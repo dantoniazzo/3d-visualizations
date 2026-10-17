@@ -158,10 +158,36 @@ export default class CarLights {
      * drawn from the bake, whose surfaces take none.
      */
     setMode(mode) {
+        // (Held from above, what is asked for is what it goes back to: hold.)
+        if (this.held) {
+            this.held.mode = mode;
+            return;
+        }
         if (this.mode === mode && this.beam) return;
         this.mode = mode;
         this.buildBeam();
         this.apply();
+    }
+
+    /**
+     * From above (World.lightFromAbove) the view is drawn from the bake with
+     * nothing live, whatever the walkthrough is lit by: the beam is the pool
+     * on the road there, never a spotlight — which, in a view lit live or
+     * one that was not baked, would light the garden and the people live,
+     * and have their shaders built for it. Let go, it is the car's own again.
+     */
+    hold(on) {
+        if (Boolean(on) === Boolean(this.held)) return;
+        if (on) {
+            const mode = this.mode;
+            this.setMode("baked");
+            this.held = { mode };
+            return;
+        }
+        const { mode } = this.held;
+        this.held = null;
+        // (Not yet decided as it was held: lit, as update would have it.)
+        this.setMode(mode ?? "lit");
     }
 
     /** Lamps for the model the car now wears (Car.setModel). */

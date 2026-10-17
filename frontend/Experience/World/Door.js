@@ -329,6 +329,9 @@ export default class Door {
                 const outward = this.swing.startsWith("outward") ? -1 : 1;
                 hinge.rotation.y = -hingeSide * outward * eased * (Math.PI * 0.52);
             }
+            // Where it is now, worked out as it moves: the wall it hangs in may be passed over by three's walk of the
+            // scene, held still while the editor's stand-ins draw it (World/StandIns.js's hold).
+            hinge.updateMatrixWorld(true);
         }
     }
 

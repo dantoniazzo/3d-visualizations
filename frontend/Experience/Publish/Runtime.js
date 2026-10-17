@@ -19,7 +19,10 @@ import { canMerge, glowOf, listStatic, materialKeys } from "../World/StaticBatch
  *     goes as the finish's name; any other texture — a fabric, a worktop —
  *     goes in the file;
  *   - the glass, which is drawn live rather than merged, each pane saying
- *     which floor it is on for the bird's-eye view;
+ *     which floor it is on for the bird's-eye view — but a window that
+ *     opens: its panes are its sashes', which the view hangs in its walls
+ *     again (`sashes`, below), and its opening's invisible pane is in the
+ *     collision;
  *   - the faces the snapshot culled that still cast a shadow (`shadow`,
  *     Snapshot.js), drawn into the shadow maps only — here rather than in
  *     the snapshot, which the bake lights face by face.
@@ -36,8 +39,9 @@ import { canMerge, glowOf, listStatic, materialKeys } from "../World/StaticBatch
 export async function buildRuntime(experience, { shadow = null } = {}) {
     const builder = experience.world.sceneBuilder;
     await builder.furnitureReady;
-    // Every door and drawer shut, as the pieces collide and are published.
+    // Every door and drawer shut, as the pieces collide and are published; every window too.
     builder.openables.resetAll();
+    builder.resetWindows?.();
     builder.refreshCollision();
     const options = builder.staticOptions();
     const scene = new THREE.Scene();
@@ -123,7 +127,17 @@ export async function buildRuntime(experience, { shadow = null } = {}) {
             const placed = aim
                 ? { ...fixture, light: { ...fixture.light, aim: new THREE.Vector3(...aim).transformDirection(node.parent.matrixWorld).toArray() } }
                 : fixture;
-            holder.userData = { piece: id, label: group.userData.label, ...(opens && { opens }), ...(placed && { fixture: placed }) };
+            // A part's `opens` — a drawer's slide, a door's hinge — is left in the frame it is said in, its
+            // parent's, as published from the start; `turn` is that frame's turn in the world, which the view
+            // turns them by as it loads (SceneBuilder.buildFromRuntime, Openables.js's turnFrame).
+            const turn = opens && node.parent.getWorldQuaternion(new THREE.Quaternion()).toArray();
+            // ...and how much of its swing or slide it opens before it meets
+            // something (Openables.js's plan), worked out here against the
+            // editor's trees as they are: the view's own tree is the
+            // server's simplification of them, in which a ceiling track's
+            // spot or a garden chair's arm is a few centimetres out.
+            const reach = opens && part ? Math.floor(part.plan() * 1e4) / 1e4 : undefined;
+            holder.userData = { piece: id, label: group.userData.label, ...(opens && { opens, turn, reach }), ...(placed && { fixture: placed }) };
             if (opens) {
                 inverse.copy(node.matrixWorld).invert();
                 box.setFromObject(node);
@@ -147,7 +161,18 @@ export async function buildRuntime(experience, { shadow = null } = {}) {
 
     if (shadow?.children.length) scene.add(shadow);
 
-    scene.userData = { runtime: 1, levels: options.levels };
+    // The windows that open, whose glass is not above: by wall and opening,
+    // how each was hung — turning or only tilting, and the jamb each pane
+    // hangs on (World/Sash.js) — for the view to hang them again as they
+    // are here (SceneBuilder.buildFromRuntime). A view of a version without
+    // it has every window's glass in the file, fixed, as it was published.
+    const sashes = {};
+    for (const sash of builder.windows ?? []) {
+        const hung = ((sashes[sash.wallId] ??= {})[sash.spec.id] ??= { type: sash.type, hinges: [] });
+        hung.hinges[sash.index] = sash.hingeSide;
+    }
+
+    scene.userData = { runtime: 1, levels: options.levels, ...(Object.keys(sashes).length && { sashes }) };
     const glb = await new GLTFExporter().parseAsync(scene, { binary: true });
     if (shadow) scene.remove(shadow);
     for (const item of disposables) item.dispose();
@@ -159,6 +184,7 @@ export async function buildRuntime(experience, { shadow = null } = {}) {
             materials: keys.size,
             glass: glass.children.length,
             openable: openable.children.filter((node) => node.userData.opens).length,
+            windows: builder.windows?.length ?? 0,
             shadowCasters: shadow ? shadow.children.reduce((sum, mesh) => sum + mesh.geometry.index.count / 3, 0) : 0,
         },
     };

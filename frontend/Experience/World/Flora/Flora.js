@@ -9,6 +9,7 @@ import { GardenLights } from "./lights.js";
 import { shared } from "./shaders.js";
 import { QUALITY } from "../../Utils/device.js";
 import { distanceOutside, scatter, terrainHeight } from "../../../../shared/landscape.js";
+import { lightPoolWater, updatePoolWater } from "../Builders/LandscapeBuilder.js";
 
 const _visitor = new THREE.Vector3();
 
@@ -23,7 +24,8 @@ const _visitor = new THREE.Vector3();
  *   - its photinia hedges (hedges.js);
  *   - its lawns, meadows and the roof planters' grasses (grass.js);
  *   - its garden lights and the pool's glow at night (lights.js), the
- *     houses' own room lights on with them, and the water's ripple.
+ *     houses' own room lights on with them, and the water's ripple and the
+ *     sun's caustics in it (Builders/LandscapeBuilder.js, updatePoolWater).
  *
  * Everything stands on the terrain (terrainHeight). The trunks near the
  * houses are walked into. It takes the place of the Fluffy Tree garden
@@ -291,11 +293,7 @@ export default class Flora {
         const dark = night && !this.world.plain;
         this.world.sky?.glowIndoors(dark);
         this.treeSet?.setLight(dark ? 0.12 : 1);
-        const water = this.world.sceneBuilder?.landscapeLive?.getObjectByName("pool-water");
-        if (water) {
-            water.material.emissive.set(dark ? "#1fa9c4" : "#000000");
-            water.material.emissiveIntensity = dark ? 1.4 : 0;
-        }
+        lightPoolWater(this.world.sceneBuilder?.landscapeLive, dark);
     }
 
     /**
@@ -315,9 +313,8 @@ export default class Flora {
     }
 
     update(delta) {
-        // The pool's ripple, whatever else of the site is drawn.
-        const water = this.world.sceneBuilder?.landscapeLive?.getObjectByName("pool-water");
-        if (water?.material.userData.time) water.material.userData.time.value += delta;
+        // The pool's ripple and its caustics, whatever else of the site is drawn.
+        updatePoolWater(this.world.sceneBuilder?.landscapeLive, delta, { sun: this.world.environment?.sun, plain: this.world.plain });
         // Not made yet, or left out of the view (setShown): no wind, nothing sorted.
         if (!this.planted || !this.group.visible) return;
         shared.uTime.value += delta;

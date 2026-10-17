@@ -23,6 +23,7 @@
     "trees": "node scripts/pack-trees.mjs",
     "bake": "node scripts/bake-public.mjs",
     "seats": "node scripts/measure-seats.mjs",
+    "screens": "node scripts/measure-screens.mjs",
     "people:place": "node scripts/place-people.mjs"
   },
   "devDependencies": {

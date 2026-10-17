@@ -10,6 +10,7 @@ Loose furniture — seating, tables, lamps, decor — is in loose.py.
 
 import math
 
+import bpy
 from mathutils import Vector
 
 from . import geometry as g
@@ -75,19 +76,25 @@ def _drawer_front(col, mats, w, h, x, y, z, mat, facing=-1, segments=32):
 
 #: How far a cupboard door swings open.
 SWING = math.radians(105)
+#: How far a shower's glass door swings out (shower): nearly to stand along
+#: the wall it hangs off — short of a right angle by as much as keeps its
+#: outer handle, 5 cm proud of the glass, clear of that wall where it runs
+#: on past the shower and the shower stands against it.
+SHOWER_SWING = math.radians(85)
 #: A carcass's panels.
 PANEL_T = 0.018
 #: The deepest a drawer's box is.
 DRAWER_DEPTH = 0.55
 
 
-def _hinged_door(col, mats, w, h, x, y, z, mat, handle_side=1, gap=FRONT_GAP, facing=-1, handle=True):
+def _hinged_door(col, mats, w, h, x, y, z, mat, handle_side=1, gap=FRONT_GAP, facing=-1, handle=True, label="door"):
     """A _door_front hung on its edge away from the handle, at the back of
-    its thickness, swinging out towards `facing` (geometry.hinged)."""
+    its thickness, swinging out towards `facing` (geometry.hinged), called
+    `label` in the visitor's prompt ("Open wardrobe")."""
     parts = _door_front(col, mats, w, h, x, y, z, mat, handle_side=handle_side, gap=gap, facing=facing,
                         handle=handle)
     hinge = (x - handle_side * (w / 2 - gap), y - facing * FRONT_T / 2, z)
-    return g.hinged(parts, hinge, facing * handle_side * SWING, col)
+    return g.hinged(parts, hinge, facing * handle_side * SWING, col, label=label)
 
 
 def _drawer(col, mats, w, h, x, y, z, mat, facing=-1, depth=0.45, segments=32):
@@ -110,7 +117,7 @@ def _drawer(col, mats, w, h, x, y, z, mat, facing=-1, depth=0.45, segments=32):
         g.box("tray", (t, depth, th), loc=(x + tw / 2 - t / 2, mid, floor + th / 2), col=col, mat=inside),
         g.box("tray", (tw - 2 * t, t, th), loc=(x, back + facing * t / 2, floor + th / 2), col=col, mat=inside),
     ]
-    return g.sliding(parts, (x, y, z), (0, facing), depth * 0.75, col)
+    return g.sliding(parts, (x, y, z), (0, facing), depth * 0.75, col, label="drawer")
 
 
 def _shell(col, mat, x0, x1, back, front, z0, z1, t=PANEL_T, columns=(), dividers=(), shelves=(),
@@ -433,13 +440,15 @@ def sink(col, mats, cx, cy, w=0.86, d=0.48, bowl_w=0.44, bowl_d=0.38, facing=-1,
     # A swan-neck mixer behind the bowl, spout over its middle.
     back = -facing
     tx, ty = bx, cy + back * (bowl_d / 2 + 0.035)
-    parts += tap(col, mats, tx, ty, top + fl, towards=facing, reach=bowl_d / 2 + 0.035)
+    # Its water falls to the waste in the bowl's floor.
+    parts += tap(col, mats, tx, ty, top + fl, towards=facing, reach=bowl_d / 2 + 0.035, floor=floor + 0.003)
     return {"parts": parts, "cut": (w - 0.02, d - 0.02), "y": cy}
 
 
-def tap(col, mats, x, y, z, height=0.36, reach=0.19, towards=-1):
+def tap(col, mats, x, y, z, height=0.36, reach=0.19, towards=-1, floor=None, group="sink"):
     """A swan-neck kitchen mixer on a surface at `z`, its spout arching over
-    towards `towards` (-1: -Y, +1: +Y), the lever on the side."""
+    towards `towards` (-1: -Y, +1: +Y), the lever on the side. Given the
+    `floor` its water falls to, the water's fixtures too, as basin_mixer's."""
     m = mats["chrome"]
     t = towards
     arc = [(x, y, z + 0.01), (x, y, z + height * 0.72), (x, y + t * reach * 0.12, z + height),
@@ -455,6 +464,11 @@ def tap(col, mats, x, y, z, height=0.36, reach=0.19, towards=-1):
         g.box("tap_lever", (0.012, 0.012, 0.09), loc=(x + 0.05, y, z + 0.17), rot=(0, 0.25, 0),
               col=col, mat=m, bevel=0.004),
     ]
+    if floor is not None:
+        mouth = z + height * 0.70 - 0.027        # the outlet's underside
+        ys = (y - t * 0.028, y + t * (reach + 0.015))
+        parts += [g.water((x, y + t * reach, mouth), "tap", mouth - floor, (0.14, 0.14), group, r=0.011),
+                  g.control_round((x - 0.028, min(ys), z), (x + 0.068, max(ys), z + height * 1.02 + 0.013), [group])]
     return parts
 
 
@@ -474,8 +488,9 @@ def fridge(col, mats, cx, cy, facing=-1, w=0.91, d=0.70, h=1.79):
                     0.012, h - 0.012, t=0.035, columns=[cx])
     for z in (0.45, 0.80, 1.15, 1.45):
         for s in (-1, 1):
-            parts.append(g.box("shelf", (w / 2 - 0.08, d - dt - 0.14, 0.008),
-                               loc=(cx + s * w / 4, cy - facing * 0.02, z), col=col,
+            # Stopping short of the doors' bins, which swing in front of them.
+            parts.append(g.box("shelf", (w / 2 - 0.08, d - dt - 0.19, 0.008),
+                               loc=(cx + s * w / 4, cy - facing * 0.045, z), col=col,
                                mat=glass if s > 0 else liner))
     fy = cy + facing * (d / 2 - dt / 2)
     for s in (-1, 1):
@@ -484,16 +499,19 @@ def fridge(col, mats, cx, cy, facing=-1, w=0.91, d=0.70, h=1.79):
         door = [g.box("fr_door", (dw, dt, h - 0.06), loc=(dx, fy, h / 2), col=col, mat=steel, bevel=0.006)]
         door += _handle(col, mats, cx + s * (w / 4 + (0.16 * -s)), fy + facing * 0.02,
                         h * 0.62, 0.55, vertical=True)
-        # Its inside: a white liner and three bins.
+        # Its inside: a white liner and three bins, inside the mouth they
+        # close (the cabinet's walls 4.7 cm thick at its sides, the
+        # partition at its middle), so they swing out of it clear.
         inner = fy - facing * (dt / 2 + 0.01)
-        door.append(g.box("fr_liner", (dw - 0.06, 0.02, h - 0.2), loc=(dx, inner, h / 2), col=col, mat=liner))
+        door.append(g.box("fr_liner", (dw - 0.09, 0.02, h - 0.2), loc=(dx - s * 0.015, inner, h / 2), col=col, mat=liner))
         for z in (0.5, 0.95, 1.4):
             door.append(g.box("fr_bin", (dw - 0.1, 0.09, 0.012), loc=(dx, inner - facing * 0.055, z),
                               col=col, mat=liner))
             door.append(g.box("fr_bin", (dw - 0.1, 0.008, 0.07),
                               loc=(dx, inner - facing * 0.096, z + 0.035), col=col, mat=glass))
         hinge = (cx + s * (w / 2 - 0.004), fy - facing * dt / 2, h / 2)
-        parts += g.hinged(door, hinge, facing * -s * SWING, col)
+        # The freezer at -X, behind its white shelves; the fridge, its glass ones.
+        parts += g.hinged(door, hinge, facing * -s * SWING, col, label="fridge" if s > 0 else "freezer")
     # At the front of the top, shining down on the shelves and out of an
     # open door — not back through the fridge onto the wall behind it.
     parts.append(g.fixture("light", (cx, front - facing * 0.08, h - 0.10),
@@ -553,18 +571,195 @@ def tall_housing(col, mats, x0, x1, y, facing, h=2.20, d=0.62, carcass="cab_sage
     return parts
 
 
+#: How far a washing machine's porthole swings open: past a right angle,
+#: as a real one's does, to stand clear of the opening.
+PORTHOLE_SWING = math.radians(100)
+
+
+def _revolved(name, profile, cx, cz, y0, facing, col, mat, segments=32, closed=False, hub=None, inward=True):
+    """A surface turned about the line through (cx, cz) along Y: each
+    (radius, depth) of `profile` a ring `depth` out from y0 towards
+    `facing`, joined ring to ring — a porthole's ring, a drum, a gasket.
+    `closed` joins the last ring back to the first, a solid ring, its faces
+    out; open, they face the axis (`inward`) or away from it, and `hub`, a
+    depth, closes the last ring with a fan there: a drum's back. Edges where
+    the profile turns more than 40 degrees stay sharp."""
+    import bmesh
+    bm = bmesh.new()
+    rings = []
+    for r, depth in profile:
+        y = y0 + facing * depth
+        rings.append([bm.verts.new((cx + r * math.cos(2 * math.pi * k / segments), y, cz + r * math.sin(2 * math.pi * k / segments)))
+                      for k in range(segments)])
+    pairs = list(zip(rings, rings[1:])) + ([(rings[-1], rings[0])] if closed else [])
+    for a, b in pairs:
+        for k in range(segments):
+            j = (k + 1) % segments
+            bm.faces.new((a[k], a[j], b[j], b[k]))
+    if hub is not None:
+        centre = bm.verts.new((cx, y0 + facing * hub, cz))
+        for k in range(segments):
+            bm.faces.new((rings[-1][k], rings[-1][(k + 1) % segments], centre))
+    bm.normal_update()
+    if closed:
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    else:
+        # Which way round it was wound, by its faces' leaning to the axis,
+        # weighted by their areas.
+        lean = 0.0
+        for f in bm.faces:
+            c = f.calc_center_median()
+            radial = Vector((c.x - cx, 0.0, c.z - cz))
+            if radial.length > 1e-6:
+                lean += f.normal.dot(radial.normalized()) * f.calc_area()
+        if (lean < 0) != inward:
+            bmesh.ops.reverse_faces(bm, faces=bm.faces)
+    bm.normal_update()
+    for e in bm.edges:
+        if len(e.link_faces) == 2 and e.link_faces[0].normal.angle(e.link_faces[1].normal, 0.0) > math.radians(40):
+            e.smooth = False
+    mesh = bpy.data.meshes.new(name)
+    bm.to_mesh(mesh)
+    bm.free()
+    return g._finish(mesh, name, col, mat, None, None, True)
+
+
+def _porthole_panel(name, x0, x1, z0, z1, y, t, facing, cx, cz, r, col, mat, segments=32):
+    """A flat front from x0 to x1 and z0 to z1, its face at `y` towards
+    `facing`, with a round hole of radius `r` at (cx, cz) whose wall runs
+    `t` back: its face flat, the hole's wall smooth. Its back and its outer
+    edges are inside the cabinet it fronts, so it has none."""
+    import bmesh
+    corners = [(x1, z1), (x0, z1), (x0, z0), (x1, z0)]
+    angles = {round(2 * math.pi * k / segments, 6) for k in range(segments)}
+    angles |= {round(math.atan2(pz - cz, px - cx) % (2 * math.pi), 6) for px, pz in corners}
+    angles = sorted(angles)
+
+    def edge(a):
+        """Where the ray from the hole's centre at `a` leaves the outline."""
+        dx, dz = math.cos(a), math.sin(a)
+        reach = [v for v in ((x1 - cx) / dx if dx > 1e-9 else None, (x0 - cx) / dx if dx < -1e-9 else None,
+                             (z1 - cz) / dz if dz > 1e-9 else None, (z0 - cz) / dz if dz < -1e-9 else None) if v is not None]
+        k = min(reach)
+        return cx + dx * k, cz + dz * k
+
+    bm = bmesh.new()
+    of, hf, hb = [], [], []
+    for a in angles:
+        ex, ez = edge(a)
+        hx, hz = cx + r * math.cos(a), cz + r * math.sin(a)
+        of.append(bm.verts.new((ex, y, ez)))
+        hf.append(bm.verts.new((hx, y, hz)))
+        hb.append(bm.verts.new((hx, y - facing * t, hz)))
+    n = len(angles)
+    face, wall = [], []
+    for k in range(n):
+        j = (k + 1) % n
+        face.append(bm.faces.new((of[k], of[j], hf[j], hf[k])))
+        wall.append(bm.faces.new((hf[k], hf[j], hb[j], hb[k])))
+    bm.normal_update()
+    # Its face towards `facing`, the hole's wall towards the hole's middle.
+    if face[0].normal.y * facing < 0:
+        bmesh.ops.reverse_faces(bm, faces=bm.faces)
+    for f in bm.faces:
+        f.smooth = f in wall
+    mesh = bpy.data.meshes.new(name)
+    bm.to_mesh(mesh)
+    bm.free()
+    return g._finish(mesh, name, col, mat, None, None, False)
+
+
 def washer(col, mats, cx, cy, facing=-1, w=0.60, d=0.60, h=0.85, dryer=False):
-    steel, black, glass = mats["steel"], mats["black_metal"], mats["glass"]
-    fy = cy + facing * (d / 2 - 0.002)
-    parts = [g.box("washer", (w, d, h), loc=(cx, cy, h / 2), col=col, mat=steel, bevel=0.006),
-             g.box("panel", (w - 0.02, 0.012, 0.10), loc=(cx, fy, h - 0.07), col=col, mat=black),
-             g.cylinder("porthole", 0.155, 0.05, loc=(cx, fy, h * 0.48),
-                        rot=(math.pi / 2, 0, 0), col=col, mat=black),
-             g.cylinder("glass", 0.125, 0.03, loc=(cx, fy + facing * 0.012, h * 0.48),
-                        rot=(math.pi / 2, 0, 0), col=col, mat=glass)]
-    if not dryer:
-        parts.append(g.box("drawer", (0.20, 0.03, 0.07), loc=(cx - w / 4, fy, h - 0.07),
-                           col=col, mat=steel))
+    """A front-loading washing machine (or with `dryer`, a tumble dryer)
+    facing `facing`, in brushed steel under a black control fascia.
+
+    Hollow behind its porthole, as a real one is: a steel drum with three
+    lifters inside it, a rubber gasket from the round hole in the front to
+    the drum's mouth. The porthole door — a black ring round its window, a
+    grip at its free edge — hangs on its left edge as you face it and
+    swings out by PORTHOLE_SWING ("washing machine", or "dryer"), turning
+    about the outer face of its hinge lug, so it never passes back into
+    the front. A washer's detergent drawer, at the fascia's left, slides
+    out on its tray of three compartments from a dark housing ("detergent
+    drawer")."""
+    steel, black, glass, rubber = mats["steel"], mats["black_metal"], mats["glass"], mats["rubber"]
+    f = facing
+    t = 0.01
+    back, front = cy - f * d / 2, cy + f * d / 2
+    left = f                                       # the way to its left, seen from the front
+    zc = h * 0.48                                  # the porthole's centre
+    fz = h - 0.12                                  # the fascia's foot, the front's top
+    x0, x1 = cx - w / 2 + t, cx + w / 2 - t
+
+    def slab(name, xa, xb, ya, yb, za, zb, mat, **kw):
+        return g.box(name, (xb - xa, abs(yb - ya), zb - za), loc=((xa + xb) / 2, (ya + yb) / 2, (za + zb) / 2),
+                     col=col, mat=mat, **kw)
+
+    # The cabinet: a 2 cm top, sides, a back and a floor, the front with its round hole.
+    parts = [slab("washer", cx - w / 2, cx + w / 2, back, front, h - 0.02, h, steel, bevel=0.006, segments=1),
+             slab("washer", cx - w / 2, x0, back, front, 0.0, h - 0.02 + 0.001, steel, bevel=0.006, segments=1),
+             slab("washer", x1, cx + w / 2, back, front, 0.0, h - 0.02 + 0.001, steel, bevel=0.006, segments=1),
+             slab("washer", x0, x1, back, back + f * t, t, h - 0.02, steel),
+             slab("washer", x0, x1, back, front - f * t, 0.0, t, steel),
+             _porthole_panel("washer_front", x0, x1, t, fz, front, t, f, cx, zc, 0.150, col, steel)]
+
+    # Inside: the gasket from the hole's back edge, folding in and out to the
+    # drum's mouth; the drum, its front wall stepping out to its full
+    # width, its back dished; three lifters along it.
+    mouth = 0.05
+    parts += [_revolved("gasket", [(0.1515, -t), (0.143, -0.028), (0.170, -mouth)], cx, zc, front, f, col, rubber, segments=24),
+              _revolved("drum", [(0.170, -mouth), (0.235, -mouth - 0.03), (0.235, -0.44)], cx, zc, front, f, col, steel,
+                        segments=24, hub=-0.45)]
+    for k in range(3):
+        a = math.pi / 2 + 2 * math.pi * k / 3
+        rr = 0.235 - 0.014
+        parts.append(g.box("lifter", (0.024, 0.30, 0.024), loc=(cx + rr * math.cos(a), front - f * 0.26, zc + rr * math.sin(a)),
+                           rot=(0, -a, 0), col=col, mat=steel))
+
+    # The fascia across the top, a hole at its left for the detergent
+    # drawer (none on a dryer).
+    fy0, fy1 = front - f * 0.008, front + f * 0.004
+    xd = cx + left * w / 4
+    if dryer:
+        parts.append(slab("panel", x0, x1, fy0, fy1, fz, h - 0.02, black))
+    else:
+        da, db, dz0, dz1 = xd - 0.095, xd + 0.095, h - 0.10, h - 0.04
+        parts += [slab("panel", x0, da, fy0, fy1, fz, h - 0.02, black), slab("panel", db, x1, fy0, fy1, fz, h - 0.02, black),
+                  slab("panel", da, db, fy0, fy1, fz, dz0, black), slab("panel", da, db, fy0, fy1, dz1, h - 0.02, black)]
+        # Its dark housing behind the fascia, open to it.
+        hb = front - f * 0.215
+        parts += [slab("housing", da, db, fy0, hb, dz0 - 0.008, dz0, black), slab("housing", da, db, fy0, hb, dz1, dz1 + 0.008, black),
+                  slab("housing", da - 0.008, da, fy0, hb, dz0 - 0.008, dz1 + 0.008, black),
+                  slab("housing", db, db + 0.008, fy0, hb, dz0 - 0.008, dz1 + 0.008, black),
+                  slab("housing", da - 0.008, db + 0.008, hb, hb - f * 0.008, dz0 - 0.008, dz1 + 0.008, black)]
+        # The drawer: its steel front proud of the fascia, its tray behind
+        # it, white, in three compartments (prewash, wash, softener).
+        white = mats["white_matte"]
+        ta, tb, tz0, tz1 = xd - 0.088, xd + 0.088, dz0 + 0.004, dz1 - 0.006
+        ty0, ty1 = fy1, front - f * 0.196
+        tray = [slab("drawer", xd - 0.10, xd + 0.10, fy1, front + f * 0.013, h - 0.105, h - 0.035, steel, bevel=0.002),
+                slab("tray", ta, tb, ty0, ty1, tz0, tz0 + 0.004, white),
+                slab("tray", ta, ta + 0.004, ty0, ty1, tz0, tz1, white), slab("tray", tb - 0.004, tb, ty0, ty1, tz0, tz1, white),
+                slab("tray", ta, tb, ty1, ty1 + f * 0.004, tz0, tz1, white)]
+        for k in (1, 2):
+            xk = ta + (tb - ta) * (0.42 if k == 1 else 0.74)
+            tray.append(slab("tray", xk - 0.002, xk + 0.002, ty0, ty1, tz0, tz1 - 0.012, white))
+        parts += g.sliding(tray, (xd, front, h - 0.07), (0, f), 0.15, col, label="detergent drawer")
+
+    # The porthole door: the ring, its window, a grip at its free edge, a
+    # lug at its hinge, 2 mm off the front; it turns about the lug's outer
+    # face, on its left edge.
+    ring = _revolved("porthole", [(0.158, 0.002), (0.161, 0.016), (0.151, 0.028), (0.124, 0.025), (0.123, 0.003)],
+                     cx, zc, front, f, col, black, closed=True)
+    pane = g.cylinder("glass", 0.124, 0.004, loc=(cx, front + f * 0.022, zc), rot=(math.pi / 2, 0, 0), col=col, mat=glass,
+                      segments=24)
+    hinge_x = cx + left * 0.176
+    door = [ring, pane,
+            slab("door_grip", min(cx - left * 0.150, cx - left * 0.172), max(cx - left * 0.150, cx - left * 0.172),
+                 front + f * 0.006, front + f * 0.026, zc - 0.045, zc + 0.045, black),
+            slab("door_hinge", min(cx + left * 0.150, cx + left * 0.1755), max(cx + left * 0.150, cx + left * 0.1755),
+                 front + f * 0.004, front + f * 0.027, zc - 0.04, zc + 0.04, black)]
+    parts += g.hinged(door, (hinge_x, front + f * 0.028, 0.0), -PORTHOLE_SWING, col, label="dryer" if dryer else "washing machine")
     return parts
 
 
@@ -583,7 +778,7 @@ def microwave(col, mats, cx, cy, z, facing=-1, w=0.55, d=0.38, h=0.32):
                   col=col, mat=steel, bevel=0.003),
             g.box("mw_glass", (w * 0.56, 0.004, h - 0.09), loc=(cx - w * 0.15, cy + f * 0.001, z + h / 2),
                   col=col, mat=black)]
-    return parts + g.hinged(door, (cx - w / 2, cy - f * 0.012, z + h / 2), f * SWING, col)
+    return parts + g.hinged(door, (cx - w / 2, cy - f * 0.012, z + h / 2), f * SWING, col, label="microwave")
 
 
 # ---------------------------------------------------------------------
@@ -643,14 +838,23 @@ def basin(col, mats, x, y, z, w=0.50, d=0.36, h=0.13, wall=0.015, segments=5):
     return [shell, waste]
 
 
-def basin_mixer(col, mats, x, y, z, height=0.22, reach=0.14, segments=12):
+def basin_mixer(col, mats, x, y, z, height=0.22, reach=0.14, segments=12, floor=None, group="basin"):
     """A single-lever basin mixer on a surface at height `z`: a column, a
     spout reaching forward (+Y) over the bowl, the lever on top pointing
     sideways so it never reaches back into the wall. Parts overlap by a few
-    millimetres where they meet instead of sharing a face."""
+    millimetres where they meet instead of sharing a face.
+
+    Given the bowl's `floor` (its height under the outlet), the water's
+    fixtures too: the outlet (geometry.water, `group`) and the mixer as the
+    box a visitor turns it on by (geometry.control_round)."""
     c = mats["chrome"]
     spout_z = z + height - 0.014
-    return [
+    marks = []
+    if floor is not None:
+        mouth = spout_z - 0.026                  # the outlet's underside
+        marks = [g.water((x, y + reach - 0.004, mouth), "tap", mouth - floor, (0.12, 0.12), group, r=0.009),
+                 g.control_round((x - 0.026, y - 0.026, z), (x + 0.0675, y + reach + 0.008, z + height + 0.010), [group])]
+    return marks + [
         g.cylinder("mixer_base", 0.026, 0.012, loc=(x, y, z + 0.005), col=col, mat=c,
                    segments=segments),
         g.cylinder("mixer_body", 0.016, height - 0.009, loc=(x, y, z + 0.009 + (height - 0.009) / 2),
@@ -669,7 +873,9 @@ def vanity(col, mats, x, y, w=1.10, d=0.50, rot=0.0, carcass="cab_oak", basins=1
 
     The wall is on the -Y side (y); the drawers face +Y. Each basin sits
     5 cm back from the counter's front edge with its mixer standing clear
-    behind it, 2 cm off the basin and well off the wall.
+    behind it, 2 cm off the basin and well off the wall; each mixer's
+    water runs into its basin ("basin", or "basin1", "basin2" … with more
+    than one).
     """
     cab = mats[carcass]
     h = 0.52
@@ -681,9 +887,11 @@ def vanity(col, mats, x, y, w=1.10, d=0.50, rot=0.0, carcass="cab_oak", basins=1
     # it with a millimetre's gap, not buried in it; hollow, for its two
     # drawers, a rail between them.
     parts = _shell(col, cab, x - w / 2, x + w / 2, y, y + d - 0.02, z0, z0 + h, dividers=[z0 + h / 2])
+    # Each drawer centred on its half of the carcass, so the upper one's
+    # front clears the counter's overhang as it runs out.
     for i in range(2):
         parts += _drawer(col, mats, w - 0.02, h / 2 - 0.008, x, front - 0.0095,
-                         z0 + h * (0.27 + 0.5 * i), cab, facing=1, depth=d - 0.08, segments=10)
+                         z0 + h * (0.25 + 0.5 * i), cab, facing=1, depth=d - 0.08, segments=10)
     parts.append(g.box("top", (w + 0.02, d + 0.02, 0.030), loc=(x, y + d / 2, z0 + h + 0.015),
                        col=col, mat=mats["worktop"], bevel=0.003))
 
@@ -694,7 +902,9 @@ def vanity(col, mats, x, y, w=1.10, d=0.50, rot=0.0, carcass="cab_oak", basins=1
     for i in range(basins):
         bx = x if basins == 1 else x - w / 4 + i * w / 2
         parts += basin(col, mats, bx, by, top, w=bw, d=bd)
-        parts += basin_mixer(col, mats, bx, mixer_y, top, reach=(by - mixer_y) * 0.75)
+        # The water falls to the basin's floor: its height less its depth and fall to the waste (basin()).
+        parts += basin_mixer(col, mats, bx, mixer_y, top, reach=(by - mixer_y) * 0.75, floor=top + 0.13 - 0.108,
+                             group="basin" if basins == 1 else f"basin{i + 1}")
         # Mirror over each basin.
         parts.append(g.box("mirror", (0.60, 0.022, 0.80), loc=(bx, y + 0.012, 1.62),
                            col=col, mat=mats["trim_white"], bevel=0.004))
@@ -737,13 +947,18 @@ def bath(col, mats, x, y, w=1.70, d=0.75, rot=0.0, shower_over=False):
     return _rotate(parts, x, y, rot)
 
 
-def _shower_kit(col, mats, x, y, zv=1.05, top=2.05, reach=0.30):
+def _shower_kit(col, mats, x, y, zv=1.05, top=2.05, reach=0.30, floor=None):
     """A thermostatic bar valve with a rigid riser, an overhead rain head and
     a handset on a slider, fed by a hose hanging in a loop.
 
     `y` is the face of the wall it is fixed to, and it stands off that face
     towards +Y. `zv` is the valve's centre line and `top` the arm's. Every
     joint overlaps by a millimetre or two rather than meeting face to face.
+
+    Given the `floor` the water lands on (the tray's, under the head), the
+    water's fixtures too: the rain head's ("rain": its spray wets a patch a
+    little wider than the head) and the bar valve as what turns it on. The
+    handset stays in its cradle.
     """
     c, dark = mats["chrome"], mats["trim_charcoal"]
     along_x, along_y = (0, math.pi / 2, 0), (math.pi / 2, 0, 0)
@@ -788,6 +1003,10 @@ def _shower_kit(col, mats, x, y, zv=1.05, top=2.05, reach=0.30):
         g.cylinder("nozzles", 0.105, 0.003, loc=(x, y + reach, top - 0.037), col=col, mat=dark,
                    segments=24),
     ]
+    if floor is not None:
+        mouth = top - 0.0385                     # the nozzle plate's face
+        parts += [g.water((x, y + reach, mouth), "rain", mouth - floor, (0.30, 0.30), "rain", r=0.105),
+                  g.control_round((x - 0.194, y, zv - 0.051), (x + 0.194, y + off + 0.029, zv + 0.029), ["rain"])]
 
     # Handset resting in a cradle on a slider, leaning out from the riser.
     zs = zv + 0.55
@@ -850,8 +1069,10 @@ def _caddy(col, mats, x, y, z):
 
 def shower(col, mats, x, y, w=1.00, d=0.90, rot=0.0, door="front", window=None):
     """A corner shower: a stone tray, tiled walls, a frameless glass
-    enclosure with a hinged door, and a thermostatic valve feeding a rain
-    head and a handset.
+    enclosure with a hinged door that swings out ("shower door"), and a
+    thermostatic valve feeding a rain head and a handset — the rain head's
+    water, the valve that turns it on and the enclosure its steam fills as
+    fixtures (geometry.water, control, steam).
 
     (x, y) is the corner it is built into. At rot=0 the walls are on -X (the
     side) and -Y (the back, where the valve is), and the shower runs `w`
@@ -976,7 +1197,7 @@ def shower(col, mats, x, y, w=1.00, d=0.90, rot=0.0, door="front", window=None):
     # door run, and an in-line panel beside the door running to the return
     # panel's outer face, both in low floor channels and clamped together.
     door_w = min(0.60, gu - hinge - 0.20)
-    ud0 = hinge + 0.006              # hinge side
+    ud0 = hinge + 0.006              # hinge side (the glass itself from its hinges' pivot, below)
     ud1 = ud0 + door_w               # closing edge
     ui0 = ud1 + 0.004                # in-line panel
     ret1 = gv - GT / 2 - 0.002
@@ -993,28 +1214,38 @@ def shower(col, mats, x, y, w=1.00, d=0.90, rot=0.0, door="front", window=None):
                          z - 0.02, z + 0.02, c))
 
     # Door, hung on two hinges, with a sweep seal under it, a magnetic seal
-    # on its closing edge and a pull handle through it.
+    # on its closing edge and a pull handle through it: one leaf, which
+    # swings out of the enclosure. Each hinge is a plate on the tiles and a
+    # clamp on the glass, and the leaf turns about the clamps' outer face
+    # where they meet the plates, a millimetre off them: nothing of it
+    # passes behind that line into a plate or the wall as it opens, and
+    # open (SHOWER_SWING) it stands nearly along the wall it hangs off, its
+    # outer handle clear of that wall where it runs on past the shower.
     dz0, dz1 = T + 0.012, gz1 - 0.015
-    parts += [
-        run("door", ud0, ud1, gv - GT / 2, gv + GT / 2, dz0, dz1, gl),
-        run("door_sweep", ud0 + 0.005, ud1 - 0.005, gv - 0.006, gv + 0.006, T + 0.003, T + 0.017, seal),
+    pivot = hinge + 0.010
+    leaf = [
+        run("door", pivot, ud1, gv - GT / 2, gv + GT / 2, dz0, dz1, gl),
+        run("door_sweep", pivot + 0.005, ud1 - 0.005, gv - 0.006, gv + 0.006, T + 0.003, T + 0.017, seal),
         run("door_seal", ud1 - 0.001, ud1 + 0.003, gv - 0.007, gv + 0.007, dz0 + 0.001, dz1 - 0.001, seal),
     ]
     for z in (T + 0.28, T + 1.62):
-        parts += [
-            run("hinge_plate", hinge - 0.001, hinge + 0.009, gv - 0.0225, gv + 0.0225,
-                z - 0.0425, z + 0.0425, c, bevel=0.002, segments=1),
-            run("hinge", hinge + 0.008, hinge + 0.078, gv - 0.011, gv + 0.011,
-                z - 0.0275, z + 0.0275, c, bevel=0.002, segments=1),
-        ]
+        parts.append(run("hinge_plate", hinge - 0.001, hinge + 0.009, gv - 0.0225, gv + 0.0225,
+                         z - 0.0425, z + 0.0425, c, bevel=0.002, segments=1))
+        leaf.append(run("hinge", pivot, hinge + 0.078, gv - 0.011, gv + 0.011,
+                        z - 0.0275, z + 0.0275, c, bevel=0.002, segments=1))
     hu, hz = ud1 - 0.06, 1.05
     reach = GT / 2 + 0.035
     for s in (-1, 1):
-        parts.append(g.cylinder("handle", 0.0095, 0.30, loc=run_at(hu, gv + s * reach, hz), col=col,
-                                mat=c, segments=10))
-        parts.append(g.cylinder("handle_post", 0.006, 2 * reach + 0.004,
-                                loc=run_at(hu, gv, hz + s * 0.11), rot=along_v,
-                                col=col, mat=c, segments=8))
+        leaf.append(g.cylinder("handle", 0.0095, 0.30, loc=run_at(hu, gv + s * reach, hz), col=col,
+                               mat=c, segments=10))
+        leaf.append(g.cylinder("handle_post", 0.006, 2 * reach + 0.004,
+                               loc=run_at(hu, gv, hz + s * 0.11), rot=along_v,
+                               col=col, mat=c, segments=8))
+    # Out of the enclosure is +v either way round: from u towards +v, which
+    # is anticlockwise seen from above for a front door, clockwise for a
+    # side one.
+    parts += g.hinged(leaf, run_at(pivot, gv + 0.011, 0.0), (-1 if swap else 1) * SHOWER_SWING, col,
+                      label="shower door")
 
     # Stabiliser bar over the door, from the wall it hangs off to a clamp on
     # the in-line panel's top edge, high enough for the door to clear it.
@@ -1029,9 +1260,24 @@ def shower(col, mats, x, y, w=1.00, d=0.90, rot=0.0, door="front", window=None):
     ]
 
     # Valve and heads centred on the back wall, the rain head over the
-    # middle of the tray; a corner shelf where the two walls meet.
-    parts += _shower_kit(col, mats, x + (fx + gx) / 2, y + by, reach=max(0.28, tcy - by))
+    # middle of the tray, its water falling to the tray's floor, a little
+    # under its border there; a corner shelf where the two walls meet.
+    parts += _shower_kit(col, mats, x + (fx + gx) / 2, y + by, reach=max(0.28, tcy - by), floor=T - 0.01)
     parts += _caddy(col, mats, x + fx, y + by, 1.25)
+
+    # The steam's space: the enclosure inside its tiles and its glass, from
+    # the tray to the glass's top; its fixed panes, which mist.
+    ix0, ix1, iy0, iy1 = fx, gx - GT / 2, by, gy - GT / 2
+    sx, sy, sz = (ix0 + ix1) / 2, (iy0 + iy1) / 2, (T + gz1) / 2
+
+    def pane(u0, u1, v0, v1):
+        """A pane's footprint from the steam's centre, laid out as run() lays it."""
+        x0, x1, y0, y1 = (v0, v1, u0, u1) if swap else (u0, u1, v0, v1)
+        return (x0 - sx, x1 - sx, y0 - sy, y1 - sy)
+
+    parts.append(g.steam(at(sx, sy, sz), ((ix1 - ix0) / 2, (iy1 - iy0) / 2, (gz1 - T) / 2),
+                         [pane(gu - GT / 2, gu + GT / 2, wall + clear, ret1), pane(ui0, gu + GT / 2, gv - GT / 2, gv + GT / 2)],
+                         col))
     return _rotate(parts, x, y, rot)
 
 
@@ -1123,7 +1369,7 @@ def wardrobe(col, mats, x0, x1, y, facing=-1, h=2.30, d=0.62, carcass="cab_white
     for i in range(n):
         cx = x0 + (i + 0.5) * w
         parts += _hinged_door(col, mats, w, h - 0.06, cx, front_y, h / 2 + 0.01, cab,
-                              handle_side=-1 if i % 2 else 1, facing=facing)
+                              handle_side=-1 if i % 2 else 1, facing=facing, label="wardrobe")
     return parts
 
 

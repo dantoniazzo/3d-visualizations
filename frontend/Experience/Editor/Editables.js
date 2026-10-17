@@ -5,6 +5,7 @@ import FitChecker from "./FitChecker.js";
 import { AXES, DEG, round, toBlender, yawQuaternion } from "./axes.js";
 import SceneBuilder, { localBox } from "../World/SceneBuilder.js";
 import StructureBuilder from "../World/Builders/StructureBuilder.js";
+import { OPENS_FROM_SILL, WINDOW_HINGES, WINDOW_OPENS, windowOpens } from "../World/Sash.js";
 import { creditLine } from "../World/Vehicle/CarModels.js";
 import { DOOR_TYPES, DOOR_SWINGS } from "../../../shared/catalog.js";
 import { DRINKS, POSES, seatsOf } from "../../../shared/people.js";
@@ -998,6 +999,15 @@ export class WallOpeningEditable extends Editable {
             o.door.type = value;
         } else if (key === "swing" && o.door) {
             o.door.swing = value;
+        } else if ((key === "opens" || key === "hinge") && o.type === "window") {
+            // A window's way of opening, or its hinge: "auto" is as its frame and sill make it, and no field at all.
+            const field = key === "opens" ? "type" : "hinge";
+            const known = key === "opens" ? WINDOW_OPENS : WINDOW_HINGES;
+            const opens = { ...(o.opens ?? {}) };
+            if (known.includes(value)) opens[field] = value;
+            else delete opens[field];
+            if (Object.keys(opens).length) o.opens = opens;
+            else delete o.opens;
         } else {
             return { ok: false };
         }
@@ -1044,7 +1054,56 @@ export class WallOpeningEditable extends Editable {
                 ],
             });
         }
+        if (o.type === "window") sections.push(this.windowSection());
         return sections;
+    }
+
+    /**
+     * How a window opens (World/Sash.js): as its frame and sill make it —
+     * a slim window with a sill of 0.3 m or more turns in, one lower is
+     * fixed glazing — or as asked; and which jamb a turning one hangs on.
+     * A window in a kit's frame is moulded frame and sash in one, and stays
+     * fixed whatever is asked.
+     */
+    windowSection() {
+        const o = this.opening;
+        if (o.style !== "slim") {
+            return { title: "Opening", text: "Fixed: its frame and sash are one moulded piece." };
+        }
+        const opens = windowOpens(o);
+        const usual = o.sill >= OPENS_FROM_SILL ? "turns in" : "fixed (floor-length)";
+        const fields = [
+            {
+                key: "opens",
+                label: "Opens",
+                type: "select",
+                value: o.opens?.type ?? "auto",
+                options: [
+                    { value: "auto", label: `As usual: ${usual}` },
+                    { value: "turn", label: "Turns in" },
+                    { value: "tilt", label: "Tilts in" },
+                    { value: "fixed", label: "Fixed" },
+                ],
+            },
+        ];
+        if (opens?.type === "turn") {
+            fields.push({
+                key: "hinge",
+                label: "Hinged",
+                type: "select",
+                value: o.opens?.hinge ?? "auto",
+                options: [
+                    { value: "auto", label: "At the window's ends" },
+                    { value: "left", label: "Left (wall's start)" },
+                    { value: "right", label: "Right (wall's end)" },
+                ],
+            });
+        }
+        return {
+            title: "Opening",
+            fields,
+            text: opens?.type === "turn" ? "A pane that would turn into something in the room tilts instead." : undefined,
+        };
     }
 
     gizmoSpec(tool) {

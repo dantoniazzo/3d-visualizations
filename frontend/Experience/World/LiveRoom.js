@@ -617,10 +617,11 @@ export default class LiveRoom {
     /**
      * What moves in `zones` — or hangs in their walls — and is drawn as a
      * view lit live draws it while they are shown: the doors' leaves, the
-     * furniture's doors and drawers, the rooms' own panes of glass (what
-     * stays where it is: `fixed`), and whoever and whatever stands in them
-     * now — the people round the property, the visitors' figures, a car
-     * (`moving`: looked for again as they go, track). And, in the bake's
+     * windows' sashes, the furniture's doors and drawers, the rooms' own
+     * panes of glass (what stays where it is: `fixed`), and whoever and
+     * whatever stands in them now — the people round the property, the
+     * visitors' figures, a car (`moving`: looked for again as they go,
+     * track). And, in the bake's
      * light, what hangs in them that is seen through and is no clear glass
      * — a sheer curtain (`sheers`) —, which stays as the baked view draws it
      * (sheerCall).
@@ -633,6 +634,10 @@ export default class LiveRoom {
         for (const door of builder.doors || []) {
             if (!builder.doorSideZones(door.spec.id).some((zone) => zones.includes(zone))) continue;
             for (const { leaf } of door.leaves) fixed.push(leaf);
+        }
+        // A window's sashes, which hang in its wall as a door's leaf does: its frame drawn as what moves, its pane as the room's glass.
+        for (const sash of builder.windows || []) {
+            if (builder.doorSideZones(sash.spec.id).some((zone) => zones.includes(zone))) fixed.push(sash.leaf);
         }
         for (const part of builder.openables?.parts || []) if (this.within(part.node, zones)) fixed.push(part.node);
         // The rooms' panes: what is seen through and stands in one of them, or in its walls — but, in the bake's light, what
@@ -877,14 +882,20 @@ export default class LiveRoom {
         return this.unseen.get(material.side);
     }
 
-    /** Each stand-in where what it stands for is now, and shown as that is. */
+    /**
+     * Each stand-in where what it stands for is now, and shown as that is —
+     * but for what a fridge's shut doors hide from every side, its glass
+     * shelves (World/ShutBatcher.js's enclose: `userData.shutIn`), which the
+     * baked view draws on no layer meanwhile and the room's call would draw
+     * through the door's gap.
+     */
     follow() {
         for (const standIn of this.rig.movers.children) {
             const source = standIn.userData.source;
             source.updateWorldMatrix(true, false);
             standIn.matrix.copy(source.matrixWorld);
             standIn.matrixWorld.copy(source.matrixWorld);
-            standIn.visible = shown(source);
+            standIn.visible = shown(source) && !source.userData.shutIn;
         }
     }
 

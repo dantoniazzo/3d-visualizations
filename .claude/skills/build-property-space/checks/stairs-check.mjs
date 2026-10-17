@@ -219,8 +219,11 @@ function loadGlb(id) {
         const model = new THREE.Group();
         let opens = false;
         let triangles = 0;
-        const visit = (index, parent) => {
+        // The triangles that count against the budget: the piece without its opening parts (as collisionOf counts them).
+        let body = 0;
+        const visit = (index, parent, inPart = false) => {
             const node = json.nodes[index];
+            const part = inPart || Boolean(node.extras?.opens);
             const object = new THREE.Group();
             if (node.matrix) object.applyMatrix4(new THREE.Matrix4().fromArray(node.matrix));
             else {
@@ -235,16 +238,18 @@ function loadGlb(id) {
                     const geometry = new THREE.BufferGeometry();
                     geometry.setAttribute("position", new THREE.BufferAttribute(Float32Array.from(read(primitive.attributes.POSITION)), 3));
                     if (primitive.indices != null) geometry.setIndex(new THREE.BufferAttribute(Uint32Array.from(read(primitive.indices)), 1));
-                    triangles += (primitive.indices != null ? json.accessors[primitive.indices].count : json.accessors[primitive.attributes.POSITION].count) / 3;
+                    const count = (primitive.indices != null ? json.accessors[primitive.indices].count : json.accessors[primitive.attributes.POSITION].count) / 3;
+                    triangles += count;
+                    if (!part) body += count;
                     object.add(new THREE.Mesh(geometry, plainMaterial));
                 }
             }
-            for (const child of node.children || []) visit(child, object);
+            for (const child of node.children || []) visit(child, object, part);
             parent.add(object);
         };
         const scene = json.scenes[json.scene ?? 0];
         for (const index of scene.nodes) visit(index, model);
-        out = { model, opens, triangles };
+        out = { model, opens, triangles, body };
     }
     glbCache.set(id, out);
     return out;
@@ -292,8 +297,10 @@ for (const placement of spec.furniture || []) {
     if (box.isEmpty()) continue;
     const size = box.getSize(new THREE.Vector3()).multiply(group.scale);
     if (size.y < FLAT_HEIGHT || item?.collision === "none") continue;
-    // As SceneBuilder: the catalogue's own `collision` if set, else box when it opens or is heavy.
-    const mode = item?.collision === "box" || item?.collision === "mesh" ? item.collision : glb && (glb.opens || glb.triangles > MESH_BUDGET) ? "box" : "mesh";
+    // As SceneBuilder.collisionOf (since 2026-10-16): the catalogue's own `collision` if set, else a box when the piece
+    // without its opening parts is heavier than the budget, else its mesh — its parts at rest in it, where the game's
+    // shut boxes stand (a shower's door, a way in, bars the way itself while shut: the same at rest).
+    const mode = item?.collision === "box" || item?.collision === "mesh" ? item.collision : glb && glb.body > MESH_BUDGET ? "box" : "mesh";
     const text = `furniture:${placement.id}(${placement.catalog_id})`;
     furnitureInfo.set(placement.id, { placement, mode, size: size.toArray().map(r3) });
     if (mode === "mesh") furnitureRoots.add(label(group, text));

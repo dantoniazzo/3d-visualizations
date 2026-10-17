@@ -398,21 +398,38 @@ def join(objs, name=None, col=None):
 _units = iter(range(1, 1 << 30))
 
 
-def hinged(parts, hinge, angle, col=None):
+def hinged(parts, hinge, angle, col=None, label=None, axis=None):
     """Mark `parts` as one leaf — a cupboard door and its handle — that
     swings on a vertical hinge through `hinge` (x, y, z), fully open at
     `angle` radians about +Z (anticlockwise seen from above; its sign says
-    which way). Returns the parts and the marker that says so, for
+    which way). `label` names it for the visitor's prompt ("door",
+    "fridge", "freezer": "Open fridge"); without one the app calls it a
+    door. `axis` (x, y, z), for a leaf hung otherwise — a flap that drops
+    on a hinge along its foot, (1, 0, 0) — turns it about that instead, by
+    the right-hand rule. Returns the parts and the marker that says so, for
     join_piece."""
-    return _openable(parts, hinge, 0.0, {"type": "hinge", "angle": round(angle, 5)}, col)
+    marks = _openable(parts, hinge, 0.0, _labelled({"type": "hinge", "angle": round(angle, 5)}, label), col)
+    if axis is not None:
+        # The marker's X along the axis, so the axis turns as the piece's
+        # parts are turned (joinery._rotate, ladonia._turn, mirrored).
+        marks[-1].rotation_euler = Vector(axis).to_track_quat("X", "Z").to_euler()
+        marks[-1]["axis"] = True
+    return marks
 
 
-def sliding(parts, at, direction, distance, col=None):
+def sliding(parts, at, direction, distance, col=None, label=None):
     """Mark `parts` as one drawer that slides `distance` metres out along
-    `direction` (x, y) in plan. Returns the parts and the marker, for
-    join_piece."""
+    `direction` (x, y) in plan, `label` naming it as hinged's does ("drawer",
+    or "fridge" for a refrigerated one). Returns the parts and the marker,
+    for join_piece."""
     heading = math.atan2(direction[1], direction[0])
-    return _openable(parts, at, heading, {"type": "slide", "distance": round(distance, 4)}, col)
+    return _openable(parts, at, heading, _labelled({"type": "slide", "distance": round(distance, 4)}, label), col)
+
+
+def _labelled(opens, label):
+    if label:
+        opens["label"] = label
+    return opens
 
 
 def _openable(parts, at, heading, opens, col):
@@ -446,6 +463,96 @@ def fixture(name, at, props, col=None, aim=None):
     return marker
 
 
+# ---------------------------------------------------------------------
+# Water: where it runs from, what turns it on, where its steam stays
+# ---------------------------------------------------------------------
+#
+# Fixtures the app's running water is drawn from (frontend: the water and
+# steam of a later stage). Each is a point and its sizes, nothing more: the
+# app draws the water falling straight down (-Y) from an outlet whatever
+# the piece's turn, so none of them is aimed. Their sizes are given here in
+# plan as the piece is built — x and y, Blender's — and join_piece turns
+# them into the app's axes as the piece finally stands (a leg of a corner
+# kitchen turned onto its wall, a mirrored shower), then leaves the node
+# unturned, so its frame is its piece's: a size in it is a size along the
+# piece's own axes, wherever the piece is placed and however it is turned.
+
+def water(at, kind, fall, land, group, hot=True, r=None, size=None, col=None):
+    """An outlet at `at`, the water's lowest point as it leaves it: a tap's
+    spout ("tap"), a shower's rain head ("rain"). `fall`, metres from there
+    down to the floor of the bowl or tray it lands in; `land` (w, d), the
+    patch of that floor it wets, centred under the outlet; `r` the round
+    outlet's or head's radius, or `size` (w, d) a square head's; `hot`
+    whether it runs hot (an outdoor tap or shower doesn't); `group`, a name
+    unique in the piece that its `control` turns on — a double vanity's
+    "basin1" and "basin2"."""
+    props = {"kind": kind, "fall": round(fall, 4), "land": [round(v, 4) for v in land], "hot": bool(hot), "group": group}
+    if r is not None:
+        props["r"] = round(r, 4)
+    if size is not None:
+        props["size"] = [round(v, 4) for v in size]
+    return fixture(f"water_{group}", at, {"water": props}, col)
+
+
+def control(at, groups, half, col=None):
+    """What a visitor turns the water on with — a tap's body and lever, a
+    shower's valve — as the box round it, centred at `at`, `half` (x, y, z)
+    its half-sizes: the water of `groups` runs while it is on."""
+    return fixture(f"control_{groups[0]}", at, {"control": {"for": list(groups), "half": [round(v, 4) for v in half]}}, col)
+
+
+def control_round(lo, hi, groups, margin=0.01, col=None):
+    """A control as the box from `lo` to `hi` (x, y, z) round a tap's body,
+    spout and lever or a valve, `margin` more all round: a slim tap is aimed
+    at, not missed by a hair."""
+    return control(tuple((a + b) / 2 for a, b in zip(lo, hi)), groups,
+                   tuple((b - a) / 2 + margin for a, b in zip(lo, hi)), col)
+
+
+def steam(at, half, screens=(), col=None):
+    """The space a hot shower's steam fills before it spills over: the box
+    centred at `at`, `half` (x, y, z) its half-sizes — the enclosure's
+    inside, from its tray to its glass's top. `screens`, its fixed glass
+    panes as their footprints in plan from `at` (x0, x1, y0, y1), each
+    standing the box's height: what the steam mists. A door's glass is
+    the part that opens, and moves with it."""
+    props = {"half": [round(v, 4) for v in half]}
+    if screens:
+        props["screens"] = [[round(v, 4) for v in pane] for pane in screens]
+    return fixture("steam", at, {"steam": props}, col)
+
+
+def _in_app_axes(props, turn):
+    """A water fixture's sizes, said in plan as the piece was built, in the
+    app's axes once `turn` (the fixture's own, as the piece's parts were
+    turned about) is applied: a size is a size whichever way it is turned;
+    a pane's footprint is turned about the fixture."""
+
+    def size(v):
+        t = turn @ Vector(v)
+        return [round(abs(t.x), 4), round(abs(t.z), 4), round(abs(t.y), 4)]
+
+    if "water" in props:
+        w = props["water"]
+        for key in ("land", "size"):
+            if key in w:
+                x, _, z = size((w[key][0], w[key][1], 0.0))
+                w[key] = [x, z]
+    if "control" in props:
+        props["control"]["half"] = size(props["control"]["half"])
+    if "steam" in props:
+        s = props["steam"]
+        s["half"] = size(s["half"])
+        panes = []
+        for x0, x1, y0, y1 in s.get("screens", ()):
+            a, b = turn @ Vector((x0, y0, 0.0)), turn @ Vector((x1, y1, 0.0))
+            # The app's x is Blender's, its z Blender's -y.
+            panes.append([round(min(a.x, b.x), 4), round(max(a.x, b.x), 4), round(min(-a.y, -b.y), 4), round(max(-a.y, -b.y), 4)])
+        if panes:
+            s["screens"] = panes
+    return props
+
+
 def join_piece(objs, name, col=None):
     """Join a piece of furniture: everything that stays put into one object,
     as join does, and each leaf or drawer marked by hinged or sliding into
@@ -456,8 +563,12 @@ def join_piece(objs, name, col=None):
         {"type": "hinge", "angle": radians about the up axis}
         {"type": "slide", "distance": metres, "direction": [x, y, z]}
 
-    the direction in the app's axes (glTF's: x, z, -y of Blender's). A
-    fixture marker stays an empty node of the piece, its extras kept."""
+    the direction in the app's axes (glTF's: x, z, -y of Blender's); a
+    hinge hung on another axis has that `axis` too, in the same axes; and
+    either has a `label` where hinged or sliding was given one. A fixture
+    marker stays an empty node of the piece, its extras kept; a water
+    fixture's (water, control, steam) with its sizes in the app's axes and
+    no turn of its own (_in_app_axes)."""
     objs = [o for o in objs if o is not None]
     markers = [o for o in objs if o.type == "EMPTY"]
     units, still = {}, []
@@ -486,9 +597,9 @@ def join_piece(objs, name, col=None):
                 leaf.data.transform(Matrix.Translation(-pivot))
                 leaf.location = pivot
                 leaf.parent = body
-                if opens["type"] == "slide":
-                    d = m.to_3x3() @ Vector((1, 0, 0))
-                    opens["direction"] = [round(d.x, 5), round(d.z, 5), round(-d.y, 5)]
+                if opens["type"] == "slide" or marker.get("axis"):
+                    d = (m.to_3x3() @ Vector((1, 0, 0))).normalized()
+                    opens["direction" if opens["type"] == "slide" else "axis"] = [round(d.x, 5), round(d.z, 5), round(-d.y, 5)]
                 if "unit" in leaf:
                     del leaf["unit"]
                 leaf["opens"] = opens
@@ -498,6 +609,9 @@ def join_piece(objs, name, col=None):
                 d = (m.to_3x3() @ Vector((1, 0, 0))).normalized()
                 marker["fixture"]["light"]["aim"] = [round(d.x, 4), round(d.z, 4), round(-d.y, 4)]
                 del marker["aimed"]
+            if {"water", "control", "steam"} & set(marker["fixture"].keys()):
+                marker["fixture"] = _in_app_axes(marker["fixture"].to_dict(), m.to_3x3().normalized())
+                m = Matrix.Translation(m.to_translation())
             marker.matrix_basis = m
             marker.name = f"{name}.{marker.name}"
             marker.parent = body

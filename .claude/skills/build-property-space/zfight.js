@@ -17,7 +17,10 @@
 // and pairs from different surfaces (another mesh, or another material)
 // whose overlap within the plane is over `minArea` m² are clipped and
 // gathered into clusters by place and material pair: where two surfaces
-// draw to the same depth and flicker against each other.
+// draw to the same depth and flicker against each other. Two meshes that
+// draw one geometry at one place are one surface drawn in passes (the
+// pool's water and its depth pass), not a pair. Returns { triangles, pairs,
+// clusters, list } (the first `limit` clusters, largest first).
 (() => {
     const SKIP = /sky-dome|flora|hedge|grass|blade|tuft|tree|leaves|bark|lawn-shells|shadow|helper/i;
     const v = (x, y, z) => ({ x, y, z });
@@ -94,6 +97,9 @@
             };
             const id = meshIndex++;
             const label = `${node.name || node.type}${node.userData?.id ? ` #${node.userData.id}` : ""}`;
+            // One geometry drawn at one place by two meshes is one surface drawn in passes (the pool's water over its
+            // depth pass, LandscapeBuilder's poolWater), not two surfaces: such a pair is left out.
+            const surface = `${geometry.uuid}|${Array.from(e, (x) => x.toFixed(4)).join(",")}`;
             for (const group of groups) {
                 const material = materials[group.materialIndex ?? 0];
                 if (!material || material.visible === false) continue;
@@ -105,7 +111,7 @@
                     if (twice < 2e-4) continue;
                     n.x /= twice; n.y /= twice; n.z /= twice;
                     tris.push({
-                        mesh: id, label, material: material.name || material.type, side,
+                        mesh: id, surface, label, material: material.name || material.type, side,
                         // A depth offset decides between two surfaces that have different ones.
                         offset: material.polygonOffset ? `${material.polygonOffsetFactor},${material.polygonOffsetUnits}` : "0,0",
                         textured: Boolean(material.map || material.normalMap),
@@ -164,6 +170,7 @@
             const consider = (t, o) => {
                 if (t === o) return;
                 if (t.mesh === o.mesh && t.material === o.material) return;
+                if (t.mesh !== o.mesh && t.surface === o.surface) return;
                 // The same plain colour either way draws the same (a textured one,
                 // mapped per panel, still shimmers); an offset that differs settles it.
                 if (sameLook && t.material === o.material && !t.textured) return;

@@ -764,9 +764,13 @@ export default class LampPool {
     /** Where whatever moves has moved since the last frame. */
     moved() {
         const moved = [];
+        const parts = this.builder.openables?.byNode;
         for (const entry of this.movers()) {
             const { object } = entry;
-            object.updateWorldMatrix(true, false);
+            // (A furniture's door or drawer at rest stands where the last frame drawn put it — its matrix brought up to
+            // date then: not worked out again, for each of hundreds, its piece and its room above it. LiveLamps' too.)
+            const part = parts?.get(object);
+            if (!part || part.isMoving || !entry.last) object.updateWorldMatrix(true, false);
             const now = object.matrixWorld.elements;
             // Something hidden casts nothing wherever it goes; shown or hidden, it counts.
             if (entry.last && entry.visible === object.visible && (!object.visible || still(entry.last, now))) continue;
@@ -778,16 +782,18 @@ export default class LampPool {
     }
 
     /**
-     * What moves and casts a shadow: door leaves, furniture's doors and
-     * drawers, cars, other people, and the visitor — whose shadow would
-     * otherwise stay where it was drawn (hidden, in the first person or in
-     * the car, it is tracked still, for its going to count).
+     * What moves and casts a shadow: door leaves, windows' sashes,
+     * furniture's doors and drawers, cars, other people, and the visitor —
+     * whose shadow would otherwise stay where it was drawn (hidden, in the
+     * first person or in the car, it is tracked still, for its going to
+     * count).
      */
     movers() {
         const objects = [];
         const own = this.world.player?.avatar?.avatar;
         if (own) objects.push(own);
         for (const door of this.builder.doors || []) for (const { leaf } of door.leaves) objects.push(leaf);
+        for (const sash of this.builder.windows || []) objects.push(sash.leaf);
         for (const part of this.builder.openables?.parts || []) objects.push(part.node);
         for (const car of this.builder.cars || []) objects.push(car.group);
         for (const other of Object.values(this.world.player?.otherPlayers || {})) if (other.model?.avatar) objects.push(other.model.avatar);

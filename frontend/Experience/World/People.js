@@ -8,6 +8,8 @@ import { INDOOR } from "./Sky.js";
 import { applyReflection } from "../Utils/reflections.js";
 import { QUALITY, onQualityChange } from "../Utils/device.js";
 import { seatsOf } from "../../../shared/people.js";
+// (Shared with the visitor's own figure, which sits by the same clips: Player/Avatar.js.)
+import { canonical, fitClip } from "../Utils/fitClip.js";
 
 /**
  * The people round a property: standing in twos and threes on a terrace
@@ -348,6 +350,16 @@ export default class People extends EventEmitter {
         this.root.name = "people";
         this.root.visible = shown;
         this.scene.add(this.root);
+        /**
+         * Whether a rig nobody animates in a frame is passed over by that frame's walk of the scene's matrices (tick): in
+         * a public view, whose scene is held still (SceneBuilder.holdStill) — the people's own group with it, which never
+         * moves — and where nobody moves a person but its clip. The editor moves them, and walks them all as ever.
+         */
+        this.passOver = Boolean(this.experience.publicView);
+        if (this.passOver) {
+            this.root.updateMatrix();
+            this.root.matrixAutoUpdate = false;
+        }
 
         /** id -> person (its record: entry, group, model, mixer, …) */
         this.people = new Map();
@@ -1380,24 +1392,36 @@ export default class People extends EventEmitter {
         _frustum.setFromProjectionMatrix(_matrix);
         camera.getWorldPosition(_eye);
         this.frame++;
-        const stats = { shown: 0, inView: 0, animated: 0 };
+        const stats = (this.stats ??= { shown: 0, inView: 0, animated: 0 });
+        stats.shown = stats.inView = stats.animated = 0;
         const drawn = this.root.visible;
         for (const person of this.people.values()) {
             person.pending += delta;
-            if (!drawn || !person.group.visible || !person.action) continue;
-            stats.shown++;
-            if (!_frustum.intersectsSphere(person.sphere)) continue;
-            stats.inView++;
-            const distance = _eye.distanceTo(person.sphere.center);
-            if (distance > rates.still) continue;
-            const every = distance <= rates.near ? rates.every : rates.farEvery;
-            if ((this.frame + person.index) % Math.max(1, every)) continue;
-            person.mixer.update(person.pending);
-            finish(person, person.pending);
-            person.pending = 0;
-            stats.animated++;
+            const turned = drawn && this.turn(person, rates, stats);
+            // Not animated this frame, its bones stand as the frame before drew them: their frames are not worked out again
+            // (passOver) — a rig is some seventy objects, and of Ladonia's twelve people a frame animates four or five.
+            if (this.passOver) person.group.matrixWorldAutoUpdate = turned;
         }
-        this.stats = stats;
+    }
+
+    /**
+     * A person's clip on by the time it has waited, if it is drawn, in view
+     * and near enough, and its turn has come round (tick) — whether it was.
+     */
+    turn(person, rates, stats) {
+        if (!person.group.visible || !person.action) return false;
+        stats.shown++;
+        if (!_frustum.intersectsSphere(person.sphere)) return false;
+        stats.inView++;
+        const distance = _eye.distanceTo(person.sphere.center);
+        if (distance > rates.still) return false;
+        const every = distance <= rates.near ? rates.every : rates.farEvery;
+        if ((this.frame + person.index) % Math.max(1, every)) return false;
+        person.mixer.update(person.pending);
+        finish(person, person.pending);
+        person.pending = 0;
+        stats.animated++;
+        return true;
     }
 
     /** New materials lit as the rest of the scene is: the sky's share, a room's glow. */
@@ -1600,11 +1624,6 @@ function chosen(entries, most) {
 // Characters and their clips
 // ----------------------------------------------------------------------
 
-/** A bone's name without its rig's prefix: `mixamorigHips`, `mixamorig:Hips` and `Hips` are all `Hips`. */
-function canonical(name) {
-    return String(name ?? "").replace(/^.*mixamorig\d*[:_]?/i, "");
-}
-
 /** A character as a person is made of it: its scene, its bones by name, its clips, its materials' copies. */
 function makeCharacter(description, gltf) {
     const source = gltf.scene;
@@ -1720,35 +1739,6 @@ function cloneCharacter(source, same) {
         node.bind(skeleton, between ? _matrix.multiplyMatrices(between, node.bindMatrix) : node.bindMatrix);
     });
     return { clone, skeletons: [...shared.values()] };
-}
-
-/**
- * A clip of the shared file as it plays on `character`: its tracks named
- * for the character's bones; only rotations, and the hips' movement, kept
- * — each character's bones keep their own lengths — and the hips'
- * movement scaled from the height of the clips' skeleton's hips at rest
- * (`standHips`) to the character's own — or by `ratio`, the index's
- * character.hips / clips.hips, when it has them.
- */
-function fitClip(clip, character, standHips, ratio = null) {
-    const scale = ratio ?? (standHips && character.hipsLength ? character.hipsLength / standHips : 1);
-    const tracks = [];
-    for (const track of clip.tracks) {
-        const { nodeName, propertyName } = THREE.PropertyBinding.parseTrackName(track.name);
-        const bone = canonical(nodeName);
-        const name = character.boneNames.get(bone);
-        if (!name) continue;
-        const hips = bone === "Hips";
-        if (propertyName === "position" && !hips) continue;
-        if (propertyName === "scale") continue;
-        const copy = track.clone();
-        copy.name = `${name}.${propertyName}`;
-        if (hips && propertyName === "position" && scale !== 1) {
-            for (let i = 0; i < copy.values.length; i++) copy.values[i] *= scale;
-        }
-        tracks.push(copy);
-    }
-    return { fitted: new THREE.AnimationClip(clip.name, clip.duration, tracks), scale: Number.isFinite(scale) && scale > 0 ? scale : 1 };
 }
 
 /**

@@ -1,7 +1,9 @@
 import * as THREE from "three";
 
 import { FINISHES } from "../../../shared/catalog.js";
+import { driveBounds } from "../../../shared/drive.js";
 import { terrainHeight } from "../../../shared/landscape.js";
+import { planStoreys } from "../../../shared/storeys.js";
 
 /**
  * Where a visitor's camera can be, sampled densely enough that every
@@ -22,7 +24,8 @@ import { terrainHeight } from "../../../shared/landscape.js";
  *     and on a roof terrace, over the rooms under it.
  *   - the bird's-eye view of each floor: an orbit around targets across
  *     the floor, at the distances and angles that view allows (BIRD_VIEW),
- *     with everything above the floor taken away.
+ *     with everything above the floor taken away; and of the ground floor
+ *     from wherever past it a car can take that view (driveViewpoints).
  *
  * A sample inside a wall or a sofa would see the insides of things nobody
  * else can, so each walking sample is tested against the collision tree
@@ -40,6 +43,14 @@ export const BIRD_VIEW = {
     minPitch: 30,
     azimuths: 8,
 };
+
+/**
+ * The rings of targets round the ground floor a car can take the bird's-eye
+ * view out to: the first this far out from its box — half the furthest the
+ * camera stands from its target — and spaced along it twice as far; each
+ * ring then twice as far out as the last, and twice as sparse.
+ */
+const DRIVE_RING = BIRD_VIEW.maxDistance / 2;
 
 const ROOM_SPACING = 0.7;
 const WALL_CLEARANCE = 0.25;
@@ -216,7 +227,8 @@ function clear(point, collision) {
  * @param {number[]} levels  floor heights, lowest first
  * @param {object} [options]
  * @param {() => number} [options.jitter]  random source for a validation set
- * @returns {{ level: number, position: THREE.Vector3, target: THREE.Vector3 }[]}
+ * @returns {{ level: number, position: THREE.Vector3, target: THREE.Vector3, ceilingFrom?: number }[]}
+ *          `ceilingFrom`: the lowest level whose ceilings are taken away too (a storey's), where not `level`'s alone
  */
 export function birdViewpoints(spec, levels, { jitter = null } = {}) {
     const views = [];
@@ -254,6 +266,97 @@ export function birdViewpoints(spec, levels, { jitter = null } = {}) {
             }
         }
     });
+    views.push(...driveViewpoints(spec, levels, jitter));
+    return views;
+}
+
+/**
+ * Bird's-eye samples of the ground floor from where a car takes the view
+ * past its rooms (World/BirdView.js follows a car driven from above over
+ * its ground, to the ground's edge: shared/drive.js), which no floor's own
+ * samples look from. The targets stand on rings round the ground floor's
+ * box, DRIVE_RING out and then each twice as far out and twice as sparse,
+ * as far as the ground goes, at the ground's height; each is orbited as a
+ * floor's targets are, but only the views with the houses in frame are
+ * kept — nothing else out there is ever thrown away (the terrain, the
+ * landscape and the neighbourhood are kept whole: Snapshot.js), and a
+ * frame of nothing but grass would cost its render for nothing. Drawn as
+ * the view shows the ground floor: every level of it, none of its ceilings.
+ *
+ * None where a car has no ground past the rooms.
+ */
+function driveViewpoints(spec, levels, jitter) {
+    const ground = driveBounds(spec);
+    if (!ground || !spec.rooms?.length) return [];
+    const storey = planStoreys(spec.rooms, levels).list[0];
+    if (!storey?.rooms.length) return [];
+    const floor = bounds(storey.rooms.map((room) => room.polygon));
+    const terrain = spec.landscape?.terrain ?? null;
+    const heightAt = (x, z) => (terrain ? terrainHeight(terrain, x, z) : storey.elevation);
+
+    // What is in frame is tested against the houses — every floor's rooms indoors, the height of them all — and
+    // the ground round them a visitor walks (OUTSIDE_MARGIN): what of it is not kept whole, the furniture on the
+    // terraces, the fence round the plot. (A garden, a drive or a road is a slab whose top every sample sees.)
+    const houses = spec.rooms.filter((room) => !outdoor(room));
+    const all = bounds((houses.length ? houses : spec.rooms).map((room) => room.polygon));
+    const low = Math.min(...spec.rooms.map((room) => room.elevation ?? 0));
+    const high = Math.max(...spec.rooms.map((room) => (room.elevation ?? 0) + (room.height ?? 3)));
+    const rooms = new THREE.Box3(
+        new THREE.Vector3(all.minX - OUTSIDE_MARGIN, low, all.minZ - OUTSIDE_MARGIN),
+        new THREE.Vector3(all.maxX + OUTSIDE_MARGIN, high, all.maxZ + OUTSIDE_MARGIN)
+    );
+    // As Snapshot.js's IdPass draws it: a little wider than the view.
+    const camera = new THREE.PerspectiveCamera(BIRD_VIEW.fov + 8, 4 / 3, 0.1, 400);
+    const frustum = new THREE.Frustum();
+    const matrix = new THREE.Matrix4();
+    const inFrame = (position, target) => {
+        camera.position.copy(position);
+        camera.lookAt(target);
+        camera.updateMatrixWorld(true);
+        matrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+        return frustum.setFromProjectionMatrix(matrix).intersectsBox(rooms);
+    };
+
+    const level = storey.levels[storey.levels.length - 1];
+    const ceilingFrom = storey.levels[0];
+    const views = [];
+    for (let ring = 0; ; ring++) {
+        const out = DRIVE_RING * (2 ** (ring + 1) - 1);
+        const spacing = DRIVE_RING * 2 ** (ring + 1);
+        const minX = floor.minX - out;
+        const maxX = floor.maxX + out;
+        const minZ = floor.minZ - out;
+        const maxZ = floor.maxZ + out;
+        // Past the ground on every side: no ring further out has any of it.
+        if (minX <= ground.minX && maxX >= ground.maxX && minZ <= ground.minZ && maxZ >= ground.maxZ) break;
+        const w = maxX - minX;
+        const d = maxZ - minZ;
+        const perimeter = 2 * (w + d);
+        const count = Math.ceil(perimeter / spacing);
+        for (let i = 0; i < count; i++) {
+            // Round the ring from its corner, evenly.
+            let s = ((i + (jitter ? jitter() : 0.5)) / count) * perimeter;
+            let x;
+            let z;
+            if (s < w) [x, z] = [minX + s, minZ];
+            else if ((s -= w) < d) [x, z] = [maxX, minZ + s];
+            else if ((s -= d) < w) [x, z] = [maxX - s, maxZ];
+            else [x, z] = [minX, maxZ - (s - w)];
+            if (x < ground.minX || x > ground.maxX || z < ground.minZ || z > ground.maxZ) continue;
+            const target = new THREE.Vector3(x, heightAt(x, z) + 1, z);
+            for (const distance of BIRD_VIEW.distances) {
+                for (const pitch of BIRD_VIEW.pitches) {
+                    for (let a = 0; a < BIRD_VIEW.azimuths; a++) {
+                        const dd = jitter ? THREE.MathUtils.lerp(BIRD_VIEW.minDistance, BIRD_VIEW.maxDistance, jitter()) : distance;
+                        const p = THREE.MathUtils.degToRad(jitter ? THREE.MathUtils.lerp(BIRD_VIEW.minPitch, 89, jitter()) : pitch);
+                        const az = ((a + (jitter ? jitter() : 0)) / BIRD_VIEW.azimuths) * Math.PI * 2;
+                        const position = new THREE.Vector3(Math.cos(p) * Math.sin(az), Math.sin(p), Math.cos(p) * Math.cos(az)).multiplyScalar(dd).add(target);
+                        if (inFrame(position, target)) views.push({ level, ceilingFrom, position, target });
+                    }
+                }
+            }
+        }
+    }
     return views;
 }
 

@@ -73,10 +73,15 @@
                     <div class="avatar-grid"></div>
                     <p class="controls-hint">
                         <b>Mouse</b> look · <b>WASD</b> move · <b>Shift</b> run ·
-                        <b>Space</b> jump · <b>E</b> open doors ·
+                        <b>Space</b> jump · <b>E</b> open doors and windows, sit, switch on a TV ·
+                        <!-- Where the space has a pool (index.js's showKeyHints). -->
+                        <span data-pool-hint hidden><b>Space</b> at the pool's edge: climb out ·</span>
+                        <span data-key-hint="room-lights" hidden><b>Q</b> room lights ·</span>
                         <span data-edit-only><b>T</b> change finish ·</span>
                         <b>V</b> first / third person ·
                         <span data-public-only><b>B</b> each floor from above ·</span>
+                        <!-- Shown where the key is offered (shared/interact.js's KEYS, index.js's showKeyHints). -->
+                        <span data-key-hint="colliders" hidden><b>C</b> colliders ·</span>
                         <span data-edit-only><b>Tab</b> edit mode ·</span>
                         <b>M</b> menu · <b>Enter</b> chat · <b>Esc</b> free cursor
                     </p>
@@ -129,6 +134,14 @@
                     <kbd>Tab</kbd>
                 </button>
                 <div class="room-readout" id="room-readout"></div>
+                <!-- The lights of the room the visitor is in, all at once (Q: Player.toggleRoomLights): shown in a room
+                     that has switches, lit while any of them is on. -->
+                <button class="view-toggle room-lights" id="room-lights" hidden aria-pressed="false"
+                        title="Turn this room's lights on or off (Q)">
+                    <span class="lights-toggle-icon" aria-hidden="true"></span>
+                    <span class="view-toggle-label" id="room-lights-label">Lights off</span>
+                    <kbd>Q</kbd>
+                </button>
             </div>
 
             <!-- Which floor the bird's-eye view shows. -->
@@ -143,11 +156,16 @@
             <!-- The live room, said in the view: its key at the first room it would draw, that it is coming, on, off (index.js's sayRoomLight). -->
             <div class="room-light-hint" id="room-light-hint" role="status" hidden><kbd>K</kbd> See this room live</div>
 
+            <!-- What Q did, said a moment over the crosshair, clear of the live room's line (index.js's saySwitched). -->
+            <div class="room-light-hint room-lights-said" id="room-lights-said" role="status" hidden></div>
+
             <div class="inspect-label" id="inspect-label"></div>
 
             <!-- Contextual action for whatever the crosshair is on. -->
             <div class="action-prompt" id="action-prompt" hidden>
                 <kbd id="action-key">E</kbd><span id="action-label"></span>
+                <!-- What another key does there (a prompt's `also`): seated before a television, Space gets up. -->
+                <span class="action-also" id="action-also" hidden><kbd id="action-also-key">Space</kbd><span id="action-also-label"></span></span>
             </div>
 
             <!-- The same action on a touch screen: a button on the right edge,
@@ -155,6 +173,13 @@
             <button class="touch-action" id="touch-action" hidden>
                 <span class="touch-action-icon" id="touch-action-icon" aria-hidden="true"></span>
                 <span class="touch-action-label" id="touch-action-label"></span>
+            </button>
+
+            <!-- The room's lights on a touch screen, as Q switches them: over the action's button, in a room that
+                 has switches. -->
+            <button class="touch-action touch-room-lights" id="touch-room-lights" hidden aria-label="Turn this room's lights on">
+                <span class="touch-action-icon" data-icon="light" aria-hidden="true"></span>
+                <span class="touch-action-label" id="touch-room-lights-label">On</span>
             </button>
 
             <!-- Finish picker, acting on the surface under the crosshair. -->
@@ -170,12 +195,15 @@
             <div class="lock-hint">
                 <span class="lock-hint-main">Click to look around</span>
                 <span class="lock-hint-sub">
-                    <b>V</b> first / third person · <b>E</b> opens a door
+                    <b>V</b> first / third person · <b>E</b> opens a door or a window, sits you down, switches on a TV
+                    <span data-key-hint="room-lights" hidden>· <b>Q</b> the room's lights</span>
                     <span data-public-only>· <b>B</b> each floor from above</span>
+                    <span data-key-hint="colliders" hidden>· <b>C</b> colliders (<b>Shift</b> <b>C</b> x-ray)</span>
+                    <span data-pool-hint hidden>· <b>Space</b> at the pool's edge climbs out</span>
                     <span data-edit-only>· <b>T</b> changes a finish · <b>P</b> realistic preview · <b>Tab</b> edit mode</span>
                 </span>
                 <span class="lock-hint-sub">
-                    <b>F</b> drives the car, <b>H</b> its headlights ·
+                    <b>F</b> drives the car<span data-public-only>, from above too</span>, <b>H</b> its headlights ·
                     <b>Esc</b> frees the cursor · <b>M</b> opens the menu ·
                     <b>Enter</b> to chat
                 </span>
@@ -238,6 +266,19 @@
                 <div class="hud-panel-section" id="scenery-section" hidden>
                     <h5>Scenery</h5>
                     <div class="light-switches" id="scenery-list"></div>
+                </div>
+
+                <!-- What the visitor walks against, drawn as wireframes (Experience/Colliders.js): the editor's,
+                     and a public view's only when its link asks (?debug, ?colliders). -->
+                <div class="hud-panel-section" id="debug-section" hidden>
+                    <h5>Debug</h5>
+                    <div class="light-switches">
+                        <button class="light-switch" id="colliders-toggle" aria-pressed="false"
+                                title="Colliders: what the visitor walks against, drawn as wireframes (C; Shift+C x-ray, seen through walls)">
+                            <span class="light-switch-label">Colliders <kbd>C</kbd></span>
+                            <span class="light-switch-toggle" aria-hidden="true"></span>
+                        </button>
+                    </div>
                 </div>
 
                 <div class="hud-panel-section">

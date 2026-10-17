@@ -9,10 +9,22 @@
     position: absolute;
     top: 1.1rem;
     left: 1.1rem;
+    // As wide as the window lets it be, the same margin at the right as at
+    // the left: where the row is short of room, the room's name gives way
+    // (.room-readout), never the margin.
+    max-width: calc(100% - 2.2rem);
     display: flex;
     align-items: center;
     gap: 0.8rem;
     pointer-events: auto;
+
+    > * {
+        flex: none;
+    }
+
+    > .room-readout {
+        flex: 0 1 auto;
+    }
 }
 
 .hud-button {
@@ -51,10 +63,29 @@
     opacity: 0;
     transform: translateX(-6px);
     transition: opacity 0.25s ease, transform 0.25s ease;
+    // On one line, whatever the window: a name too long for the row is cut
+    // short with an ellipsis (its whole in the title: index.js), and the
+    // buttons beside it keep their size.
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 
     &.visible {
         opacity: 1;
         transform: none;
+    }
+}
+
+// A phone's row, its buttons their icons alone (.view-toggle): closer
+// together, so the room's name keeps a few letters beside the editor's six.
+@media (max-width: 640px) {
+    .hud-top-left {
+        gap: 0.5rem;
+    }
+
+    .room-readout {
+        padding: 0.45rem 0.6rem;
     }
 }
 
@@ -199,6 +230,20 @@ kbd {
     }
 }
 
+/* What another key does there, after a rule: seated before a television, Space gets up. */
+.action-also {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding-left: 0.6rem;
+    border-left: 1px solid var(--border);
+    color: var(--text-muted);
+
+    &[hidden] {
+        display: none;
+    }
+}
+
 /* On a touch screen the key hint means nothing: the button below does it. */
 .input-touch .action-prompt {
     display: none;
@@ -240,6 +285,28 @@ kbd {
     &[hidden],
     body:not(.input-touch) & {
         display: none;
+    }
+}
+
+/* The room's lights on a touch screen (Q's, index.js's renderRoomSwitches):
+   a smaller round button over the action's, its bulb lit while the room's
+   lights are on. */
+.touch-room-lights {
+    right: calc(env(safe-area-inset-right, 0px) + 1rem + 8px);
+    top: calc(55% - 80px);
+    width: 56px;
+    height: 56px;
+    gap: 3px;
+    border-color: var(--border-strong);
+
+    &.is-lit {
+        border-color: #ffd66e;
+
+        .touch-action-icon {
+            color: #ffd66e;
+            background: currentColor;
+            box-shadow: 0 0 8px 1px rgba(255, 214, 110, 0.55);
+        }
     }
 }
 
@@ -314,6 +381,141 @@ kbd {
             width: 4px;
             height: 4px;
             border-radius: 0 0 2px 2px;
+            background: currentColor;
+        }
+    }
+
+    // A chest of two drawers, each with its pull.
+    &[data-icon="drawer"] {
+        width: 20px;
+        height: 16px;
+        border: 2px solid currentColor;
+        border-radius: 2px;
+
+        &::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 5px;
+            height: 2px;
+            background: currentColor;
+        }
+
+        &::after {
+            content: "";
+            position: absolute;
+            left: 50%;
+            top: 2px;
+            width: 6px;
+            height: 2px;
+            margin-left: -3px;
+            border-radius: 1px;
+            background: currentColor;
+            box-shadow: 0 6px 0 currentColor;
+        }
+    }
+
+    // A chair, side on: its back, its seat and its legs.
+    &[data-icon="seat"] {
+        width: 14px;
+        height: 10px;
+        margin-top: 8px;
+        border: 2px solid currentColor;
+        border-bottom: 0;
+
+        &::before {
+            content: "";
+            position: absolute;
+            left: -2px;
+            bottom: 100%;
+            width: 2px;
+            height: 8px;
+            border-radius: 1px 1px 0 0;
+            background: currentColor;
+        }
+    }
+
+    // A screen on its stand.
+    &[data-icon="tv"] {
+        width: 22px;
+        height: 14px;
+        margin-bottom: 5px;
+        border: 2px solid currentColor;
+        border-radius: 2px;
+
+        &::before {
+            content: "";
+            position: absolute;
+            left: 50%;
+            top: 100%;
+            width: 2px;
+            height: 3px;
+            margin: 2px 0 0 -1px;
+            background: currentColor;
+        }
+
+        &::after {
+            content: "";
+            position: absolute;
+            left: 50%;
+            top: 100%;
+            width: 10px;
+            height: 2px;
+            margin: 5px 0 0 -5px;
+            border-radius: 1px;
+            background: currentColor;
+        }
+    }
+
+    // A drop of water.
+    &[data-icon="water"] {
+        width: 13px;
+        height: 13px;
+        margin-top: 4px;
+        border: 2px solid currentColor;
+        border-radius: 0 50% 50% 50%;
+        transform: rotate(45deg);
+    }
+
+    // A pool's ladder: its two rails curved over at the top, and its rungs.
+    &[data-icon="pool"] {
+        width: 16px;
+        height: 18px;
+        border: 2px solid currentColor;
+        border-bottom: 0;
+        border-radius: 7px 7px 0 0;
+        background:
+            linear-gradient(currentColor, currentColor) 0 6px / 100% 2px no-repeat,
+            linear-gradient(currentColor, currentColor) 0 11px / 100% 2px no-repeat;
+    }
+
+    // A window of four panes.
+    &[data-icon="window"] {
+        width: 18px;
+        height: 18px;
+        border: 2px solid currentColor;
+        border-radius: 1px;
+
+        &::before {
+            content: "";
+            position: absolute;
+            left: 50%;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            margin-left: -1px;
+            background: currentColor;
+        }
+
+        &::after {
+            content: "";
+            position: absolute;
+            top: 50%;
+            left: 0;
+            right: 0;
+            height: 2px;
+            margin-top: -1px;
             background: currentColor;
         }
     }
@@ -550,6 +752,36 @@ kbd {
     }
 }
 
+// The lights of the room the visitor is in (Q), by the room's name: its
+// bulb lit while any of them is on. A touch screen has its own round button
+// for it (.touch-room-lights).
+.room-lights {
+    flex: none;
+
+    &[hidden],
+    .input-touch & {
+        display: none;
+    }
+
+    &.is-lit {
+        border-color: rgba(255, 214, 110, 0.45);
+    }
+}
+
+// Where the row along the top is short of room — the editor's has two buttons more than a public view's — the bulb
+// and its key say it alone, and the room's name keeps its room.
+@media (max-width: 1279px) {
+    body:not(.public-view) .room-lights .view-toggle-label {
+        display: none;
+    }
+}
+
+@media (max-width: 1023px) {
+    .room-lights .view-toggle-label {
+        display: none;
+    }
+}
+
 .lights-panel {
     // Clear of the menu's spot, which it closes; as wide as a row of names.
     width: min(300px, calc(100vw - 2.2rem));
@@ -642,6 +874,16 @@ kbd {
     white-space: nowrap;
 
     &[hidden] {
+        display: none;
+    }
+}
+
+// What the room's lights key did (index.js's saySwitched), for a moment: over the crosshair, where the eye is,
+// and clear of the live room's line under it and the action prompt — the two can be said at once.
+.room-lights-said {
+    top: 36%;
+
+    .input-touch & kbd {
         display: none;
     }
 }
@@ -886,6 +1128,12 @@ body:not(.public-view) [data-public-only] {
         &:active {
             cursor: grabbing;
         }
+    }
+
+    // Under the floor picker, whose line it would otherwise cover on a
+    // narrow window (the car's keys, said as a drive begins up here).
+    .view-notice {
+        top: calc(1.1rem + 96px);
     }
 }
 

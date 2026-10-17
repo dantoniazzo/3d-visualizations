@@ -24,6 +24,10 @@ const CEILING_WATTS = 9;
 const CEILING_MIN_WATTS = 40;
 /** A warm bulb. */
 const CEILING_COLOR = "#ffd6a3";
+/** How far over the top of a piece's parts that open its lamp's bulb must be for the parts to be aimed at under it (aimedAt), in metres... */
+const LAMP_OVER_PARTS = 0.1;
+/** ...and, then, how far from its bulb, across the floor, the lamp is taken to reach: a table lamp's shade and foot. */
+const LAMP_REACH = 0.3;
 
 /**
  * The two kinds of ceiling light: an opal globe on a cord, and an opal
@@ -113,6 +117,7 @@ export function gatherLights(builder) {
         // the flat upstairs — or, hanging over a terrace (a room only a slab
         // deep), the one under it.
         box.getCenter(middle);
+        const aimed = aimedAt(group, box);
         let room;
         group.traverse((node) => {
             const light = node.userData?.light;
@@ -143,7 +148,7 @@ export function gatherLights(builder) {
                 glow: light.glow ?? "linen_white",
                 radius: light.radius ?? 0.022,
                 size: 0.02,
-                targets: [{ part: "light", box: [...box.min.toArray(), ...box.max.toArray()].map(round) }],
+                targets: [{ part: "light", box: [...aimed.min.toArray(), ...aimed.max.toArray()].map(round) }],
             });
         });
     }
@@ -204,6 +209,48 @@ export function distinguish(lights) {
     }
     for (const light of lights) if (labels.has(light.switch)) light.label = labels.get(light.switch);
     return lights;
+}
+
+/**
+ * Where a lamp that is part of a piece is pointed at (gatherLights' target):
+ * the piece's whole box, a little over — but, on a piece whose doors or
+ * drawers open (Openables.js) under its lamp, the lamp alone: what is drawn
+ * of the piece over the top of those parts within LAMP_REACH of a bulb,
+ * across the floor, a little over. A light's box met first, or within a
+ * hand's breadth of a door, is the light (shared/interact.js), and
+ * ld-cabinet's two doors, under the lamp that stands on it, could never be
+ * opened: E switched the lamp (2026-10-16). The piece's box from the top of
+ * its doors up would not do either: its box in the world, the piece turned
+ * a little, stands out in front of its doors, and from close by the
+ * crosshair aimed down at them passed through it first. A lamp with a part
+ * over or beside its bulb keeps the whole box.
+ *
+ * @param {THREE.Object3D} group  the piece, its world matrices up to date
+ * @param {THREE.Box3} box  its box, a little over
+ */
+function aimedAt(group, box) {
+    let parts = -Infinity;
+    const bulbs = [];
+    group.traverse((node) => {
+        if (node !== group && node.userData?.opens) parts = Math.max(parts, new THREE.Box3().setFromObject(node).max.y);
+        const at = node.userData?.light?.at;
+        // (Blender's (x, y, z), in the node's own coordinates, is glTF's (x, z, -y), as gatherLights reads it.)
+        if (at) bulbs.push(new THREE.Vector3(at[0], at[2], -at[1]).applyMatrix4(node.matrixWorld));
+    });
+    if (!Number.isFinite(parts) || !bulbs.length || !bulbs.every((bulb) => bulb.y > parts + LAMP_OVER_PARTS)) return box;
+    const lamp = new THREE.Box3();
+    const corner = new THREE.Vector3();
+    const visit = (node) => {
+        if (node !== group && node.userData?.opens) return;
+        const position = node.isMesh ? node.geometry?.attributes.position : null;
+        for (let i = 0; position && i < position.count; i++) {
+            corner.fromBufferAttribute(position, i).applyMatrix4(node.matrixWorld);
+            if (corner.y > parts + 0.03 && bulbs.some((bulb) => Math.hypot(corner.x - bulb.x, corner.z - bulb.z) <= LAMP_REACH)) lamp.expandByPoint(corner);
+        }
+        for (const child of node.children) visit(child);
+    };
+    visit(group);
+    return lamp.isEmpty() ? box : lamp.expandByScalar(0.03);
 }
 
 /**

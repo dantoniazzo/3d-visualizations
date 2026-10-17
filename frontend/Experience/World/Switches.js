@@ -113,6 +113,11 @@ export default class Switches extends EventEmitter {
         return Boolean(this.states.get(this.variant)?.has(id));
     }
 
+    /** A room's switches — its ceiling light's, and its lamps' of their own — by the room's id (none for null). */
+    inRoom(roomId) {
+        return roomId ? this.list.filter((item) => item.room === roomId) : [];
+    }
+
     /** Whether a switch starts on: a room's ceiling light at night, and by day in a room daylight does not reach. */
     startsOn(variant, item) {
         return item.kind === "ceiling" && (variant === "night" || this.dark.has(item.room));
@@ -254,6 +259,27 @@ export default class Switches extends EventEmitter {
 
     toggle(id) {
         return this.set(id, !this.isOn(id));
+    }
+
+    /**
+     * Turn several switches on or off at once — a room's (the Q key): shown
+     * as asked at once, as set's are, and lit together, once all of their
+     * light is here — one change, not one a switch.
+     *
+     * @param {string[]} ids
+     * @param {boolean} on
+     */
+    async setMany(ids, on) {
+        const state = this.states.get(this.variant);
+        const items = ids.map((id) => this.byId.get(id)).filter(Boolean);
+        if (!state || !items.length) return;
+        for (const { id } of items) {
+            if (on) state.add(id);
+            else state.delete(id);
+        }
+        this.emit("change");
+        if (on) await Promise.all(items.map((item) => this.load(item.index)));
+        this.apply();
     }
 
     /** Every switch off. */

@@ -250,7 +250,13 @@ export class GardenLights {
 
     /**
      * On at night, off by day. Coming on, the lights are where the visitor
-     * is (`point`) at once — nothing fades in with the dusk.
+     * is (`point`) at once — nothing fades in with the dusk. Going off,
+     * every one is put out and handed back, not only hidden with the group:
+     * left shining in it, the few that shone at night stayed lit by day
+     * (Ladonia, after night and back: five) to anything that asks a light
+     * rather than its parents — three leaves a hidden group's lights out
+     * of a frame, so nothing was lit by them, but they were counted as
+     * shining.
      */
     set(on, point = this.where) {
         this.on = on;
@@ -259,7 +265,18 @@ export class GardenLights {
         // Bright enough to bloom; drawn only at night (the group).
         // A warm glow along the edge, not a bright white line.
         this.led?.color.set("#ffb873").multiplyScalar(on ? 1.7 : 0);
-        if (on) this.hand(point ?? _at.set(0, 0, 0), true);
+        if (on) {
+            this.hand(point ?? _at.set(0, 0, 0), true);
+            return;
+        }
+        for (const place of this.places) {
+            place.lamp = place.next = null;
+            place.level = 0;
+        }
+        for (const lamp of this.lamps) {
+            lamp.light.visible = false;
+            lamp.light.intensity = 0;
+        }
     }
 
     dispose() {

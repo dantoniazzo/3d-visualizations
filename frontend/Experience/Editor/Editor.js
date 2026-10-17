@@ -179,6 +179,8 @@ export default class Editor extends EventEmitter {
         this.world.on("switches", () => this.ui.renderLights());
         this.world.on("lighting", () => this.emit("settings"));
         this.world.on("preview", () => this.emit("settings"));
+        // The header's toggle and the View menu, as the colliders are shown or hidden, whichever way (C, the walkthrough's menu).
+        this.world.on("colliders", () => this.emit("settings"));
         // The view's scope (World/Scope.js), changed — or no longer what is
         // drawn: the realistic preview and a publish draw everything. The
         // collections shown and hidden again, and whatever is selected that
@@ -1565,6 +1567,20 @@ export default class Editor extends EventEmitter {
     }
 
     /**
+     * The colliders drawn over the view or not (C), or — `xray`, Shift C —
+     * seen through everything or not (Experience/Colliders.js), said in a
+     * toast here: the walkthrough's own notice is hidden under edit mode.
+     */
+    toggleColliders({ xray = false } = {}) {
+        const colliders = this.experience.colliders;
+        if (!colliders?.available) return;
+        colliders.toggle({ xray });
+        if (!this.active) return;
+        if (!colliders.shown) this.ui.toast("Colliders hidden");
+        else this.ui.toast(colliders.xray ? "Colliders seen through everything (Shift C: the nearest only · C: hide)" : "Colliders shown (C: hide · Shift C: see through everything)");
+    }
+
+    /**
      * The light, or the wall switch, under the pointer on or off — when it
      * is in sight, not behind a wall: what the view lights live, never saved
      * with the scene. Whether there was one.
@@ -2018,6 +2034,13 @@ export default class Editor extends EventEmitter {
             return;
         }
 
+        // The colliders drawn or not (C, Shift C seen through everything: Experience/Colliders.js) — mid-move too, to
+        // see what the piece moved would meet. Every key is the editor's here, so this one is passed on by hand.
+        if (event.code === "KeyC" && !event.ctrlKey && !event.metaKey && !event.altKey) {
+            if (!event.repeat) this.toggleColliders({ xray: event.shiftKey });
+            return;
+        }
+
         if (this.session) {
             this.onSessionKey(event);
             return;
@@ -2242,7 +2265,8 @@ export default class Editor extends EventEmitter {
         // changes how anything else looks — the garden's grass least of all,
         // whose colour is worked out as it is drawn to the screen
         // (Vegetation/shaders.js).
-        renderer.render(scene, camera);
+        // (The scene but for what the stand-ins draw entirely, while they hold its units still: StandIns.drawnScene.)
+        renderer.render(this.world.standIns?.drawnScene() ?? scene, camera);
         const outline = this.selection ? this.selection.outlineObjects().filter(isShown) : [];
         if (outline.length) {
             this.ensureOutline();
@@ -2261,6 +2285,10 @@ export default class Editor extends EventEmitter {
                 renderer.shadowMap.autoUpdate = autoUpdate;
             }
         }
+
+        // The colliders, when shown (Experience/Colliders.js): cut by a room in focus as the scene is, behind what the
+        // frame's depth hides, and under the gizmo. (After the outline, which reads that depth as the scene left it.)
+        this.experience.colliders?.draw(renderer, camera, { depth: true });
 
         renderer.clippingPlanes = [];
         renderer.autoClear = false;

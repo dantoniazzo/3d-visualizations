@@ -99,8 +99,8 @@ const APART = 0.8;
 const NEAR_POOL = 3.5;
 const NEAR_TUB = 4.5;
 /** Seats people sit on: sitting height, and not a chaise's deep end (someone sitting there would sit as on a sofa, legs in it). */
-const SEAT_HEIGHT = [0.3, 0.62];
-const SEAT_DEPTH = [0.2, 0.78];
+export const SEAT_HEIGHT = [0.3, 0.62];
+export const SEAT_DEPTH = [0.2, 0.78];
 /** A seat shallower than this has a cushion propped against its back: sat on only when there is nowhere better. */
 const ROOMY = 0.4;
 /**
@@ -120,7 +120,7 @@ const FEET_MOST = 0.04;
  */
 const UNDER_MOST = 0.025;
 /** Where a seat's point is, out from the foot of its back (scripts/measure-seats.mjs's SIT_BACK): the middle, on a shallower seat. */
-const SIT_BACK = 0.15;
+export const SIT_BACK = 0.15;
 /**
  * A sitter's legs hang before the seat's front edge: their knees
  * LEG_CLEAR past it, in metres — the calf behind the shin's bone then
@@ -134,9 +134,9 @@ const SIT_BACK = 0.15;
  * of the seat is left under them; a clip that needs more is not for that
  * seat.
  */
-const LEG_CLEAR = 0.04;
-const HEEL_CLEAR = 0.06;
-const FORWARD_MOST = 0.15;
+export const LEG_CLEAR = 0.04;
+export const HEEL_CLEAR = 0.06;
+export const FORWARD_MOST = 0.15;
 const FORWARD_BACK = 0.08;
 const SEAT_UNDER = 0.12;
 /**
@@ -153,7 +153,7 @@ const LEG_SPACE = 1.2;
 const LEGS_APART = 0.15;
 const KNEE_HIGH = 0.62;
 /** How far a sofa's or a lounge chair's cushion gives under someone, in metres: they sit that much lower, when their feet would otherwise hang. */
-const GIVE = 0.03;
+export const GIVE = 0.03;
 /** A sitting clip whose head is this far behind its seat is one sat back in: for a seat out of doors, soft and at least RECLINE_DEPTH deep. */
 const RECLINED = 0.2;
 const RECLINE_DEPTH = 0.5;
@@ -936,7 +936,7 @@ function legSpace(site, seat) {
 }
 
 /** Where someone sits on a seat: its point, less what it gives under them, as far forward — the way it faces — as their legs need (casting's sitter). */
-function seatedAt(seat, give = 0, forward = 0) {
+export function seatedAt(seat, give = 0, forward = 0) {
     const [dx, dz] = facingOf(seat.facing);
     return [seat.at[0] + dx * forward, seat.at[1] - give, seat.at[2] + dz * forward];
 }

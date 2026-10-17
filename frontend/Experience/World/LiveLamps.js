@@ -210,18 +210,32 @@ export default class LiveLamps {
     /** Where whatever moves has moved since the last frame. */
     moved() {
         const objects = this.movers();
-        const moved = [];
-        for (const entry of objects) {
-            const { object } = entry;
-            object.updateWorldMatrix(true, false);
+        const moved = this.movedNow ?? (this.movedNow = []);
+        moved.length = 0;
+        for (let i = 0; i < objects.length; i++) {
+            const entry = objects[i];
+            const { object, still: rests } = entry;
+            // (A furniture's door or drawer, or a window's sash, at rest where it stood the frame before: passed over at
+            // once until it moves again — Ladonia has 475 and 59 of them, each looked up, its every parent asked whether it
+            // is shown and its frame compared, every frame, nearly all of them shut nearly always. The frame after it
+            // stops, it is looked at once more, as the last frame drew it.)
+            if (rests && entry.settled && !rests.isMoving) continue;
+            // (Not moving, it stands where the last frame drawn put it — its matrix brought up to date then — and is not
+            // worked out again, its piece and its room above it.)
+            if (!rests || rests.isMoving || !entry.last) object.updateWorldMatrix(true, false);
             const now = object.matrixWorld.elements;
             const visible = shown(object);
             // Something hidden casts nothing wherever it goes; shown or
             // hidden, it counts. And a visitor standing still settles where
             // they stand, a hair every frame — which drew the sun's shadow
             // again every frame, with nothing moving.
-            if (entry.last && entry.visible === visible && (!visible || still(entry.last, now))) continue;
-            entry.last = now.slice();
+            if (entry.last && entry.visible === visible && (!visible || still(entry.last, now))) {
+                if (rests && !rests.isMoving) entry.settled = true;
+                continue;
+            }
+            entry.settled = false;
+            entry.last ??= new Float64Array(16);
+            entry.last.set(now);
             entry.visible = visible;
             moved.push(object.getWorldPosition(new THREE.Vector3()));
         }
@@ -229,32 +243,89 @@ export default class LiveLamps {
     }
 
     /**
-     * What moves and casts a shadow: door leaves, furniture's doors and
-     * drawers, the visitors, the people round the property (World/People.js:
-     * each as it comes, goes or is hidden — not as it breathes, which would
-     * draw every shadow near it again every frame), cars.
+     * What moves and casts a shadow: door leaves, windows' sashes,
+     * furniture's doors and drawers, the visitors, the people round the
+     * property (World/People.js: each as it comes, goes or is hidden — not
+     * as it breathes, which would draw every shadow near it again every
+     * frame), cars. Each `{ object, last, visible, still }` — `still`, for a
+     * furniture's part or a sash, what says whether it is moving (moved) —
+     * the same list from frame to frame until something has come or gone
+     * (same), not made again every frame.
      */
     movers() {
+        if (this.list && this.same()) return this.list;
         const objects = [];
+        const rest = new Map();
         for (const door of this.builder.doors || []) for (const { leaf } of door.leaves) objects.push(leaf);
-        for (const part of this.builder.openables?.parts || []) objects.push(part.node);
+        for (const sash of this.builder.windows || []) {
+            objects.push(sash.leaf);
+            rest.set(sash.leaf, sash);
+        }
+        for (const part of this.builder.openables?.parts || []) {
+            objects.push(part.node);
+            rest.set(part.node, part);
+        }
         for (const car of this.builder.cars || []) objects.push(car.group);
         const player = this.world.player;
         if (player?.avatar) objects.push(player.avatar.avatar);
         for (const other of Object.values(player?.otherPlayers || {})) if (other.model?.avatar) objects.push(other.model.avatar);
-        const people = this.world.people?.list ?? [];
-        for (const person of people) objects.push(person.group);
+        for (const person of this.world.people?.people?.values() ?? []) objects.push(person.group);
         // Kept from frame to frame, so each knows where it was — and only
         // while it is there: a person built again is a new group.
         this.tracked ??= new Map();
-        if (this.tracked.size > objects.length + 64) {
-            const now = new Set(objects);
-            for (const object of this.tracked.keys()) if (!now.has(object)) this.tracked.delete(object);
-        }
-        return objects.map((object) => {
-            if (!this.tracked.has(object)) this.tracked.set(object, { object, last: null, visible: shown(object) });
+        const now = new Set(objects);
+        for (const object of this.tracked.keys()) if (!now.has(object)) this.tracked.delete(object);
+        this.list = objects.map((object) => {
+            if (!this.tracked.has(object)) this.tracked.set(object, { object, last: null, visible: shown(object), still: rest.get(object) ?? null, settled: false });
             return this.tracked.get(object);
         });
+        this.mark = this.markOf();
+        return this.list;
+    }
+
+    /** What the list of what moves was made from, by what it is made of and how many of each (movers, same). */
+    markOf() {
+        const builder = this.builder;
+        const player = this.world.player;
+        let others = 0;
+        for (const id in player?.otherPlayers) if (player.otherPlayers[id].model?.avatar) others++;
+        return {
+            doors: builder.doors ?? null,
+            doorCount: builder.doors?.length ?? 0,
+            windows: builder.windows ?? null,
+            windowCount: builder.windows?.length ?? 0,
+            parts: builder.openables?.parts ?? null,
+            partCount: builder.openables?.parts?.length ?? 0,
+            cars: builder.cars ?? null,
+            carCount: builder.cars?.length ?? 0,
+            avatar: player?.avatar?.avatar ?? null,
+            others,
+            people: this.world.people?.people?.size ?? 0,
+        };
+    }
+
+    /** Whether the list of what moves is still of what there is: the same lists, the same visitors and people among it. */
+    same() {
+        const mark = this.mark;
+        const builder = this.builder;
+        if (mark.doors !== (builder.doors ?? null) || mark.doorCount !== (builder.doors?.length ?? 0)) return false;
+        if (mark.windows !== (builder.windows ?? null) || mark.windowCount !== (builder.windows?.length ?? 0)) return false;
+        if (mark.parts !== (builder.openables?.parts ?? null) || mark.partCount !== (builder.openables?.parts?.length ?? 0)) return false;
+        if (mark.cars !== (builder.cars ?? null) || mark.carCount !== (builder.cars?.length ?? 0)) return false;
+        const player = this.world.player;
+        if (mark.avatar !== (player?.avatar?.avatar ?? null)) return false;
+        let others = 0;
+        for (const id in player?.otherPlayers) {
+            const avatar = player.otherPlayers[id].model?.avatar;
+            if (!avatar) continue;
+            if (!this.tracked.has(avatar)) return false;
+            others++;
+        }
+        if (others !== mark.others) return false;
+        const people = this.world.people?.people;
+        if ((people?.size ?? 0) !== mark.people) return false;
+        for (const person of people?.values() ?? []) if (!this.tracked.has(person.group)) return false;
+        return true;
     }
 
     dispose() {

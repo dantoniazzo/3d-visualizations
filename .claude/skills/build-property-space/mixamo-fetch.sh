@@ -6,8 +6,13 @@
 #
 #   mixamo-fetch.sh <links-dir> <repo>/assets/people        (run_in_background)
 #
-# Every 2 s, for each <links-dir>/<kind>__<name>.url — kind `characters` or
-# `animations`, the file holding the one link — it curls the link to
+# Every 2 s, for each <links-dir>/<kind>__<name>.url — kind `characters`,
+# `animations` (the people's clips) or `avatar` (the visitor's own clips, which
+# `npm run people -- --avatar-clips` reads from assets/people/avatar/; one named
+# `animations__…` would land among the people's clips, and the next
+# `npm run people` would plan it for them: blender/import_people.py's CLASSIFY
+# reads "Stand To Sit" as a sit pose and "Swimming" as a standing clip) — the
+# file holding the one link — it curls the link to
 # <dest>/<kind>/<name>.fbx (through a .part file, so a cut download leaves
 # nothing that looks whole), appends "ok <kind>/<name>.fbx <bytes>" or
 # "FAILED <kind>/<name>.fbx (<why>)" to <links-dir>/fetch.log (and prints it),
@@ -25,7 +30,7 @@ set -u
 usage="usage: mixamo-fetch.sh <links-dir> <dest: the assets/people folder of the repo>"
 links="${1:?$usage}"
 dest="${2:?$usage}"
-mkdir -p "$links/done" "$links/failed" "$dest/characters" "$dest/animations"
+mkdir -p "$links/done" "$links/failed" "$dest/characters" "$dest/animations" "$dest/avatar"
 log="$links/fetch.log"
 say() { echo "$1" | tee -a "$log"; }
 end=$(( $(date +%s) + 7200 ))
@@ -36,8 +41,8 @@ while [ ! -e "$links/STOP" ] && [ "$(date +%s)" -lt "$end" ]; do
         base="$(basename "$file" .url)"
         kind="${base%%__*}"
         name="${base#*__}"
-        if [ "$kind" = "$base" ] || [ -z "$name" ] || { [ "$kind" != characters ] && [ "$kind" != animations ]; }; then
-            say "FAILED $base (not <characters|animations>__<name>.url)"
+        if [ "$kind" = "$base" ] || [ -z "$name" ] || { [ "$kind" != characters ] && [ "$kind" != animations ] && [ "$kind" != avatar ]; }; then
+            say "FAILED $base (not <characters|animations|avatar>__<name>.url)"
             mv "$file" "$links/failed/"
             continue
         fi

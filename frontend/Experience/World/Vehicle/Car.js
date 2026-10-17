@@ -26,6 +26,7 @@ const _worldUp = new THREE.Vector3(0, 1, 0);
 const _forward = new THREE.Vector3();
 const _normal = new THREE.Vector3();
 const _q = new THREE.Quaternion();
+const _at = new THREE.Vector3();
 
 /**
  * Every car's model is in the same frame (blender/import_cars.py): +Z
@@ -42,6 +43,15 @@ const RIDE_HEIGHT = 0.45;
 // which leaves room in a single garage.
 const CAPSULE_CLEARANCE = 0.28;
 const CAPSULE_MAX_RADIUS = 1.0;
+
+/**
+ * At the edge of the ground (Car.alongEdge): how far either side of the
+ * way it was going a car looks for ground to go on along the edge, and how
+ * fast, per second, its speed falls towards what of it still goes along it
+ * (its wheels scrubbing against the edge).
+ */
+const EDGE_TURNS = [15, 30, 45, 60, 75].map((deg) => THREE.MathUtils.degToRad(deg));
+const EDGE_SCRUB = 3;
 
 const PARAMS = {
     accel: 14.0,          // m/s² under power
@@ -233,7 +243,13 @@ export default class Car {
         this.group.position.add(step);
 
         // --- ground ------------------------------------------------------
-        const ground = this.groundAt(this.group.position);
+        let ground = this.groundAt(this.group.position);
+        if (!ground && this.onGround) {
+            // Off the edge of the ground — a site's terrain has no wall round
+            // it, as the neighbourhood's world has — it is held at the edge as
+            // at a wall, rather than driving off it and falling for ever.
+            ground = this.alongEdge(before, step, dt);
+        }
         if (ground) {
             const rest = ground.y + p.rideHeight;
             this.group.position.y += (rest - this.group.position.y) *
@@ -291,6 +307,52 @@ export default class Car {
     }
 
     /**
+     * A step that would take the car off the edge of the ground (update):
+     * only what of it goes over the edge is stopped, as a wall stops what
+     * of a car's way goes into it. The car goes on along the edge — the
+     * longest of the step's ways round with ground under it: across a
+     * square terrain's edge or the ground plane's, the step's own share
+     * along it, else turned up to 75° either way — and its wheels scrub
+     * against the edge: its speed falls towards what of it goes that way, at
+     * EDGE_SCRUB a second. So it slides on along the edge met at a slant,
+     * the slower the more squarely it meets it; met head on it stands, its
+     * wheels turning slower and slower — pressed on, at about 4.5 m/s, so
+     * that steered away it turns away and drives off (its heading turns with
+     * its speed: Car.update's bicycle). With ground nowhere round it (a
+     * corner met head on), it stays where it was and stops.
+     *
+     * @param {THREE.Vector3} before  where it was, on the ground
+     * @param {THREE.Vector3} step    where this frame's speed would take it
+     * @param {number} dt
+     * @returns {{ y: number, normal: THREE.Vector3 }|null}  the ground where it is now
+     */
+    alongEdge(before, step, dt) {
+        const length = step.length();
+        let best = null;
+        let ground = null;
+        if (length > 1e-6) {
+            for (const way of edgeWays(step)) {
+                // How much of the step goes this way, and whether it is still on the ground there.
+                const share = way.dot(step) / length;
+                if (share <= 1e-3 || (best && share <= best.share)) continue;
+                const there = this.groundAt(_at.copy(before).addScaledVector(way, share * length));
+                if (there) {
+                    best = { way, share };
+                    ground = there;
+                }
+            }
+        }
+        if (!best) {
+            this.group.position.copy(before);
+            this.speed = 0;
+            return this.groundAt(this.group.position);
+        }
+        this.group.position.copy(before).addScaledVector(best.way, best.share * length);
+        this.speed *= best.share + (1 - best.share) * Math.exp(-EDGE_SCRUB * dt);
+        return ground;
+    }
+
+    /**
      * The body, as the capsule the octree understands.
      *
      * It sits well clear of the road surface: the wheels already handle the
@@ -327,4 +389,20 @@ export default class Car {
             if (child.isMesh && child.geometry) child.geometry.dispose();
         });
     }
+}
+
+/**
+ * The ways a car met by the edge of the ground may go on along it (Car's
+ * alongEdge), as unit vectors on the ground: the step's own share across
+ * each of the plan's axes — a terrain's square and the ground plane's edges
+ * run along them — and the step's way turned EDGE_TURNS either side, for an
+ * edge that runs otherwise (a drop deeper than the ground is felt for).
+ */
+function edgeWays(step) {
+    const ways = [new THREE.Vector3(Math.sign(step.x), 0, 0), new THREE.Vector3(0, 0, Math.sign(step.z))];
+    const heading = Math.atan2(step.x, step.z);
+    for (const turn of EDGE_TURNS) {
+        for (const side of [1, -1]) ways.push(new THREE.Vector3(Math.sin(heading + side * turn), 0, Math.cos(heading + side * turn)));
+    }
+    return ways;
 }

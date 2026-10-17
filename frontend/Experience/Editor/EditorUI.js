@@ -43,6 +43,7 @@ const ICONS = {
     eye: '<path d="M8 3.5c3.2 0 5.7 2.1 7 4.5-1.3 2.4-3.8 4.5-7 4.5S2.3 10.4 1 8c1.3-2.4 3.8-4.5 7-4.5zm0 1.6A2.9 2.9 0 1 0 8 11a2.9 2.9 0 0 0 0-5.9zm0 1.5a1.4 1.4 0 1 1 0 2.8 1.4 1.4 0 0 1 0-2.8z"/>',
     eyeOff: '<path d="M2.3 1.2l12.5 12.5-1.1 1.1-2.2-2.2A7.6 7.6 0 0 1 8 12.5C4.8 12.5 2.3 10.4 1 8a9 9 0 0 1 2.6-3L1.2 2.3zM5 6.3A2.9 2.9 0 0 0 9.7 10.4zM8 3.5c3.2 0 5.7 2.1 7 4.5a8.9 8.9 0 0 1-1.8 2.3L10.9 8A2.9 2.9 0 0 0 8 5.1l-.4.1L5.9 3.8A7.7 7.7 0 0 1 8 3.5z"/>',
     xray: '<path d="M1 1h9v9H1zm1.5 1.5v6h6v-6z"/><path d="M6 6h9v9H6z" opacity=".5"/>',
+    colliders: '<g fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M8 1.6l5.6 3.2v6.4L8 14.4l-5.6-3.2V4.8zM2.4 4.8L8 8l5.6-3.2M8 8v6.4"/><path d="M8 8V1.6M8 8l-5.6 3.2M8 8l5.6 3.2" opacity=".45"/></g>',
     garden: '<path d="M14.5 1.5C8 1.5 3.2 4.6 3.2 9.9c0 1 .2 1.9.6 2.7L1.6 14.8l.9.9 2.2-2.2c.8.4 1.8.6 2.8.6 5.4 0 7-5.8 7-12.6zM5.5 12.3c1.2-2.7 3.2-5 5.7-6.6-2 2.1-3.5 4.4-4.4 7-.5-.1-.9-.2-1.3-.4z"/>',
     floor: '<path d="M8 2l7 4v1.7L8 3.7 1 7.7V6zm-7 7l7-4 7 4-7 4z"/>',
     room: '<path d="M1.5 1.5h13v13h-13zM3 3v10h10V3zm2 2h6v6H5z" opacity=".9"/>',
@@ -146,6 +147,7 @@ export default class EditorUI {
                         <select data-setting="focus"></select>
                     </label>
                     <button class="ed-toggle" data-action="xray" title="X-ray: see through walls, ceilings and roof (Alt Z)">${icon("xray")}</button>
+                    <button class="ed-toggle" data-action="colliders" title="Colliders: draw what the visitor walks into, as wireframes (C) — Shift-click or Shift C to see them through everything">${icon("colliders")}</button>
                     <button class="ed-toggle" data-action="garden" title="Garden: the grass, the trees, the hills, and how the view is coloured">${icon("garden")}</button>
                     <button class="ed-toggle" data-action="lights" title="Lights: turn the light fittings on and off (L) — or Ctrl / ⌘-click a light or its switch in the view" aria-controls="ed-lights" aria-expanded="false" hidden>${icon("bulb")}</button>
                     <button class="ed-toggle" data-action="daynight" title="Day or night" hidden>${icon("sun")}</button>
@@ -227,6 +229,7 @@ export default class EditorUI {
             scope: $('[data-setting="scope"]'),
             scopeLabel: $("[data-scope-label]"),
             xray: $('[data-action="xray"]'),
+            colliders: $('[data-action="colliders"]'),
             garden: $('[data-action="garden"]'),
             lights: $('[data-action="lights"]'),
             dayNight: $('[data-action="daynight"]'),
@@ -295,6 +298,8 @@ export default class EditorUI {
                     return editor.setSnap(!editor.snapEnabled);
                 case "xray":
                     return editor.setXray(!editor.xray);
+                case "colliders":
+                    return editor.toggleColliders({ xray: event.shiftKey });
                 case "garden":
                     return editor.toggleGarden();
                 case "lights":
@@ -513,6 +518,9 @@ export default class EditorUI {
         this.dom.scopeLabel.title = `Show: ${SCOPES[scope].hint}. The houses alone are the fastest to work on; the walkthrough's realistic preview always shows everything.`;
         this.dom.snap.classList.toggle("is-on", editor.snapEnabled);
         this.dom.xray.classList.toggle("is-on", editor.xray);
+        const colliders = editor.experience.colliders;
+        this.dom.colliders.classList.toggle("is-on", Boolean(colliders?.shown));
+        this.dom.colliders.setAttribute("aria-pressed", String(Boolean(colliders?.shown)));
         this.dom.garden.classList.toggle("is-on", Boolean(editor.gardenPanel));
         // The lights, once the view has switches; day or night, once it has both.
         const world = editor.world;
@@ -621,7 +629,8 @@ export default class EditorUI {
 
         const editor = this.editor;
         const scope = editor.world.scope.current;
-        const label = `${editor.view.label} · ${editor.collections.describe(editor.focus)}${scope === "all" ? "" : ` · ${SCOPES[scope].label} only`}${editor.xray ? " · X-ray" : ""}`;
+        const colliders = editor.experience.colliders?.shown ? ` · Colliders${editor.experience.colliders.xray ? " (x-ray)" : ""}` : "";
+        const label = `${editor.view.label} · ${editor.collections.describe(editor.focus)}${scope === "all" ? "" : ` · ${SCOPES[scope].label} only`}${editor.xray ? " · X-ray" : ""}${colliders}`;
         if (label !== this.viewLabel) {
             this.viewLabel = label;
             this.dom.viewLabel.textContent = label;
@@ -1060,6 +1069,7 @@ export default class EditorUI {
                 ["⇧ MMB", "Pan"],
                 ["PgUp PgDn", "Floors"],
                 ["Alt Z", "X-ray"],
+                ["C", "Colliders"],
                 ["7 1 3", "Top / Front / Right"],
                 ["Tab", "Walkthrough"],
             ];
@@ -1149,6 +1159,7 @@ export default class EditorUI {
         anchor.classList.add("is-open");
         const editor = this.editor;
         const sel = editor.selection;
+        const colliders = editor.experience.colliders;
         const menus = {
             file: [
                 { label: "Save now", hint: "⌘ S", action: () => editor.world.emit("save-now") },
@@ -1175,6 +1186,8 @@ export default class EditorUI {
                 { separator: true },
                 { label: "Realistic preview in the walkthrough", hint: "P", checked: Boolean(editor.world.preview), action: () => editor.togglePreview() },
                 { label: "X-ray", hint: "Alt Z", checked: editor.xray, action: () => editor.setXray(!editor.xray) },
+                { label: "Colliders", hint: "C", checked: Boolean(colliders?.shown), action: () => editor.toggleColliders() },
+                { label: "Colliders seen through everything", hint: "⇧ C", checked: Boolean(colliders?.shown && colliders.xray), action: () => editor.toggleColliders({ xray: true }) },
                 { label: "Selection's room alone", hint: "/", action: () => editor.toggleLocalView() },
                 { label: "Floor above", hint: "PgUp", action: () => editor.stepFloor(1) },
                 { label: "Floor below", hint: "PgDn", action: () => editor.stepFloor(-1) },

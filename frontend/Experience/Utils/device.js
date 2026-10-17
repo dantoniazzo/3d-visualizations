@@ -67,6 +67,14 @@ const pretended = params.get("rated");
  *     all of them), each animated every `every` frames within `near`
  *     metres of the camera and every `farEvery` frames beyond, and held
  *     still beyond `still` metres or out of sight.
+ *   - `water`: what a running tap or shower is drawn with (World/Water.js,
+ *     World/waterShaders.js) — so many drops falling from a shower's head
+ *     at once (`rain`), droplets thrown up where a tap's stream lands
+ *     (`splash`) and off a shower's tray (`spray`), puffs in a hot
+ *     shower's steam (`steam`), how many times a look through the body of
+ *     its steam is sampled (`haze`), and the steam drawn for so many
+ *     showers at most, the nearest the camera (`steaming`): the steam is
+ *     what costs, standing in it.
  *
  * `?quality=low` is step 1, as a phone was drawn; `?quality=high` step 3,
  * as a computer was; `?quality=0`…`4` or `max` any step.
@@ -86,6 +94,7 @@ export const QUALITY_STEPS = [
         lamps: { shadowed: 0, unshadowed: 2, size: 512 },
         garden: { spots: 0, points: 1 },
         people: { most: 4, every: 2, near: 8, farEvery: 4, still: 30 },
+        water: { rain: 72, splash: 10, spray: 20, steam: 8, steaming: 1, haze: 3 },
         probe: false,
         grade: false,
     },
@@ -103,6 +112,7 @@ export const QUALITY_STEPS = [
         lamps: { shadowed: 1, unshadowed: 1, size: 512 },
         garden: { spots: 0, points: 1 },
         people: { most: 8, every: 1, near: 10, farEvery: 3, still: 45 },
+        water: { rain: 110, splash: 14, spray: 28, steam: 10, steaming: 1, haze: 3 },
         probe: false,
         grade: false,
     },
@@ -120,6 +130,7 @@ export const QUALITY_STEPS = [
         lamps: { shadowed: 1, unshadowed: 2, size: 512 },
         garden: { spots: 1, points: 1 },
         people: { most: 16, every: 1, near: 12, farEvery: 3, still: 60 },
+        water: { rain: 170, splash: 18, spray: 40, steam: 12, steaming: 2, haze: 3 },
         probe: false,
         grade: true,
     },
@@ -137,6 +148,7 @@ export const QUALITY_STEPS = [
         lamps: { shadowed: 2, unshadowed: 2, size: 512 },
         garden: { spots: 2, points: 2 },
         people: { most: 32, every: 1, near: 15, farEvery: 2, still: 90 },
+        water: { rain: 240, splash: 24, spray: 56, steam: 14, steaming: 2, haze: 4 },
         probe: true,
         grade: true,
     },
@@ -154,6 +166,7 @@ export const QUALITY_STEPS = [
         lamps: { shadowed: 2, unshadowed: 4, size: 1024 },
         garden: { spots: 3, points: 2 },
         people: { most: Infinity, every: 1, near: 15, farEvery: 2, still: 120 },
+        water: { rain: 320, splash: 28, spray: 72, steam: 16, steaming: 2, haze: 4 },
         probe: true,
         grade: true,
     },

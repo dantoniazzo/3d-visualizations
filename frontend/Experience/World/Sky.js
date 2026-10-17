@@ -63,6 +63,25 @@ export function withoutGlow(copy, source) {
     return copy;
 }
 
+/**
+ * A copy of `source` with the colour and opacity the glass has of its own —
+ * not the look the windows wear as they are seen now (Sky.glaze: dark from
+ * outside by day, near clear from inside). For a copy that is no longer
+ * among the materials glazed, and so never looks the other way again: a
+ * glazed door's leaf lit by the probes (World/ProbeLight.js's dress). Copied
+ * whenever the probes came — before the sky's first glazing, as nearly
+ * always, or after it, as now and then when the page loaded beside another
+ * — the leaves wore their own glass, or the outside's for the visit (0.78,
+ * #4b545a, indoors too), or the inside's.
+ */
+export function withoutGlaze(copy, source) {
+    const own = GLASS_OWN.get(source);
+    if (!own || !copy.color) return copy;
+    copy.color.copy(own.color);
+    copy.opacity = own.opacity;
+    return copy;
+}
+
 /** Surfaces inside take this much of the sky's light: rooms lit by their windows, not dim (and the people indoors, World/People.js). */
 export const INDOOR = 0.8;
 /** How much of a room probe's light its room takes (Realism.js): all of it, as captured. */

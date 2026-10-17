@@ -18,10 +18,23 @@
  *      where one stood: the same triangles, and a ball anywhere touches
  *      something in it exactly when it does in the tree built from scratch.
  *      When the slices are done it is that tree.
+ *   4. `Collision.meets` — whether a capsule meets anything but what it is
+ *      told to leave out, as sitting down and getting up look for room
+ *      (World/Seats.js's roomFor) — says so of a capsule through a chair's
+ *      side, not when the chair is left out, still of the table beside it,
+ *      of nothing but the floor for one clear of them standing on it, and
+ *      of a tree too small to be divided. (Like any of the trees' tests, it
+ *      meets faces: a capsule wholly inside a box meets none, which is why
+ *      roomFor takes the body limb by limb, each from the one before.)
+ *      `meetsAny`, many capsules at once — a body limb by limb at many
+ *      moments, the triangles round them gathered once — answers as meets
+ *      does of each; `anyIn`, whether anything at all is in a box, says so
+ *      of the chair and the table, and of nothing away from them.
  */
 import * as THREE from "three";
 import { Octree } from "three/examples/jsm/math/Octree.js";
-import { TreeKeeper, buildOctree } from "../frontend/Experience/World/Collision.js";
+import Collision, { TreeKeeper, buildOctree } from "../frontend/Experience/World/Collision.js";
+import { Capsule } from "three/examples/jsm/math/Capsule.js";
 
 let seed = 20261014;
 const rnd = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
@@ -335,6 +348,56 @@ function piece() {
     say("the tree as it was is the one handed out", keeper.tree === before ? null : "another tree was handed out");
     keeper.update(sources());
     say("an update that waits finishes it", keeper.job ? "still being built" : differ(keeper.tree, buildOctree(pieces)), `${keeper.last.how} (${keeper.last.why})`);
+}
+
+// 4. Room, but for what is left out.
+{
+    const box = (label, [w, h, d], [x, y, z]) => {
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d));
+        mesh.position.set(x, y, z);
+        mesh.userData.label = label;
+        mesh.updateMatrixWorld(true);
+        return mesh;
+    };
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(20, 20).rotateX(-Math.PI / 2));
+    floor.userData.label = "floor";
+    floor.updateMatrixWorld(true);
+    const collision = new Collision();
+    collision.setStatic(buildOctree([floor]));
+    collision.setDynamic(buildOctree([box("chair", [0.5, 0.9, 0.5], [0, 0.45, 0]), box("table", [1.4, 0.75, 0.8], [0, 0.375, 0.75])]));
+    const capsule = (x0, y0, z0, x1, y1, z1, radius) => new Capsule(new THREE.Vector3(x0, y0, z0), new THREE.Vector3(x1, y1, z1), radius);
+    const chair = (triangle) => triangle.label === "chair";
+    const underfoot = (triangle) => Math.max(triangle.a.y, triangle.b.y, triangle.c.y) < 0.06;
+    const inChair = capsule(-0.6, 0.5, 0, -0.1, 0.5, 0, 0.08);
+    say("meets: a capsule through the chair's side meets it", collision.meets(inChair) ? null : "it met nothing");
+    say("meets: ...not with the chair left out", collision.meets(inChair, { except: chair }) ? "it met something" : null);
+    const both = capsule(0, 0.5, 0.1, 0, 0.5, 0.5, 0.1);
+    say("meets: one into the table from the chair, the chair left out, meets the table", collision.meets(both, { except: chair }) ? null : "it met nothing");
+    const clear = capsule(4, 0.15, 4, 4, 1.5, 4, 0.2);
+    say("meets: one clear of them, standing on the floor, meets nothing but the floor", !collision.meets(clear) ? "it met nothing, not even the floor" : collision.meets(clear, { except: underfoot }) ? "it met something but the floor" : null);
+    say("meets: one a little into the chair, by less than the depth asked, does not", collision.meets(capsule(0.3, 0.5, 0, 0.3, 0.6, 0, 0.06), { depth: 0.02 }) ? "it met the chair" : null);
+    const small = new Collision();
+    small.setDynamic(buildOctree([box("stool", [0.4, 0.45, 0.4], [2, 0.225, 2])]));
+    const root = small.dynamic;
+    say("meets: a tree of one stool", small.meets(capsule(2, 0.3, 1.5, 2, 0.3, 2, 0.1)) ? null : `it met nothing (${root.triangles.length} in its root, ${root.subTrees.length} cells)`);
+
+    // Many capsules at once (a body limb by limb, at many moments), as meets asks of each: the same answer.
+    const around = (list) => {
+        const all = new THREE.Box3();
+        for (const one of list) all.expandByPoint(one.start.clone().addScalar(-one.radius)).expandByPoint(one.start.clone().addScalar(one.radius)).expandByPoint(one.end.clone().addScalar(-one.radius)).expandByPoint(one.end.clone().addScalar(one.radius));
+        return all;
+    };
+    const many = [clear, capsule(4.5, 0.3, 4, 4.5, 1, 4, 0.1), inChair];
+    say("meetsAny: of three capsules, one through the chair's side: met", collision.meetsAny(many, around(many)) ? null : "it met nothing");
+    say("meetsAny: ...not with the chair and what is underfoot left out", collision.meetsAny(many, around(many), { except: (t) => chair(t) || underfoot(t) }) ? "it met something" : null);
+    say("meetsAny: ...nor counting the first two alone", collision.meetsAny(many, around(many), { except: underfoot, count: 2 }) ? "it met something" : null);
+    const into = [capsule(4, 0.3, 4, 4, 1, 4, 0.1), both];
+    say("meetsAny: one into the table from the chair, the chair left out: met, as meets has it", collision.meetsAny(into, around(into), { except: chair }) === collision.meets(both, { except: chair }) ? null : "it differs from meets");
+    // Anything within a box at all — what the walk to a seat is looked over by, limb by limb, only where there is.
+    const near = new THREE.Box3(new THREE.Vector3(-1, 0.06, -1), new THREE.Vector3(1, 1.9, 1));
+    say("anyIn: the chair and the table, round them", collision.anyIn(near) ? null : "nothing in it");
+    say("anyIn: ...none, the two left out", collision.anyIn(near, { except: (t) => chair(t) || t.label === "table" }) ? "something in it" : null);
+    say("anyIn: nothing over the floor, away from them", collision.anyIn(new THREE.Box3(new THREE.Vector3(3, 0.06, 3), new THREE.Vector3(5, 1.9, 5))) ? "something in it" : null);
 }
 
 for (const { name, problem, note } of results) {

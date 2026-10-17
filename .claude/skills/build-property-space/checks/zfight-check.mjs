@@ -12,7 +12,7 @@
  *   StructureBuilder.buildRoof   flat slab box, footprint + overhang, base..base+thickness
  *   StructureBuilder.buildStairs slab-style step boxes / moulded steps + treads
  *   LandscapeBuilder             dry-stone walls (+ copings), kerbs, pergolas, planters,
- *                                railing channels, pool basin/coping/deck, road paint
+ *                                railing channels, pool basin/coping/deck/steps, road paint
  *                                (planes at base + 0.006, polygonOffset -2/-2), terrain mesh
  *   Flora/hedges.js              hedge cores
  *   furniture                    catalogue bounding boxes (size at rotation)
@@ -38,6 +38,8 @@
 import fs from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { NOSING_DEPTH, poolSteps } from "../../../../shared/landscape.js";
 
 const REPO = resolve(process.env.REPO || join(dirname(fileURLToPath(import.meta.url)), "../../../.."));
 const args = process.argv.slice(2);
@@ -560,6 +562,25 @@ for (const pool of LS.pools || []) {
         deck(d0, j1, d1, e1);
         deck(d0, j0, i0, j1);
         deck(i1, j0, d1, j1);
+    }
+    // Its steps, as LandscapeBuilder's addPoolSteps lays them from shared/landscape.js's poolSteps: each tread a
+    // block of mosaic from a centimetre under the floor behind its nosing, into the sides (and the top one into the
+    // wall behind), a block under the nosing, and the nosing's stone flush on that. (The ramp is never drawn.)
+    const steps = poolSteps(pool);
+    if (steps) {
+        const sink = 0.01;
+        const [ox, oz] = steps.out;
+        const grown = ([a, bb, c2, d], aside, back = 0, ahead = 0) => {
+            const [lo, hi] = ox + oz > 0 ? [ahead, back] : [back, ahead];
+            return ox ? [a - lo, bb - aside, c2 + hi, d + aside] : [a - aside, bb - lo, c2 + aside, d + hi];
+        };
+        const block = ([a, bb, c2, d], bottom, top, id, m) => b(c2 - a, top - bottom, d - bb, (a + c2) / 2, (top + bottom) / 2, (bb + d) / 2, id, m, "pool-steps");
+        for (const [k, tread] of steps.treads.entries()) {
+            const under = tread.top - NOSING_DEPTH;
+            block(grown(tread.rest, sink, k === steps.count - 1 ? sink : 0), steps.floor - sink, tread.top, `tread${k}`, "S:pool_mosaic:wall");
+            block(grown(tread.nosing, sink), steps.floor - sink, under, `tread${k}-front`, "S:pool_mosaic:wall");
+            block(grown(tread.nosing, sink), under, tread.top, `nosing${k}`, "S:stone_paving_floor:wall");
+        }
     }
 }
 for (const hedge of LS.hedges || []) {

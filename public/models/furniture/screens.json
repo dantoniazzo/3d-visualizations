@@ -1,0 +1,9 @@
+{
+    "$comment": "Written by scripts/measure-screens.mjs (`npm run screens`): each television's screen, in the piece's own frame facing north (-z) at scale 1 — `at` [x, y, z] the middle of the glass's front face, `size` [w, h] that face's, `recess` how far the rest of the piece stands in front of it.",
+    "ld-media-oak": {"screens":[{"at":[0.1,1.405,-0.211],"size":[1.43,0.81],"recess":0}]},
+    "ld-media-ochre": {"screens":[{"at":[0,1.42,0.202],"size":[1.66,0.94],"recess":0.452}]},
+    "ld-tv-volume": {"screens":[{"at":[0.1,1.405,-0.211],"size":[1.43,0.81],"recess":0}]},
+    "ld-tv-volume-30": {"screens":[{"at":[0.62,1.405,-0.311],"size":[1.43,0.81],"recess":0}]},
+    "ld-tv-wall": {"screens":[{"at":[0,0.36,-0.025],"size":[1.23,0.72],"recess":0}]},
+    "tv": {"screens":[{"at":[0,0.39,-0.006],"size":[1.07,0.61],"recess":0.104}]}
+}

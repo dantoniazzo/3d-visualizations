@@ -80,8 +80,34 @@
  * clips.standin.glb (Idle, and a sitting and a lying pose made from it) —
  * which the app loads when there is no index.json.
  *
+ * And the visitor's own figure's clips beyond its five, wherever they are
+ * downloaded (assets/people/avatar/*.fbx: Mixamo's swimming strokes,
+ * treading water, climbing out of the pool, sitting down and getting up —
+ * FBX Binary, Without Skin, 30 fps, In Place where Mixamo offers it): made
+ * by blender/import_people.py --avatar-clips — a stroke cut to a loop and
+ * held in place, the climb begun with its head out of the water (its
+ * AVATAR_AS) — and packed as the people's clips are into
+ * public/models/people/avatar-clips.glb, with avatar-clips.json —
+ *
+ *   { file: "people/avatar-clips.glb", hips, fps, list: [{ name, as, duration, frames, head, pelvis, last,
+ *     travel, loop?, stripped?, pace?, seam?, grip? }] }
+ *
+ * `as` what the app plays it as (frontend/Experience/World/Player/Swim.js:
+ * swimming, breaststroke, treading, climbing; Player.js: sit-down,
+ * stand-up), `hips` how high the clips' skeleton's pelvis stands, `frames`
+ * which of the download's it keeps (from 1), `head` and `pelvis` where its
+ * first frame has them from its root and `last` its last frame's pelvis,
+ * `travel` how far its hips go across the floor as downloaded. A loop's
+ * `stripped` is how much of that it took out, `pace` how fast the stroke
+ * swam it (metres a second) and `seam` how far off its pose came back
+ * round, in degrees, made up over the loop; the climb's `grip` is where
+ * its hands hold on at its start. Git-ignored, as the people are: without
+ * them a visitor swims as a wader and sits down by a glide
+ * (Player/Avatar.js's STAND_INS).
+ *
  *   npm run people
  *   npm run people -- --standin                    the stand-ins, whatever is downloaded
+ *   npm run people -- --avatar-clips               the visitor's clips alone
  *   npm run people -- --src <dir> --out <dir>      another set, somewhere else
  *   npm run people -- --keep                       keep Blender's unpacked output (printed)
  */
@@ -123,9 +149,14 @@ const fbx = (folder) => {
     const dir = join(SRC, folder);
     return existsSync(dir) ? readdirSync(dir).filter((f) => f.toLowerCase().endsWith(".fbx")) : [];
 };
-const downloads = { characters: fbx("characters"), animations: fbx("animations") };
+const downloads = { characters: fbx("characters"), animations: fbx("animations"), avatar: fbx("avatar") };
+const AVATAR_ONLY = args.includes("--avatar-clips");
+if (AVATAR_ONLY && !downloads.avatar.length) {
+    console.error(`No clips for the visitor in ${join(SRC, "avatar")}: download them from Mixamo first (FBX Binary, Without Skin, 30 fps, In Place where it is offered).`);
+    process.exit(1);
+}
 const STANDIN = args.includes("--standin") || (!downloads.characters.length && !downloads.animations.length);
-if (!STANDIN && (!downloads.characters.length || !downloads.animations.length)) {
+if (!AVATAR_ONLY && !STANDIN && (!downloads.characters.length || !downloads.animations.length)) {
     console.error(
         `Need both characters and clips in ${SRC}: ${downloads.characters.length} in characters/, ` +
             `${downloads.animations.length} in animations/. (With neither, this makes the stand-ins.)`
@@ -256,9 +287,38 @@ function propsEntry(previous) {
     return { file: "people/props.glb", list: ids.map((id) => found.get(id)) };
 }
 
+/**
+ * The visitor's clips (assets/people/avatar/): Blender's --avatar-clips,
+ * then packed as the people's clips are, and listed beside them.
+ */
+async function avatarClips() {
+    const rawClips = mkdtempSync(join(tmpdir(), "avatar-clips-"));
+    console.log(`\n${downloads.avatar.length} clips for the visitor from ${join(SRC, "avatar")}`);
+    execFileSync(
+        blender.path,
+        ["--background", "--factory-startup", "--python-exit-code", "1", "--python", join(ROOT, "blender", "import_people.py"), "--", "--src", SRC, "--out", rawClips, "--avatar-clips"],
+        { stdio: "inherit" }
+    );
+    const listed = JSON.parse(readFileSync(join(rawClips, "avatar-clips.json"), "utf8"));
+    const glb = join(OUT, "avatar-clips.glb");
+    const packed = await packClips(join(rawClips, listed.file), glb);
+    console.log(`  avatar-clips.glb: ${size(join(rawClips, listed.file))} -> ${size(glb)}, ${packed.clips} clips, ${packed.dropped} channels of bone places and scales dropped`);
+    const index = { file: "people/avatar-clips.glb", hips: listed.hips, fps: listed.fps, list: listed.list };
+    writeFileSync(join(OUT, "avatar-clips.json"), JSON.stringify(index, null, 2) + "\n");
+    const unplayed = index.list.filter((clip) => !clip.as).map((clip) => clip.name);
+    if (unplayed.length) console.warn(`  WARNING nothing in the app plays ${unplayed.join(", ")}: name the file after what it is (Swimming, Breaststroke, Treading Water, Climbing, Stand To Sit, Sit To Stand)`);
+    console.log(`  ${join(OUT, "avatar-clips.json").replace(ROOT + "/", "")}: ${index.list.map((clip) => `${clip.name} as ${clip.as ?? "-"}`).join(", ")}`);
+    if (KEEP) console.log(`  Blender's output kept in ${rawClips}`);
+    else rmSync(rawClips, { recursive: true, force: true });
+}
+
 // ---------------------------------------------------------------------
 
 mkdirSync(OUT, { recursive: true });
+if (AVATAR_ONLY) {
+    await avatarClips();
+    process.exit(0);
+}
 const raw = mkdtempSync(join(tmpdir(), "people-"));
 console.log(
     STANDIN
@@ -363,3 +423,6 @@ console.log(
 );
 if (KEEP) console.log(`  Blender's output kept in ${raw}`);
 else rmSync(raw, { recursive: true, force: true });
+
+// The visitor's own, wherever they are downloaded.
+if (downloads.avatar.length) await avatarClips();

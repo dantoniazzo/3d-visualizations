@@ -27,9 +27,14 @@ import { QUALITY_STEP, onQualityChange, setQualityStep } from "./Utils/device.js
  *   - while a publish holds the renderer (the editor's; never here);
  *   - for a second after anything known to take frames of its own: the
  *     window resized, day or night chosen, the view from above opened or
- *     shut, a switch turned, a floor or a place jumped to, the slider moved
- *     (`settle`, which whatever does such a thing calls) — and while a room
- *     is being made ready to be drawn live (RoomLight's `busy`);
+ *     shut, a switch turned, a room's lights switched, something acted on
+ *     (a door, a drawer), a car got into or out of, the colliders shown or
+ *     hidden, a floor or a place jumped to, the slider moved (`settle`,
+ *     which whatever does such a thing calls) — and while a room is being
+ *     made ready to be drawn live (RoomLight's `busy`);
+ *   - while the colliders are drawn over the view (Experience/Colliders.js,
+ *     `?debug`): a debug view's cost is no reason to make a visitor's view
+ *     lighter;
  *   - a frame in which the renderer built a shader, or sent the GPU a
  *     texture or a mesh it had not seen: a first look at something. A
  *     second and a half of those at most, earned back over fifteen seconds
@@ -72,6 +77,14 @@ const EXCUSE_BACK = 0.1;
 const REPORT_EVERY = 5000;
 /** How many of the things it did are kept (`log`). */
 const LOG_MOST = 200;
+/**
+ * What the world tells (World emits them, and Player, and the colliders)
+ * that takes frames of its own, and is settled on: day or night, the view
+ * from above, a switch, first or third person, something acted on, a car,
+ * a room's lights, the colliders. One list, so that `dispose` lets go of
+ * every one `bind` took.
+ */
+const SETTLE_ON = ["lighting", "bird", "switches", "view", "interact", "vehicle", "room-lights", "colliders"];
 
 export default class FrameGuard extends EventEmitter {
     /**
@@ -112,7 +125,7 @@ export default class FrameGuard extends EventEmitter {
     bind(world) {
         this.world = world;
         this.onToggle = () => this.settle();
-        for (const event of ["lighting", "bird", "switches", "view"]) world.on(event, this.onToggle);
+        for (const event of SETTLE_ON) world.on(event, this.onToggle);
     }
 
     /**
@@ -127,6 +140,7 @@ export default class FrameGuard extends EventEmitter {
     watching() {
         const experience = this.experience;
         if (document.visibilityState !== "visible" || experience.suspended) return false;
+        if (experience.colliders?.shown) return false;
         if (!this.entered) {
             if (!experience.world?.readyIn || !document.body.classList.contains("walkthrough-active")) return false;
             this.entered = true;
@@ -298,6 +312,6 @@ export default class FrameGuard extends EventEmitter {
         this.stopQuality();
         document.removeEventListener("visibilitychange", this.onVisibility);
         this.experience.sizes.off("resize", this.onResize);
-        if (this.world) for (const event of ["lighting", "bird", "switches", "view"]) this.world.off(event, this.onToggle);
+        if (this.world) for (const event of SETTLE_ON) this.world.off(event, this.onToggle);
     }
 }

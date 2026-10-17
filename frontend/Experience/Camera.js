@@ -31,7 +31,14 @@ import rays from "./Utils/rays.js";
  * controller as `editorView`, which then owns the perspective camera (and
  * an orthographic one) until the walkthrough resumes. A public view's
  * bird's-eye view of a floor (World/BirdView.js) takes it over the same way,
- * as `birdView`.
+ * as `birdView` — at the wheel too: a car driven from above is followed from
+ * up there, and the camera round the car starts again from wherever the view
+ * from above left it (enterVehicleMode) once that is left.
+ *
+ * Swimming (World/Player/Swim.js), the camera behind the head is kept out of
+ * the pool's water while the head is out of it (keepDry); a camera under the
+ * surface — a jump in, plunging under — has the page tinted as under water
+ * (`body.underwater`, styles/components/canvas.scss; emits "underwater").
  */
 
 const _offset = new THREE.Vector3();
@@ -39,8 +46,15 @@ const _lookAt = new THREE.Vector3();
 const _forward = new THREE.Vector3();
 const _pivot = new THREE.Vector3();
 
-/** The camera round a car. Lengths are for a 4.9 m car; a longer one pulls it back. */
-const VEHICLE_CAMERA = {
+/** Over a pool, a camera behind a head above the water is kept this far over it, in metres (keepDry). */
+const OVER_WATER = 0.08;
+
+/**
+ * The camera round a car. Lengths are for a 4.9 m car; a longer one pulls it
+ * back. How it swings back in behind the car is the bird's-eye view's too,
+ * driving from above (World/BirdView.js): the car heads up the screen.
+ */
+export const VEHICLE_CAMERA = {
     height: 1.0,           // m: the point it orbits, above the car's origin (itself 0.45 m up)
     distance: 7.0,         // m: from that point
     pitch: 0.22,           // rad: how far above it, looking down, it settles
@@ -54,8 +68,10 @@ const VEHICLE_CAMERA = {
     dragSensitivity: 0.006, // rad per px, dragging on touch
 };
 
+const NO_POOLS = [];
+
 /** An angle's difference folded into -π..π. */
-function wrapAngle(a) {
+export function wrapAngle(a) {
     return Math.atan2(Math.sin(a), Math.cos(a));
 }
 
@@ -79,6 +95,8 @@ export default class Camera extends EventEmitter {
 
         this.mode = "third";
         this.controls = null;
+        // Whether the camera is under a pool's water (updateUnderwater).
+        this.underwater = false;
 
         // Shared by both schemes, so they must not live in either setup path.
         this.THIRD_DISTANCE = 2.8;
@@ -125,11 +143,12 @@ export default class Camera extends EventEmitter {
 
     setOrbitControls() {
         // Driving on touch, a drag on the view turns the camera round the
-        // car (the orbit controls are the walker's, and off while driving).
+        // car (the orbit controls are the walker's, and off while driving) —
+        // but from above, the bird's-eye view's own (World/BirdView.js).
         this.dragMovement = { x: 0, y: 0 };
         this.drag = null;
         this.onDragDown = (event) => {
-            if (!this.vehicleMode || this.drag) return;
+            if (!this.vehicleMode || this.drag || this.birdView?.active) return;
             this.drag = { id: event.pointerId, x: event.clientX, y: event.clientY };
         };
         this.onDragMove = (event) => {
@@ -154,6 +173,8 @@ export default class Camera extends EventEmitter {
         this.controls.minDistance = 0.05;
         this.controls.maxDistance = this.THIRD_DISTANCE;
         this.controls.maxPolarAngle = Math.PI * 0.92;
+        /** How far down the orbit may swing in the mode it is in: its maxPolarAngle, but over a pool's water (dryOrbit). */
+        this.orbitLowest = this.controls.maxPolarAngle;
     }
 
     enableOrbitControls() {
@@ -246,7 +267,7 @@ export default class Camera extends EventEmitter {
         if (this.controls) {
             this.controls.minDistance = 0.05;
             this.controls.maxDistance = this.THIRD_DISTANCE;
-            this.controls.maxPolarAngle = Math.PI * 0.92;
+            this.controls.maxPolarAngle = this.orbitLowest = Math.PI * 0.92;
         }
         if (this.angles) {
             this.angles.vertical = THREE.MathUtils.clamp(
@@ -263,7 +284,7 @@ export default class Camera extends EventEmitter {
             // Collapsing the orbit distance puts the touch camera at the eye.
             this.controls.minDistance = 0.001;
             this.controls.maxDistance = 0.001;
-            this.controls.maxPolarAngle = Math.PI;
+            this.controls.maxPolarAngle = this.orbitLowest = Math.PI;
         }
     }
 
@@ -308,7 +329,10 @@ export default class Camera extends EventEmitter {
         this.vehicle = null;
         this.vehicleLook = null;
         this.drag = null;
-        if (this.controls) this.controls.enabled = true;
+        // (Not while the view from above has the camera: the orbit controls
+        // would move it from under it at a touch. It gives them back as it
+        // is left, on foot — World/BirdView.js's deactivate.)
+        if (this.controls && !this.birdView?.active) this.controls.enabled = true;
     }
 
     /** The point the camera orbits: above the car's middle. */
@@ -356,6 +380,12 @@ export default class Camera extends EventEmitter {
     // ------------------------------------------------------------------
 
     update() {
+        this.place();
+        this.updateUnderwater();
+    }
+
+    /** Where the camera is this frame, and which way it looks: edit mode's, from above, round the car, or round the visitor. */
+    place() {
         if (this.editorView?.active) {
             this.editorView.update();
             return;
@@ -373,11 +403,93 @@ export default class Camera extends EventEmitter {
         }
 
         if (this.scheme === "orbit") {
-            if (this.controls?.enabled) this.controls.update();
+            if (this.controls?.enabled) {
+                this.dryOrbit(this.controls);
+                this.controls.update();
+            }
             return;
         }
 
         this.updatePointerLockCamera();
+    }
+
+    /** The pools there are (World/Player/Swim.js's), or none. */
+    pools() {
+        return this.experience.world?.player?.swimmer?.pools ?? NO_POOLS;
+    }
+
+    /**
+     * The camera behind the head lifted out of a pool's water, while the
+     * head is out of it: a swimmer's boom, pitched down, would otherwise
+     * look up at the surface from under it — which the water, seen from
+     * below, is not drawn to be looked through for long.
+     */
+    keepDry(pivot) {
+        const pools = this.pools();
+        if (!pools.length) return;
+        const position = this.perspectiveCamera.position;
+        for (const pool of pools) {
+            const [x0, z0, x1, z1] = pool.box;
+            if (position.x < x0 || position.x > x1 || position.z < z0 || position.z > z1) continue;
+            if (pivot.y > pool.level && position.y < pool.level + OVER_WATER) {
+                position.y = pool.level + OVER_WATER;
+                this.perspectiveCamera.lookAt(pivot);
+            }
+            return;
+        }
+    }
+
+    /**
+     * The same for the orbit (touch screens), the way OrbitControls keeps
+     * its camera anywhere: by how far down it lets it swing (its
+     * maxPolarAngle, the mode's own anywhere else) — no lower than OVER_WATER
+     * over the water while the pivot is above it. Not by moving the camera
+     * after it, as keepDry does the pointer-lock camera, which places itself
+     * from its angles every frame: OrbitControls works its boom out from
+     * where the camera is, and a camera lifted each frame as the view was
+     * dragged down was taken as a shorter boom, pulled in to the head, and
+     * left there after the swim.
+     */
+    dryOrbit(controls) {
+        let lowest = this.orbitLowest ?? controls.maxPolarAngle;
+        const pivot = controls.target;
+        const position = this.perspectiveCamera.position;
+        for (const pool of this.pools()) {
+            const [x0, z0, x1, z1] = pool.box;
+            if (position.x < x0 || position.x > x1 || position.z < z0 || position.z > z1) continue;
+            const boom = position.distanceTo(pivot);
+            if (pivot.y > pool.level + OVER_WATER && boom > 1e-3) {
+                // Its height under the pivot, at most: boom × cos(the angle down from straight up).
+                const cos = (pool.level + OVER_WATER - pivot.y) / boom;
+                if (cos > -1) lowest = Math.min(lowest, Math.acos(Math.min(1, cos)));
+            }
+            break;
+        }
+        controls.maxPolarAngle = lowest;
+    }
+
+    /**
+     * Whether the camera is under a pool's water — the walkthrough's, not
+     * edit mode's nor the view from above — told as it changes: the page's
+     * `underwater` class (its tint, styles/components/canvas.scss) and an
+     * "underwater" event. No shader is changed for it, so nothing compiles.
+     */
+    updateUnderwater() {
+        let under = false;
+        const pools = this.pools();
+        if (pools.length && !this.editorView?.active && !this.birdView?.active) {
+            const position = this.perspectiveCamera.position;
+            for (const pool of pools) {
+                const [x0, z0, x1, z1] = pool.box;
+                if (position.x < x0 || position.x > x1 || position.z < z0 || position.z > z1) continue;
+                under = position.y < pool.level && position.y > pool.level - pool.depth;
+                break;
+            }
+        }
+        if (under === this.underwater) return;
+        this.underwater = under;
+        document.body.classList.toggle("underwater", under);
+        this.emit("underwater", under);
     }
 
     updatePointerLockCamera() {
@@ -423,6 +535,7 @@ export default class Camera extends EventEmitter {
             .copy(this.target)
             .addScaledVector(_offset, distance);
         this.perspectiveCamera.lookAt(this.target);
+        this.keepDry(this.target);
     }
 
     /**

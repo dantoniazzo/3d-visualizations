@@ -6,6 +6,8 @@ import SceneBuilder from "./SceneBuilder.js";
 import Environment from "./Environment.js";
 import Collision from "./Collision.js";
 import Player from "./Player/Player.js";
+import Interactables from "./Interactables.js";
+import Whereabouts from "./Whereabouts.js";
 import BirdView from "./BirdView.js";
 import Switches from "./Switches.js";
 import LiveLamps from "./LiveLamps.js";
@@ -18,6 +20,9 @@ import { distinguish, gatherLights, markBulbs } from "./Fittings.js";
 import ProbeLight from "./ProbeLight.js";
 import Scenery from "./Scenery.js";
 import People from "./People.js";
+import Seats from "./Seats.js";
+import Screens from "./Screens.js";
+import Water from "./Water.js";
 import Vegetation from "./Vegetation/Vegetation.js";
 import Flora from "./Flora/Flora.js";
 import Sky from "./Sky.js";
@@ -25,7 +30,7 @@ import PlainLight from "./PlainLight.js";
 import Scope from "./Scope.js";
 import StandIns from "./StandIns.js";
 import rays from "../Utils/rays.js";
-import { chromaURL, doorStatesURL, lightingMode, lightmapURL, movingShadowsOnly, roomLightAllowed, roomLightmap, sunMaskURL } from "../Utils/device.js";
+import { QUALITY, chromaURL, doorStatesURL, lightingMode, lightmapURL, movingShadowsOnly, onQualityChange, roomLightAllowed, roomLightmap, sunMaskURL } from "../Utils/device.js";
 import { loadBakedTexture } from "../Utils/bakedTexture.js";
 import { groundGradient } from "../../../shared/vegetation.js";
 import { hasLandscape } from "../../../shared/landscape.js";
@@ -76,6 +81,12 @@ export default class World extends EventEmitter {
             // A published version's runtime file stands in for building the house.
             const runtime = this.experience.publicView ? this.resources.items.publishedRuntime : null;
             this.sceneBuilder = new SceneBuilder(this.spec, { runtime });
+            // What the visitor can act on — the doors, the furniture's doors and drawers, the lights, the cars — and
+            // with which key, in either view (World/Interactables.js): what the crosshair and the prompt ask.
+            this.interactables = new Interactables(this);
+            // Which room the visitor is in, one answer for all who ask (World/Whereabouts.js): the room's name on
+            // screen, the key that switches its lights (Q) and, over a bake, the room drawn live (RoomLight).
+            this.whereabouts = new Whereabouts(this.sceneBuilder);
             this.environment = new Environment(this.spec);
             // The editor's own light, before the sky and the garden are made:
             // on, they are made under it.
@@ -195,6 +206,13 @@ export default class World extends EventEmitter {
                     // step's `people`); none downloaded while this visitor
                     // keeps them hidden (the "people" scenery).
                     this.people = new People(this, { shown: !this.experience.hiddenScenery.has("people") });
+                    // Where the visitor can sit (World/Seats.js): the published spec's seats, by the people's clip.
+                    this.seats = new Seats(this);
+                    // The televisions, to switch on (World/Screens.js): the published spec's, nothing drawn until one is.
+                    this.screens = new Screens(this);
+                    // The taps and the showers, to turn on (World/Water.js): where the runtime file's holders say they
+                    // are — none in a version published before the furniture's models said so — nothing drawn until one runs.
+                    this.water = new Water(this, { quality: () => QUALITY, onQualityChange });
                     // The scenery its visitor can hide, as they last left it.
                     this.scenery = new Scenery(this, this.experience.hiddenScenery);
                     this.emit("scenery-ready", this.scenery);
@@ -217,6 +235,13 @@ export default class World extends EventEmitter {
                 // The people round the property, from the spec's own list
                 // (World/People.js): the editor's to move, add and take away.
                 this.people = new People(this);
+                // Where the visitor can sit (World/Seats.js), as the furniture is placed now.
+                this.seats = new Seats(this);
+                // The televisions, to switch on in the walkthrough (World/Screens.js), each following its piece.
+                this.screens = new Screens(this);
+                // The taps and the showers, to turn on in the walkthrough (World/Water.js), as each piece's model
+                // says where they are; their water goes with a piece moved while it runs.
+                this.water = new Water(this, { quality: () => QUALITY, onQualityChange });
                 // Its light fittings switched live, once the furniture — its
                 // lamps among it — is in; found again after every edit.
                 this.on("furniture-ready", () => {
@@ -481,7 +506,10 @@ export default class World extends EventEmitter {
      *     every baked view;
      *   - a version that was not baked has no bake to draw from: its sun is
      *     left unshadowed and its lamps unlit (World/LampPool.js) — flat,
-     *     and cheap; its lit rooms still glow (World/RoomGlow.js).
+     *     and cheap; its lit rooms still glow (World/RoomGlow.js);
+     *   - in any of them, a car's headlamps throw the pool of light painted
+     *     on the road that a view drawn from the bake has, never a live
+     *     spotlight (CarLights.hold) — driven from above as well.
      */
     lightFromAbove(on) {
         on = Boolean(on);
@@ -496,6 +524,7 @@ export default class World extends EventEmitter {
         this.lamps?.hold(on);
         this.roomLight?.hold(on);
         builder.holdSunShade(on);
+        for (const car of builder.cars ?? []) car.lights?.hold(on);
         if (live) {
             builder.setDirectLight(!on);
             this.lightHouse();
@@ -831,9 +860,13 @@ export default class World extends EventEmitter {
         }
     }
 
-    /** The bird's-eye view of a floor, on or off. */
+    /**
+     * The bird's-eye view of a floor, on or off — at the wheel too, where it
+     * goes between the camera behind the car and the view from above, and
+     * the drive goes on in either (World/BirdView.js).
+     */
     toggleBirdView() {
-        if (!this.birdView || this.player?.inVehicle) return false;
+        if (!this.birdView) return false;
         return this.birdView.toggle();
     }
 
@@ -879,6 +912,8 @@ export default class World extends EventEmitter {
         // now if they are on the move: a step taken against those is a step through the sofa.)
         if (this.sceneBuilder) this.sceneBuilder.stepCollision(undefined, { moving: Boolean(this.player?.underWay()) });
         if (this.player) this.player.update();
+        // (After the visitor: a set switched on comes up, and plays while it is in sight of the view as it now is.)
+        if (this.screens) this.screens.update(delta);
         if (this.vegetation) this.vegetation.update(delta);
         if (this.scope) this.scope.update();
         if (this.lamps) this.lamps.update(delta);
@@ -899,6 +934,21 @@ export default class World extends EventEmitter {
         this.emit("tick", delta);
     }
 
+    /**
+     * Each frame, once the camera has been placed for it (Experience.update):
+     * what is drawn for where the eye is. The water (World/Water.js): its
+     * steam seen from inside a shower or from outside it is drawn by other
+     * faces, with or without the depth test, and in another order against
+     * the glass — worked out for the camera of the frame before, a camera
+     * that came in through the glass this frame (the third-person boom, which
+     * snaps) drew the steam over the door's handle for that frame. After the
+     * doors and the visitor too: a shower's glass door's mist goes with the
+     * door, the drops end on the visitor's head where it now is.
+     */
+    afterCamera() {
+        if (this.water) this.water.update(this.experience.time.delta);
+    }
+
     dispose() {
         this.disposed = true;
         this.birdView?.dispose();
@@ -909,6 +959,9 @@ export default class World extends EventEmitter {
         this.roomGlow?.dispose();
         this.bulbs?.dispose();
         this.probes?.dispose();
+        this.seats?.dispose();
+        this.screens?.dispose();
+        this.water?.dispose();
         this.people?.dispose();
         this.editor?.dispose();
         this.vegetation?.dispose();
@@ -916,6 +969,7 @@ export default class World extends EventEmitter {
         this.plainLight?.dispose();
         this.standIns?.dispose();
         this.experience.renderer?.realism?.dispose();
+        this.interactables?.dispose();
         this.sceneBuilder?.dispose();
         this.environment?.dispose();
         this.player?.dispose();

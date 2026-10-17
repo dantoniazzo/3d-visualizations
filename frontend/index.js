@@ -18,6 +18,7 @@ import {
 } from "./Experience/Utils/device.js";
 import { chooseLighting, chosenLighting, lostGraphics } from "./Experience/Utils/viewerChoices.js";
 import { finishesFor, FINISHES } from "../shared/catalog.js";
+import { keysFor } from "../shared/interact.js";
 import { publishOptions } from "../shared/publishOptions.js";
 import { publishedSpec } from "../shared/neighbourhood.js";
 
@@ -67,6 +68,8 @@ const dom = elements({
     qualityReload: "#quality-reload",
     scenerySection: "#scenery-section",
     sceneryList: "#scenery-list",
+    debugSection: "#debug-section",
+    collidersToggle: "#colliders-toggle",
     pickLabel: "#pick-label",
     viewNotice: "#view-notice",
     menuPanel: "#menu-panel",
@@ -75,10 +78,18 @@ const dom = elements({
     jumpList: "#jump-list",
     leaveButton: "#leave-button",
     roomReadout: "#room-readout",
+    roomLights: "#room-lights",
+    roomLightsLabel: "#room-lights-label",
+    roomLightsSaid: "#room-lights-said",
+    touchRoomLights: "#touch-room-lights",
+    touchRoomLightsLabel: "#touch-room-lights-label",
     inspectLabel: "#inspect-label",
     actionPrompt: "#action-prompt",
     actionKey: "#action-key",
     actionLabel: "#action-label",
+    actionAlso: "#action-also",
+    actionAlsoKey: "#action-also-key",
+    actionAlsoLabel: "#action-also-label",
     touchAction: "#touch-action",
     touchActionIcon: "#touch-action-icon",
     touchActionLabel: "#touch-action-label",
@@ -266,11 +277,14 @@ function enterScene(sceneId, spec, options = {}) {
     // Handy from the console when checking a layout: inspect the scene graph,
     // teleport, or read the spec that produced what you're looking at.
     window.experience = experience;
+    // The hints at the keys this view has: C where the colliders can be shown (Experience/Colliders.js).
+    showKeyHints();
 
     const world = experience.world;
     world.on("ready", () => {
         setupHud(spec);
         setupQuality();
+        setupDebug();
         if (publicView) tellLostGraphics();
     });
     world.on("room", updateRoomReadout);
@@ -289,9 +303,16 @@ function enterScene(sceneId, spec, options = {}) {
     world.on("switches-ready", setupLights);
     world.on("scenery-ready", setupViewOptions);
     world.on("switches", renderLights);
+    // The room's lights, by its name (Q): as the visitor goes, as switches are turned, and gone at the wheel.
+    world.on("switches", renderRoomSwitches);
+    world.on("vehicle", renderRoomSwitches);
+    // Getting in or out from above: what the view's toggle goes back to, and once a visit the car's keys.
+    world.on("vehicle", onVehicle);
+    world.on("room-lights", saySwitched);
     world.on("bird-hover", showPickLabel);
     world.on("bird-ready", setupFloorPicker);
     world.on("bird", updateBirdView);
+    world.on("colliders", onColliders);
     // A public view's own watch on its frame rate (Experience/FrameGuard.js): what it changes, shown and said.
     experience.guard?.on("change", onGuardChange);
 
@@ -355,8 +376,68 @@ function setupHud(spec) {
 
 function updateRoomReadout(room) {
     dom.roomReadout.textContent = room ? room.name : "";
+    // Its whole, where a narrow window cuts it short (hud.scss).
+    if (room) dom.roomReadout.title = room.name;
+    else dom.roomReadout.removeAttribute("title");
     dom.roomReadout.classList.toggle("visible", Boolean(room));
+    renderRoomSwitches();
 }
+
+/**
+ * The lights of the room the visitor is in, switched all at once (Q,
+ * Player.toggleRoomLights): a chip by the room's name — a bulb, lit while
+ * any of them is on, and the key — and on a touch screen a round button
+ * over the action's. Only in a room that has switches, and not at the
+ * wheel (Player.roomLights). Clicked with the cursor free, or tapped, it
+ * does what Q does.
+ */
+function renderRoomSwitches() {
+    const world = experience?.world;
+    const items = world?.player?.roomLights().items ?? [];
+    const shown = items.length > 0;
+    dom.roomLights.hidden = !shown;
+    dom.touchRoomLights.hidden = !shown;
+    if (!shown) return;
+    const on = items.some((item) => world.switches.isOn(item.id));
+    dom.roomLights.classList.toggle("is-lit", on);
+    dom.roomLights.setAttribute("aria-pressed", String(on));
+    dom.roomLightsLabel.textContent = on ? "Lights on" : "Lights off";
+    dom.roomLights.title = `${on ? "Turn off" : "Turn on"} this room's lights (Q)`;
+    dom.touchRoomLights.classList.toggle("is-lit", on);
+    dom.touchRoomLightsLabel.textContent = on ? "Off" : "On";
+    dom.touchRoomLights.setAttribute("aria-label", `${on ? "Turn off" : "Turn on"} this room's lights`);
+}
+
+/**
+ * What Q did, said a moment over the crosshair: the room — from above, the
+ * one the avatar is in — and its lights now; or that there were none to
+ * switch where the visitor stands. Under the editor's plain light a switch
+ * shows only in its fitting's glass, so it says where the light itself is
+ * seen.
+ */
+let switchedTimer = null;
+function saySwitched({ room, on, count }) {
+    renderRoomSwitches();
+    let text = "No lights to switch here";
+    if (count) {
+        const plain = !publicView && experience.world.plain;
+        text = `${room.name}: lights ${on ? "on" : "off"}${plain ? " (seen in the realistic preview, P)" : ""}`;
+    }
+    dom.roomLightsSaid.replaceChildren(Object.assign(document.createElement("kbd"), { textContent: "Q" }), ` ${text}`);
+    dom.roomLightsSaid.hidden = false;
+    clearTimeout(switchedTimer);
+    switchedTimer = setTimeout(() => (dom.roomLightsSaid.hidden = true), count ? 1800 : 2400);
+}
+
+/** The chip and the touch button do what Q does. */
+function switchRoomLights(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    experience?.world?.player?.toggleRoomLights();
+}
+
+dom.roomLights.addEventListener("click", switchRoomLights);
+dom.touchRoomLights.addEventListener("click", switchRoomLights);
 
 /** Edit mode takes the screen: the walkthrough's panels close as it opens. */
 function onModeChange(mode) {
@@ -377,8 +458,9 @@ function onModeChange(mode) {
 function onLook(target) {
     lookTarget = target;
 
+    // (A surface without a finish of its own — a pool's water, met by a swimmer's every look — is only named.)
     const label = target
-        ? target.kind === "surface"
+        ? target.kind === "surface" && target.finish
             ? `${target.label} — ${FINISHES[target.finish]?.label ?? target.finish}`
             : target.label
         : "";
@@ -405,12 +487,16 @@ function onDoorPrompt(prompt) {
  * otherwise, in the editor, a new finish for the surface aimed at.
  */
 function refreshAction() {
-    if (worldPrompt) showAction(worldPrompt.key, worldPrompt.label, worldPrompt.touch);
-    else if (lookTarget?.kind === "surface" && !publicView) showAction("T", "Change finish");
+    if (worldPrompt) showAction(worldPrompt.key, worldPrompt.label, worldPrompt.touch, worldPrompt.also);
+    else if (lookTarget?.kind === "surface" && lookTarget.finish && !publicView) showAction("T", "Change finish");
     else showAction(null);
 }
 
-/** What the touch button says for each action, in a word. */
+/**
+ * What the touch button says for each action, in a word, where its prompt
+ * does not say (every prompt from the world does: World/Interactables.js):
+ * the editor's own "Change finish".
+ */
 const TOUCH_ACTIONS = {
     "Open door": { label: "Open", icon: "door" },
     "Close door": { label: "Close", icon: "door" },
@@ -422,9 +508,12 @@ const TOUCH_ACTIONS = {
 /**
  * The action on offer — a door, the car, a light, a finish — as a key hint
  * on a keyboard, and as a button under the right thumb on a touch screen:
- * `touch`'s word and icon, or those TOUCH_ACTIONS has for the label.
+ * `touch`'s word and icon, or those TOUCH_ACTIONS has for the label. With
+ * `also`, `{ key, label }`, what another key does there, after it — seated
+ * before a television, E is the set's and Space gets up — on a keyboard
+ * only: on a touch screen the stick gets up.
  */
-function showAction(key, label, touch = TOUCH_ACTIONS[label]) {
+function showAction(key, label, touch = TOUCH_ACTIONS[label], also = null) {
     actionKey = key || null;
     if (!key) touch = null;
     dom.touchAction.hidden = !touch;
@@ -439,16 +528,22 @@ function showAction(key, label, touch = TOUCH_ACTIONS[label]) {
     }
     dom.actionKey.textContent = key;
     dom.actionLabel.textContent = label;
+    dom.actionAlso.hidden = !also;
+    if (also) {
+        dom.actionAlsoKey.textContent = also.key;
+        dom.actionAlsoLabel.textContent = also.label;
+    }
     dom.actionPrompt.hidden = false;
 }
 
-/** The touch button does what the key would. */
+/** The touch button does what the key would — Space, afloat beside the pool's edge, climbs out. */
 function runAction() {
     const player = experience?.world?.player;
     if (!player || !actionKey) return;
     if (actionKey === "E") player.interact();
-    else if (actionKey === "F") player.inVehicle ? player.exitVehicle() : player.enterNearestVehicle();
+    else if (actionKey === "F") player.inVehicle ? player.leaveVehicle() : player.enterNearestVehicle();
     else if (actionKey === "T") dom.finishPicker.hidden ? openFinishPicker() : closeFinishPicker();
+    else if (actionKey === "Space") player.climbOut();
 }
 
 dom.touchAction.addEventListener("click", (event) => {
@@ -460,7 +555,7 @@ dom.touchAction.addEventListener("click", (event) => {
 let pickerSurface = null;
 
 function openFinishPicker() {
-    if (publicView || !lookTarget || lookTarget.kind !== "surface") return;
+    if (publicView || !lookTarget || lookTarget.kind !== "surface" || !lookTarget.finish) return;
 
     pickerSurface = lookTarget;
     renderFinishGrid(pickerSurface);
@@ -677,7 +772,8 @@ function updateBirdView({ active, level }) {
         button.classList.toggle("is-active", Number(button.dataset.level) === level);
     }
     if (active) {
-        dom.viewToggleLabel.textContent = "Walk";
+        // What leaving the view goes back to: walking, or at the wheel the camera behind the car.
+        dom.viewToggleLabel.textContent = experience.world.player?.inVehicle ? "Behind the car" : "Walk";
         dom.viewToggle.classList.remove("is-first");
     } else {
         updateViewToggle(experience.camera.mode);
@@ -690,6 +786,29 @@ dom.birdToggle.addEventListener("click", (event) => {
     event.stopPropagation();
     experience?.world?.toggleBirdView();
 });
+
+/**
+ * In or out of a car (the world's "vehicle"). From above the view stays
+ * (World/BirdView.js): its toggle names what leaving it goes back to, and
+ * the first drive of a visit begun up there says once what the car's keys
+ * are — they are the car's, not the view's, until it has swung round
+ * behind the car.
+ */
+let droveFromAbove = false;
+function onVehicle({ driving }) {
+    const birdView = experience?.world?.birdView;
+    if (!birdView?.active) return;
+    updateBirdView({ active: true, level: birdView.level });
+    if (!driving || droveFromAbove) return;
+    droveFromAbove = true;
+    const touch = experience.camera.scheme === "orbit";
+    tellView(
+        touch
+            ? "The stick drives: up to go, down to brake and back, sideways to steer · “Get out” to get out · “Behind the car” for the car's own camera"
+            : "W/S drive · A/D steer · Space brake · H lights · F get out · B behind the car",
+        9000
+    );
+}
 
 dom.floorPicker.addEventListener("click", (event) => {
     const button = event.target.closest("[data-level]");
@@ -770,6 +889,9 @@ function setupLights(switches) {
         })
         .join("");
     renderLights(switches);
+    renderRoomSwitches();
+    // (Q's hint, now that there are lights for it to switch.)
+    showKeyHints();
     setupRoomLight();
 }
 
@@ -1121,6 +1243,66 @@ function tellLostGraphics() {
     }, 1000);
 }
 
+// ---------------------------------------------------------------------
+// Debug: the colliders (Experience/Colliders.js)
+// ---------------------------------------------------------------------
+
+/**
+ * Each key's hint shown where the key does something (shared/interact.js's
+ * KEYS): `[data-key-hint="<action>"]` in the preloader's and the lock's
+ * hints. C, for one, only where the colliders can be shown — the editor, or
+ * a public link that asks for them; Q where there are lights to switch.
+ */
+function showKeyHints() {
+    const debug = Boolean(experience?.colliders?.available);
+    const offered = new Set(keysFor({ state: "walk", editor: !publicView, debug }).map((entry) => entry.action));
+    // Q, where there are lights to switch: once the switches are here (setupLights).
+    if (!experience?.world?.switches?.list.length) offered.delete("room-lights");
+    for (const hint of document.querySelectorAll("[data-key-hint]")) hint.hidden = !offered.has(hint.dataset.keyHint);
+    // Space at a pool's edge, where there is a pool to swim in (World/Player/Swim.js).
+    const pools = Boolean(experience?.sceneSpec?.landscape?.pools?.length);
+    for (const hint of document.querySelectorAll("[data-pool-hint]")) hint.hidden = !pools;
+}
+
+/** The menu's Debug switch, where the colliders can be shown at all. */
+function setupDebug() {
+    const colliders = experience?.colliders;
+    dom.debugSection.hidden = !colliders?.available;
+    showKeyHints();
+    if (colliders?.available) updateDebug(colliders);
+}
+
+/** The switch as the colliders are: shown or not (the world's "colliders", or the controller itself). */
+function updateDebug({ shown } = {}) {
+    const on = Boolean(shown);
+    dom.collidersToggle.classList.toggle("is-on", on);
+    dom.collidersToggle.setAttribute("aria-pressed", String(on));
+}
+
+/**
+ * The colliders shown or hidden (C, Shift C, the menu's switch): the switch
+ * follows, and the walkthrough says what is on screen now and the key that
+ * changes it — edit mode says so in its own toasts (Editor/Editor.js).
+ */
+function onColliders(state) {
+    updateDebug(state);
+    if (editing()) return;
+    const said = state.shown
+        ? state.xray
+            ? "Colliders seen through everything — Shift C: nearest only"
+            : "Colliders shown — C to hide · Shift C: see through everything"
+        : "Colliders hidden";
+    tellView(said, 4000);
+}
+
+dom.collidersToggle.addEventListener("click", () => {
+    const colliders = experience?.colliders;
+    if (!colliders?.available) return;
+    // (Its lines, made the first time, take frames of their own.)
+    experience.guard?.settle();
+    colliders.toggle();
+});
+
 dom.sceneryList.addEventListener("click", (event) => {
     const button = event.target.closest("[data-scenery]");
     const scenery = experience?.world?.scenery;
@@ -1131,14 +1313,21 @@ dom.sceneryList.addEventListener("click", (event) => {
     }
 });
 
-/** From above, the light under the mouse and what a click will do to it. */
+/** From above, the light, the car, the seat or the television under the mouse, and what a click will do to it. */
 function showPickLabel(hover) {
     const switches = experience?.world?.switches;
-    dom.pickLabel.hidden = !hover || !switches;
+    dom.pickLabel.hidden = !hover || (hover.kind === "light" && !switches);
     if (dom.pickLabel.hidden) return;
-    const on = switches.isOn(hover.id);
-    dom.pickLabel.innerHTML = `${escapeHtml(hover.label)} <span>${on ? "On" : "Off"} · click to turn ${on ? "off" : "on"}</span>`;
-    dom.pickLabel.classList.toggle("is-on", on);
+    if (hover.kind !== "light") {
+        // A car to get into, a seat to sit on, a television to switch: what a click does, as the view says it
+        // (World/BirdView.js) — a set that is on lit as a light that is on is.
+        dom.pickLabel.innerHTML = `${escapeHtml(hover.label)} <span>· ${escapeHtml(hover.action ?? "click")}</span>`;
+        dom.pickLabel.classList.toggle("is-on", hover.kind === "tv" && Boolean(hover.on));
+    } else {
+        const on = switches.isOn(hover.id);
+        dom.pickLabel.innerHTML = `${escapeHtml(hover.label)} <span>${on ? "On" : "Off"} · click to turn ${on ? "off" : "on"}</span>`;
+        dom.pickLabel.classList.toggle("is-on", on);
+    }
     dom.pickLabel.style.transform = `translate(${Math.round(hover.x + 14)}px, ${Math.round(hover.y + 16)}px)`;
 }
 

@@ -16,6 +16,10 @@ const AHEAD_LAYER = 31;
 const PREPARE_PATIENCE = 8000;
 /** How many of the scene's lightings what was built ahead is remembered for (Renderer.builtFor) before it is all forgotten. */
 const PREPARED_MOST = 32;
+/** How many frames the shadow pass is waited for, to see what it draws with (Renderer.shadowDraws). */
+const SHADOW_WAIT = 8;
+/** Where what was built ahead for a lighting keeps the shadow maps' programs built for it, by their keys (Renderer.shadowTwins). */
+const SHADOWS_BUILT = {};
 
 /** How many times each material's shader has been built again after failing to link (Renderer.relinkFailed). */
 const RELINKS = new WeakMap();
@@ -41,7 +45,7 @@ export default class Renderer {
 
         this.setRenderer();
         if (Stats.enabled()) {
-            this.stats = new Stats(this.renderer, this.sizes, () => this.experience.published, () => this.experience.world?.readyIn);
+            this.stats = new Stats(this.renderer, this.sizes, () => this.experience.published, () => this.experience.world?.readyIn, () => this.experience.colliders?.stats());
         }
         // The Performance ↔ Quality slider (Utils/device.js), applied live.
         this.realism = new Realism(this.experience);
@@ -271,24 +275,41 @@ export default class Renderer {
      * One at a time, in the order asked: each on top of what the one
      * before it let in.
      *
+     * `paced`: for a light the visitor need not wait for — one in a fridge,
+     * built ahead as its door is aimed at (World/Openables.js's warm), and
+     * lit a moment late if it is opened before — set going three shaders at
+     * a time, and, where the browser had to build them, each drawn ahead in
+     * a frame of its own (build): the frames go on at their pace while it
+     * does. Unpaced, a dozen at a time and a dozen drawn ahead together:
+     * sooner done, and the frame that waits for those dozen pipelines took
+     * 0.44 s of the first look at Ladonia's A1 fridge.
+     *
      * @param {THREE.Light[]} lights  hidden now, to be shown by the caller when this resolves
+     * @param {object} [options]
+     * @param {boolean} [options.paced]
      * @returns {Promise<void>}
      */
-    prepareLights(lights) {
+    prepareLights(lights, { paced = false } = {}) {
         const before = this.preparing ?? Promise.resolve();
-        this.preparing = before.then(() => this.buildFor(lights)).catch((error) => console.warn("Shaders could not be built ahead for a light", error));
+        this.preparing = before.then(() => this.buildFor(lights, { paced })).catch((error) => console.warn("Shaders could not be built ahead for a light", error));
         return this.preparing;
     }
 
-    /** The lit materials' shaders for the scene with `lights` in it (prepareLights), a few milliseconds' worth at a time. */
-    async buildFor(lights) {
+    /** The lit materials' shaders for the scene with `lights` in it (prepareLights), a few milliseconds' worth at a time — or `paced`. */
+    async buildFor(lights, { paced = false } = {}) {
         if (this.plainExposure !== null) return;
-        const renderer = this.renderer;
+        // What the next shadow pass draws with, for the shadow maps' own shaders (shadowTwins): a few frames' wait — the
+        // first time for this lighting, or once three has made a shadow map's program more since, not otherwise: a
+        // fridge's light opened after it was built ahead comes in as soon as before.
+        const known = this.builtFor(lights, this.camera.activeCamera).get(SHADOWS_BUILT);
+        const draws = known?.depths === depthPrograms(this.renderer) ? null : await this.shadowDraws();
+        if (this.plainExposure !== null) return;
         const camera = this.camera.activeCamera;
         // What takes light, and is drawn — and has not been built for this
         // lighting already, with the materials it has now: nothing else is
         // built again for a light.
         const built = this.builtFor(lights, camera);
+        const shadows = draws ? this.shadowTwins(built, draws) : new Map();
         const lit = new Map();
         const gather = (object) => {
             if (object.visible === false) return;
@@ -300,9 +321,139 @@ export default class Renderer {
             for (const child of object.children) gather(child);
         };
         gather(this.scene);
-        if (!lit.size) return;
-        await this.build([...lit.keys()], lights, camera);
+        // ...and what nothing draws now but will the moment it moves: a public view's shut doors and drawers, drawn
+        // merged (World/ShutBatcher.js's `unseen`, one mesh of theirs a program), shown for their turn alone.
+        const batcher = this.experience.world?.sceneBuilder?.shutBatcher;
+        for (const mesh of batcher?.unseen ?? []) {
+            if (![].concat(mesh.material).some(takesLight)) continue;
+            const mark = materialsMark(mesh);
+            if (built.get(mesh) !== mark) lit.set(mesh, mark);
+        }
+        if (lit.size || shadows.size) {
+            await this.build([...lit.keys()], lights, camera, batcher?.unseen?.length ? (some, on) => batcher.around(some, on) : null, paced ? 3 : PREPARE_BATCH, paced, [], [...shadows.values()]);
+        }
         for (const [object, mark] of lit) built.set(object, mark);
+        if (!draws) return;
+        // (By the keys the pass drew with, and how many shadow maps' programs three had once these were built.)
+        const twinned = built.get(SHADOWS_BUILT) ?? { keys: new Set(), depths: -1 };
+        for (const key of shadows.keys()) twinned.keys.add(key);
+        twinned.depths = depthPrograms(this.renderer);
+        built.set(SHADOWS_BUILT, twinned);
+    }
+
+    /**
+     * The shadow maps' own shaders for the scene with the lights coming in
+     * (buildFor). three draws what casts into a shadow map with a depth
+     * material of its own (WebGLShadowMap's getDepthMaterial) — one for
+     * nearly everything, a copy for each material cut out by its texture —
+     * whose program, though it reads no light, it keys by how many lights of
+     * each kind there are, as every program; and it draws the shadow maps
+     * before it takes the frame's lights, with those of the frame before.
+     * Its one depth material draws what is rigged (the people, the visitors)
+     * and what is instanced (the plants) between the rest, and builds its
+     * program again at each change of kind — seventeen times a pass at A1's
+     * kitchen — so the second frame with a light more built six programs
+     * in the frame, by day: Ladonia's A1 fridge's first opening, a frame of
+     * 35–45 ms where its lit materials' were all built ahead (0.7 s with
+     * the six new to the GPU as well).
+     *
+     * So the next shadow pass of the scene is watched (shadowDraws): every
+     * program a depth material drew with in it, once, as a copy of that
+     * material as three had set it for the thing it drew then, and that
+     * thing. Each pair not built for this lighting yet (`built`'s
+     * SHADOWS_BUILT, by the program's key as it was drawn) is a stand-in to
+     * build with the lights in (build's `shadows`): the same program's key
+     * but for the lights, which three then finds — its programs are shared
+     * by key — when its own material changes kind in a pass with them in.
+     * From above none is drawn (Realism.holdShadows), and none is watched.
+     *
+     * @param {WeakMap} built  what has been built ahead for this lighting (builtFor)
+     * @param {Map<string, { object: THREE.Object3D, material: THREE.Material }>} draws  what the pass drew with (shadowDraws)
+     * @returns {Map<string, object>}  by the program's key, a stand-in for the thing, drawn with the copy
+     */
+    shadowTwins(built, draws) {
+        const twins = new Map();
+        const twinned = built.get(SHADOWS_BUILT);
+        for (const [key, { object, material }] of draws) {
+            if (twinned?.keys.has(key)) continue;
+            // What three reads of the thing it draws to key a program — what kind it is, rigged or instanced, and its
+            // geometry — taken onto a plain object of its own, the copy its material: not an object made from the thing
+            // itself, which would make the thing a prototype, and so another kind of object to the draw loop (app-notes,
+            // the editor's stand-ins: never give a scene object a property of its own).
+            twins.set(key, {
+                isMesh: object.isMesh === true,
+                isLine: object.isLine === true,
+                isPoints: object.isPoints === true,
+                isSkinnedMesh: object.isSkinnedMesh === true,
+                isInstancedMesh: object.isInstancedMesh === true,
+                isBatchedMesh: object.isBatchedMesh === true,
+                instanceColor: object.instanceColor ?? null,
+                morphTexture: object.morphTexture ?? null,
+                geometry: object.geometry,
+                material,
+            });
+        }
+        return twins;
+    }
+
+    /**
+     * What the scene's next shadow pass draws with (shadowTwins): each
+     * program a depth material of three's drew with in it, by its key, once,
+     * with a copy of the material as it was for that draw and what it drew.
+     * The sun's map is drawn again in the next frame for it, and up to
+     * SHADOW_WAIT frames are waited for a pass — none in a tab that draws
+     * no frames. Null where none was seen: none to wait for, or none came.
+     *
+     * @returns {Promise<Map<string, { object: THREE.Object3D, material: THREE.Material }>|null>}
+     */
+    async shadowDraws() {
+        const renderer = this.renderer;
+        const draws = new Map();
+        // (None to wait for: no shadow maps, none held from above, or no light of the scene's that casts — at night.)
+        if (!renderer.shadowMap.enabled || this.realism?.heldShadows) return null;
+        const scene = this.scene;
+        const seen = this.camera.activeCamera.layers;
+        const casting = [];
+        scene.traverseVisible((object) => {
+            if (object.isLight && object.castShadow && object.intensity > 0 && object.layers.test(seen)) casting.push(object);
+        });
+        if (!casting.length) return null;
+        const shadowMap = renderer.shadowMap;
+        const properties = renderer.properties;
+        const render = shadowMap.render;
+        const draw = renderer.renderBufferDirect;
+        let passing = false;
+        let passed = false;
+        // (The scene's own pass alone: a room shown live draws its lamps' maps through a scene of its own, and lights of its own.)
+        shadowMap.render = function (lights, of, camera) {
+            passing = of === scene;
+            try {
+                return render.call(this, lights, of, camera);
+            } finally {
+                passing = false;
+            }
+        };
+        renderer.renderBufferDirect = function (camera, of, geometry, material, object, group) {
+            const result = draw.call(this, camera, of, geometry, material, object, group);
+            if (passing && (material.isMeshDepthMaterial || material.isMeshDistanceMaterial)) {
+                passed = true;
+                const program = properties.get(material).currentProgram;
+                if (program && !draws.has(program.cacheKey)) draws.set(program.cacheKey, { object, material: material.clone() });
+            }
+            return result;
+        };
+        // A pass of the sun's map in the next frame, of the same as it drew the last time: a view drawn from its bake draws
+        // it again only as something moves, or now and then (World/LiveLamps.js). Not a lamp's: six maps, and a lamp's
+        // shadow is drawn while it shines anyway.
+        for (const light of casting) if (!light.isPointLight) light.shadow.needsUpdate = true;
+        if (!shadowMap.autoUpdate) shadowMap.needsUpdate = true;
+        try {
+            for (let frame = 0; frame < SHADOW_WAIT && !passed; frame++) if (!(await this.nextFrame())) break;
+        } finally {
+            shadowMap.render = render;
+            renderer.renderBufferDirect = draw;
+        }
+        return passed ? draws : null;
     }
 
     /**
@@ -363,11 +514,42 @@ export default class Renderer {
      * scene's own, or those of a pass of its own (that room's); `without`,
      * lights that shine now and will not: left out for the length of each
      * batch, as `lights` are let in.
+     *
+     * `shadows`: stand-ins drawn with copies of the shadow maps' depth
+     * materials (shadowTwins), built first, all at once — a few — with the
+     * lights in, as three's shadow pass builds them: into a picture, not the
+     * screen (what three keys a program's colour and tone by), and in an
+     * empty scene of their own (`shadowScene`: no fog, no surroundings, as
+     * the pass draws in none) with the scene's lights. Not drawn ahead: what
+     * one draws is the program it had for the lights before, word for word,
+     * and the browser has its pipeline already.
      */
-    async build(lit, lights, camera, around = null, batch = PREPARE_BATCH, paced = false, without = []) {
+    async build(lit, lights, camera, around = null, batch = PREPARE_BATCH, paced = false, without = [], shadows = []) {
         const renderer = this.renderer;
         const properties = renderer.properties;
         const programs = new Set();
+        if (shadows.length) {
+            const shown = lights.map((light) => light.visible);
+            const shone = without.map((light) => light.visible);
+            for (const light of lights) light.visible = true;
+            for (const light of without) light.visible = false;
+            const previous = renderer.getRenderTarget();
+            renderer.setRenderTarget(this.aheadThrough()[0]);
+            // (three takes the lights from what it is handed as well as from the scene it builds for: the scene's, here.)
+            this.shadowScene ??= new THREE.Scene();
+            const handed = { traverseVisible: (visit) => this.scene.traverseVisible(visit), traverse: (visit) => shadows.forEach(visit) };
+            try {
+                for (const material of renderer.compile(handed, camera, this.shadowScene)) {
+                    const program = properties.get(material).currentProgram;
+                    if (program) programs.add(program);
+                }
+            } finally {
+                renderer.setRenderTarget(previous);
+                lights.forEach((light, k) => (light.visible = shown[k]));
+                without.forEach((light, k) => (light.visible = shone[k]));
+            }
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        }
         let next = 0;
         while (next < lit.length) {
             const shown = lights.map((light) => light.visible);
@@ -756,10 +938,21 @@ export default class Renderer {
         // Under the plain light, straight to the screen: none of the realism (Realism.update returns at once).
         this.realism.update(camera);
         if (this.post && !plain) this.post.render(camera);
-        else this.renderer.render(this.scene, camera);
+        // (The scene but for what the stand-ins draw entirely, while they hold the editor's units still: StandIns.drawnScene.)
+        else this.renderer.render(world?.standIns?.drawnScene() ?? this.scene, camera);
+        // The colliders over it, when shown (Colliders.js): behind what the scene's depth hides where it was drawn straight
+        // to the screen — the post-processing's picture has none.
+        this.experience.colliders?.draw(this.renderer, camera, { depth: !(this.post && !plain) });
         // (Whatever waited for a frame to be drawn: nextFrame.)
         if (this.afterFrame.length) for (const drawn of this.afterFrame.splice(0)) drawn();
     }
+}
+
+/** How many programs three has for drawing shadow maps (Renderer.buildFor): its depth materials', by the start of their keys. */
+function depthPrograms(renderer) {
+    let count = 0;
+    for (const program of renderer.info.programs ?? []) if (program.cacheKey.startsWith("depth,") || program.cacheKey.startsWith("distance,")) count++;
+    return count;
 }
 
 /** What an object is drawn with, as it is now: its materials, and how many times each has been changed (Renderer.builtFor). */

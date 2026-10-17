@@ -103,9 +103,17 @@ path, and its knowledge of the `ld-` pieces, which has to grow with the catalogu
 
 It runs a deeper version of the furniture audit for C. Furniture is measured from the real GLB
 triangles rasterised at 2 cm (so an L-sofa or a floating nightstand is judged as drawn), and the
-walk raster collides each piece as the game does: as the catalogue's `collision` says when that is
-`box` or `mesh` (the L-shaped sofas are `mesh`), else as its box when it opens or exceeds the
-collision budget, else as its mesh. It checks room membership, overlaps, furniture into walls,
+walk raster collides each piece as the game does since 2026-10-16 (`SceneBuilder.collisionOf`): as
+the catalogue's `collision` says when that is `box` or `mesh` (the L-shaped sofas are `mesh`), else
+as its box when the piece without its opening parts (every node under one with `extras.opens`) has
+more triangles than `MESH_COLLISION_BUDGET`, else as its mesh — its parts in their shut places,
+which is where the game's shut boxes stand (`_modes.mjs` prints each piece's mode). Until
+2026-10-17 the script still boxed every piece with a part that opens, walling off an L or U
+kitchen's floor and every wardrobe, nightstand and washer the walker passes: against that copy,
+Ladonia's C read ACCESS 12, NARROW 27; with the rule mended, ACCESS 13, NARROW 26. The new ACCESS
+is the walk-in shower `c-f071`, whose way in is a glass door: shut in the raster it bars its own
+front, as it does in the game until opened (a way in has no shut box: it bars the way itself) —
+read an ACCESS on a shower with a door as a note. It checks room membership, overlaps, furniture into walls,
 rails, planters, stairs and floor openings, door clearance, swing and reach on both sides, stair
 foot and head space, access, narrow passages and cut-off areas, spacing, ordering (TV facing the
 sofa), windows and daylight, holes in walls and floor gaps. Each line carries its `furnishC:<line>`
@@ -124,9 +132,12 @@ lines finds `mirrored()` wherever it is, so the range only matters while line 10
 ## stairs-check.mjs: every flight and the named routes
 
 It builds the scene's collision as the app does (StructureBuilder slabs, walls, roofs, stair ramps
-and rails; LandscapeBuilder terrain and garden pieces; every furniture GLB as mesh or box by the
-catalogue's `collision` (`none`: left out) and `SceneBuilder.MESH_COLLISION_BUDGET`, read from the
-app; doors open) with the app's own `Collision`/Octree. It hands StructureBuilder a stub
+and rails; LandscapeBuilder terrain and garden pieces; every furniture GLB as `SceneBuilder.collisionOf`
+has it since 2026-10-16: the catalogue's `collision` (`none`: left out), else a box only when its
+triangles without its opening parts pass `SceneBuilder.MESH_COLLISION_BUDGET` (read from the app),
+else its mesh with its parts shut; doors open) with the app's own `Collision`/Octree. Run again on
+2026-10-17 with that rule: 0 blockers, 5 majors, 3 minors, every flight's walk and every named route
+OK, as before. It hands StructureBuilder a stub
 MaterialLibrary (`materials`, near the top): if it crashes with "… is not a function" after an app
 change, add that method to the stub, returning `plainMaterial`. Then for each flight it checks rise,
 going, width and pitch, headroom along the flight against what the capsule needs, what the capsule
@@ -247,8 +258,8 @@ rooms, the `rw-<n>` retaining-wall ids, the `x > 20` street-side hole filter, an
 
 It rebuilds every surface as the builders lay it down: room floors and ceilings as double-sided
 planes, wall panels around openings, thresholds, window frames, glass and blinds, Door.js linings,
-roof slabs, stair steps, landscape walls, copings, kerbs, pergolas, planters, railings, pool, road
-paint, terrain, hedge cores, and furniture catalog boxes. It reports overlapping faces closer than
+roof slabs, stair steps, landscape walls, copings, kerbs, pergolas, planters, railings, pool and
+its steps, road paint, terrain, hedge cores, and furniture catalog boxes. It reports overlapping faces closer than
 the tolerance, with the polygonOffset layering MaterialLibrary and LandscapeBuilder apply and the
 distance at which each gap starts to fight given the camera's near plane. It also reports paint
 off its slab, terrain or grass through slabs, slabs or walls over stair treads, and planter/soil
@@ -265,7 +276,10 @@ visible coincidences by status` table: the FIGHT and INVERTED columns are real f
 `layered`, `same-colour` and `hidden` are not. Then read the `== <category>` sections. Ladonia-specific:
 the A/B/C offsets (read from `A_AT`, `B_AT` and `C_AT` in `scripts/spaces/ladonia/index.js`, with
 fallbacks) used for building-local coordinates, and the generator path behind `--source`.
-Everything else follows the app's builders.
+Everything else follows the app's builders. A pool's `steps` (2026-10-16) are laid out by
+`shared/landscape.js`'s `poolSteps`, which the builder reads too: the treads, their flush stone
+nosings and the coping meet without a fight (Ladonia's B pool: 0 stair fights; 23 hidden
+same-colour contacts, listed with `--all`). The steps' ramp is unseen and not modelled.
 
 ## c-grade.mjs: building C at street level
 
@@ -343,11 +357,166 @@ argument, and the catalogue, `seats.json` and the index are the repo's.
   `size` and `yaw` against the GLB's real min/max. Use it to catch catalog sizes that don't match
   the mesh. The scene file and the `c-` prefix are Ladonia-specific.
 - `_glbparts.mjs <catalog-id>...`: a bounding box for each primitive (node, material) of a GLB.
-- `_modes.mjs <catalog-id>...`: triangle count, opening parts, and the collision mode the game will
-  use (the catalogue's `collision` if set; else box when it opens or has more triangles than
-  `SceneBuilder.MESH_COLLISION_BUDGET`, else mesh).
+- `_modes.mjs <catalog-id>...`: triangle count without the opening parts, the opening parts, and
+  the collision mode the game will use (since 2026-10-16: the catalogue's `collision` if set; else
+  box when the piece without its parts has more triangles than `SceneBuilder.MESH_COLLISION_BUDGET`,
+  else mesh, "+ N shut boxes" for its parts; a "shower door" is a way in with no box).
 - `_plan.mjs [generator-dir]`: building C's walls (with openings), rooms, stairs and floor openings
   as `c.js` lays them out in C's own frame. The default is the repo's `scripts/spaces/ladonia`.
+- `_hands.mjs <glb | catalog-id>...`: each opening part of a GLB, its label, its box shut in the
+  piece's frame, the edge it hangs on and its swing (or its slide), by height and along x, so a
+  run's hands read left to right as the piece faces north at rotation 0.
 - `_doors.mjs`: not standalone — the door tools' shared module (arguments, loading the scene or the
   generator, building frames, rooms, and the doors built and posed with `Door.js`). The other
   helpers above are standalone; nothing imports them.
+
+## part-sweep.py: every opening part of a scene against what stands round it
+
+It sweeps each placed piece's opening parts (the GLB nodes with `extras.opens`, their real surface
+sampled every 2 cm) from shut to open in `--steps` poses against every other placement's catalogue
+box as placed and every wall (solid, openings included), and gives for each part that runs into
+something how deep (mm), at what share of its swing, into what, and how far into it the part already
+was shut — a placement's own overlap. It is the scene-wide counterpart of `models/sweep.py` (each
+piece against its own parts, before export), and does offline what the app does at run time
+(`Openable.plan` stops a part at what is in its way): on Ladonia its hits were exactly the app's 32
+stops (22 kitchen clashes + 10). A placement builder who does not run the app sweeps with it. It
+needs numpy, which this Mac's python3 lacks: run it with Blender's own python,
+`/Applications/Blender.app/Contents/Resources/5.1/python/bin/python3.13 <skill>/checks/part-sweep.py
+<scene.json> [<glb-dir>] [<fallback-glb-dir>] [--steps 18] [--tol 0.005] [--only prefix,...]`.
+`<glb-dir>` is looked in first (a Blender copy's `glb/`, `models/export_scratch.py`'s out), then the
+fallback (default the repo's `public/models/furniture`, whose `catalog.json` gives the sizes);
+`--only` keeps the pieces whose catalogue id starts with one of the prefixes. Output: `CLASH
+<placement> <catalogue id> <part> <label> <mm> mm at t <share> (shut <mm>) into <what>`, then
+`PARTS <n> CLASHES <n>`. Ladonia, all parts: 5 min 15 s; `--only ld-kitchen` (144 parts) on
+2026-10-17: 16 clashes. Ladonia-specific: nothing; the scene is the argument. Parts'
+nodes are taken unrotated, as `join_piece` writes them.
+
+## Every tool in this skill's folder
+
+The node checkers above are this folder's. The rest of the skill's tools are one folder up, and
+`models/` (its own `README.md`). In-page tools run in a page of a TEST server (never the user's on
+:3000), loaded through the sink:
+`await eval(await (await fetch("http://127.0.0.1:3199/<file>?" + Date.now())).text())`. `sink.py`
+and `serve.py` serve the skill folder's top-level files by name (JSON too), so a page can load any of
+them from either, but nothing in `checks/` or `models/`. Each file's header says what to load before
+it, what each call does and what it returns. The order in a test tab: `boot.js` right after the
+navigation, then `act.js`, then the feature's own tools. Start both servers once a session, in the
+background, writing into the scratch folder:
+
+    python3 <skill>/sink.py <scratch>/frames            # 127.0.0.1:3199
+    python3 <skill>/serve.py <scratch>/frames 3187      # the tools server and the baton
+
+A restart of the machine empties the scratch folder: a tool worth keeping goes into this folder, with
+a header in the style of these, the same session it is written.
+
+**Servers and the tab's start**
+- `sink.py <out-dir>`: 127.0.0.1:3199; saves each POST's body as `<out-dir>/<path>`, serves the
+  skill folder's files by GET.
+- `serve.py <out-dir> [port]`: the tools server (3187): the same, plus the baton for tabs that time in
+  turns (`take?me=`, `give?to=`, `ready`, `prog`, `status`, `wait`) and a ~20 ms wait for fast.js.
+- `boot.js`: first after every navigation; stubs every non-GET but the tools' own (a publish too,
+  unless `window.__bootPublish`), keeps errors in `__log`, loads fast.js and drive.js and drives the
+  frames, passes the name prompt (avatar `window.__pickSkin`), loads harness.js and the pace "always"
+  in an editor tab; `await __dvBoot`, then read `__dvBooted.how` ("forced" is common).
+- `fast.js`: short timers for a throttled tab (boot.js loads it; needs serve.py).
+- `drive.js`: `__driveOn()`, `await __drive(ms, until)`, `__driveOff()`: frames for a tab the
+  browser is not drawing.
+- `pick.js`: `window.__pickSkin = "female"` then load it: that avatar first in the preloader's list.
+- `harness.js`: `__K` — poses, shots, saves, `time`, `render` over the views, `realistic()`, `scope()`;
+  stubs every save but a publish, its runtime file and a bake.
+
+**Measuring** (app-notes.md, Measuring)
+- `wtime.js`: `__wtime.frames(n)`, `compare(label, on, off)` (with each side's draws), `update(n)`,
+  `draws()`.
+- `gtime.js`: `__gtime.frames(n)`, `compare(...)`: the GPU's own time by the timer query.
+- `pair-time.js`: `__pair.dpr2()`, `run({ me, next, rounds, spots })` in turns through the baton,
+  `save(name)`, `summary()`, `ab(on, off)`, `frame`, `draws`, `step`, `others`.
+- `ladonia-spots.js`: `__spots` / `__spot(names)`: Ladonia's public-view timing spots (living,
+  pool, bath-dry, bath-shower, seated-tv, bird-ground, drive-above), and `__editorSpots` (kitchen,
+  living, upperU walking; overview, terrace in edit mode); copy as `<project>-spots.js`.
+- `light-in.js`: `__lightIn.parts()`, `await first({ part })`, `await again(n)`: a fridge's door
+  opened as a visitor first opens it, every frame timed until its light has been in a second.
+- `pair.py <a> <b> [label-a label-b] [--dir frames]`: two tabs' rows paired round by round.
+- `frame-split.js`: `__frame.census()`, `split(n)`, `deep(n)`, `churn(n)`, `glcount(n)`, `lights()`,
+  `subtrees`, `under`, `walked`, `drawsBy`, `drawTime`: where a frame's time goes.
+- `hold-check.js`: `__hold.audit()`, `same(label)`: the editor's held units against three's own walk
+  and against the frame let go; `grab`, `cmp`, `save`.
+- `cold.js` (before boot.js) and `coldsplit.js`: `__cold.mark/report`, `__coldsplit.on/off/rows`: a
+  first visit's shaders, salted, and what each frame built.
+- `glass-race.js`: `await __glassRace()`: the glass-door race forced; one look throughout is right.
+- `vshot.js`: `await __vshot(name, { width })`: the frame with the page's own HUD over it.
+
+**What the visitor acts on** (app-notes.md, What the visitor acts on, and the features' sections)
+- `act.js`: `__act.doors/drawers/switches`, `stand`, `aim`, `look`, `press("E"|"F"|"Q")`, `spot`,
+  `run()`, `timeLook()`.
+- `walk.js`: `__walk.doors()`, `to()`, `free()`: the real player physics through every door.
+- `openables.js`: `__openables.pieces`, `walkIn`, `sameTriangles`, `free`, `freeSpots`, `place`,
+  `removeTest`, `stops()` (what stops each part), `everyE()` (E on one part of each kind), `sashes()`
+  (every window turned or tilted and shut). `pieces`, `walkIn`, `sameTriangles`, `freeSpots` and
+  `place` read the editor's furniture: an editor tab's alone.
+- `sit.js`: `__sit.ready()`, `seats`, `before`, `aim`, `press`, `state()` (plan, part, side, afar,
+  prelude, risingBy, opacity), `view`, `shot`.
+- `seat-sweep.js`: `__seats.ready()`, `loadBoxes` / `takeBoxes`, `loadStarts` / `makeStarts`,
+  `sweep(name)`, `seat(id)`, `decide`, `ownCheck`, `self`, `limbsMeet`: every seat sat on and got up
+  from, limbs against everything but its own piece; with `ladonia-seat-starts.json` (214 seats: the
+  scene of 2026-10-17's a-f116#0, a-f189#0/#2 and b-f192#0/#2 have no start in it, `makeStarts` for
+  them) and `ladonia-w-boxes.json` (171 pieces' editor boxes).
+- `seat-sweep.py kinds | compare | per-seat [-v] | detail | self <files>`: the sweep's files read.
+- `figure-fade.js`: `__fade.fade({ id, from, at })`, `fades(name)`, `snap`, `check`: sat on from
+  afar, got up mid-fade, the materials worn at the end.
+- `tv.js`: `__tv.list`, `freeze`, `frames`, `measure`, `off`.
+- `water.js`, `steam.js`: `__water.list/go/inside/press/sweep/sheet/view/inject`,
+  `__steam.series/strip/timings/reset`.
+- `jump.js`: `__jump.all()`: run and jump at every upstairs window; `windows`, `run` (`record`: the
+  path), `place`, `step`.
+- `lights.js`: `__lights.info`, `stand`, `q()`, `walk(from, to)`, `night/day`, `whereNow`: Q and
+  which room the visitor is in.
+- `hud.js`: `__hud.room(id)`, `measure()`: the HUD's top row.
+- `birdcar.js`: `__bc.info/cars/stand/key/tap/step/drive/route/click/hover/drag/shadows/shot`,
+  `behind()` (the byte-for-byte drive across builds); in an editor tab `__K.scope("all")` first (no
+  car is offered under "house").
+- `holes.js`: `__holes.look/sweep/shot/seenBy`: culled faces the bird's-eye camera would see, in a
+  public view (`sweep`'s `azimuths` is a count; each call puts the page's floors back after).
+- `count-views.mjs [--dir <publish-dir>] [--dump out.json] <id>...` (node): a published version's
+  bird's-eye samples, the drive ones included.
+
+**Swimming** (app-notes.md, Swimming and the pool's steps; The pool's water)
+- `pool.js`: `__pool.at(u, v)`, `stand`, `step`, `hold`, `space`, `look`, `st()`, `shot`, `run`.
+- `pool-look.js`: `__poolLook.poses()`, `sheet(name)`, `swimSheet`, `hide`, `time`, `water`.
+- `clips.js`: `__clips.probe(clip, pitch, lift)`, `figure()`, `range`, `steady`, `sitTrace(id)`,
+  `ready`, `skin`.
+- `swim-trace.js`: `__trace.trace(frames, { each })`: pops, facing, waterline, limbs through faces.
+- `swim-checks.js`: `__swim.track`, `wall`, `corner`, `taps`, `fullChanges`, `alone`, `turn`,
+  `climb`: the clips passes' measures.
+- `others.js`: `__others.mirror({ scenario })`, `send` / `recv` (two real pages), `save`: what other
+  visitors see; `net.py <send.json> <recv.json>` matches the two pages' rows.
+
+**Looking, plans and the bake**
+- `ladonia-views.js`: `__POSES`, `__renderSet(prefix)`, `__plans(prefix)`; copy as
+  `<project>-views.js`.
+- `zfight.js`: `__zfight({ limit })`: coplanar triangles on the same depth layer, in the page.
+- `people-audit.js`: `__people.audit()`, `load`, `patch`, `lineup`, `shots`.
+- `bake-check.js`: `await __bakeCheck({ poses })`: a baked view's sun, black and drawn light.
+- `compare.mjs <out.jpg> "<path with {k}>"... -- <keys>` (node): frames side by side with their
+  luminance.
+- `prep_review.mjs <round> [prefix]` (node, from the scratch folder): blind pairs for critics.
+- `gridcrop.mjs <plan.png> <out.jpg> <px-per-m> <ox> <oy> <x0> <z0> <x1> <z1> [zoom]` (node): a plan
+  crop with a metre grid.
+- `bake-replay.py`: the bake's atlas packing again on a checkpoint (app-notes.md, Baking).
+
+**Assets, Blender and the scene**
+- `thumbs.py` (Blender): `-- <out-dir> <id>...`: a look at catalogue GLBs.
+- `models/`: views.py, sheet.mjs, pair.mjs, parts.py, lean.py, profile.py, facets.py, contacts.py,
+  flatbase.py, coplanar.py, and since 2026-10-17 `sweep.py` (each piece's parts swept against its
+  own), `openview.py` (parts posed open, shut, FIX=1 anchors), `imgdiff.py`, `export_scratch.py`
+  (`models/README.md`).
+- `mixamo.js` (pasted in mixamo.com after the user signs in): `pickCharacter`, `pickAnimation`,
+  `inPlace`, `download`, `batch`, `take`; `mixamo-fetch.sh <links-dir> <repo>/assets/people`: the
+  watcher that curls each link into `characters/`, `animations/` or `avatar/` (the visitor's clips).
+- `encode-video.py` (Blender): `-- <src> <out.mp4> <t0> <t1> <w> <h> <kbps> [fps]`: a TV clip,
+  without ffmpeg.
+- `copy-merge.sh blender-copy | gen-copy | merge-blender | merge-gen`: the parallel copies of §11.
+- `patch-pool-steps.mjs <scene.json> [--pool id] [--steps JSON] [--backup dir] [--dry-run]` (node): a
+  seeded scene's pool given its steps, a backup first.
+- `undef.config.mjs`: `npx eslint -c <skill>/undef.config.mjs --no-ignore frontend/Experience
+  frontend/index.js shared scripts server`: calls to functions that no longer exist.

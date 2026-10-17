@@ -59,11 +59,19 @@ downloads, from the app's own avatars (assets/avatars/): the two avatars
 as characters, their "Idle" clip, and a sitting and a lying pose made
 here from it (standin-*.glb, clips.standin.glb, people.standin.json).
 
+With --avatar-clips it makes the visitor's own figure's clips beyond the
+five its avatar files carry — swimming, treading water, climbing out of
+the pool (frontend/Experience/World/Player/Swim.js) — from
+avatar/*.fbx (FBX Binary, Without Skin, 30 fps, In Place): one skeleton,
+every clip on it, as the people's are, and what each is played as
+(avatar_clips: avatar-clips.glb, avatar-clips.json).
+
 In Blender, which is Z-up, a person faces -Y; glTF's (x, y, z) is
 Blender's (x, z, -y).
 
     npm run people                               (this, then the packing)
-    blender --background --python import_people.py -- --src <dir> --out <dir> [--standin]
+    npm run people -- --avatar-clips             (the visitor's clips only)
+    blender --background --python import_people.py -- --src <dir> --out <dir> [--standin | --avatar-clips]
 """
 import argparse
 import contextlib
@@ -78,7 +86,7 @@ import sys
 import bpy
 import numpy as np
 from bpy_extras import anim_utils
-from mathutils import Matrix, Vector
+from mathutils import Matrix, Quaternion, Vector
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
@@ -1030,12 +1038,25 @@ def clip_size(arm, action):
     return standing_hips(chain, ankles(arm, posed=feet_down)), chain
 
 
-def import_clips(paths):
+def import_clips(paths, people=True):
     """Every clip as an action of one armature — the first standing clip's
     skeleton, whose feet are surely on the floor in its first frame — and
-    how high that skeleton's pelvis stands."""
+    how high that skeleton's pelvis stands.
+
+    `people` False, for the visitor's own clips (avatar_clips): none is a
+    person's pose to be settled or turned — "Stand To Sit" is a sitting
+    clip by its name, and trimmed to its settled part it was half a second
+    of sitting — and none surely stands in its first frame (a stroke lies
+    along the water), so a skeleton's size is taken at rest, T-posed on
+    its feet."""
     paths = sorted(paths, key=lambda p: classify(os.path.basename(p))[0] != "stand")
     master, actions, size, chain = None, [], None, None
+
+    def size_of(arm, action):
+        if people:
+            return clip_size(arm, action)
+        rest = leg_chain(arm)
+        return standing_hips(rest, ankles(arm)), rest
     for path in paths:
         name = os.path.splitext(os.path.basename(path))[0]
         arm, meshes = load(path)
@@ -1052,15 +1073,16 @@ def import_clips(paths):
         bone_curves_only(action)
         take_in(arm, [], arm.matrix_world.copy(), [action])
         action.name = name
-        settle(arm, action)
-        head_forward(arm, action)
-        face_forward(arm, action)
+        if people:
+            settle(arm, action)
+            head_forward(arm, action)
+            face_forward(arm, action)
         if master is None:
             master = arm
             master.name = "Armature"
-            size, chain = clip_size(master, action)
+            size, chain = size_of(master, action)
         elif not same_skeleton(master, arm):
-            action = retarget(arm, action, master, name, size / clip_size(arm, action)[0])
+            action = retarget(arm, action, master, name, size / size_of(arm, action)[0])
         if arm is not master:
             source = arm.animation_data.action
             arm.animation_data_clear()
@@ -1407,14 +1429,338 @@ def character_files(src):
     return sorted(os.path.join(folder, f) for f in os.listdir(folder) if f.lower().endswith(".fbx"))
 
 
+# ---------------------------------------------------------------------
+# The visitor's own clips (--avatar-clips)
+# ---------------------------------------------------------------------
+
+# What each of the visitor's clips is played as in the app, by its name (the
+# file's: "Treading Water") — the first pattern that matches — and so what
+# is done with it here. frontend/Experience/World/Player/Swim.js's CLIPS and
+# Player.js's sitting down and getting up play them by these names (and look
+# them up the same way where this has not said).
+#
+#   loop    played over and over, where the app holds the body still or
+#           swims it along itself (a stroke, treading water): cut to a loop
+#           of whole cycles, from where its pose comes back round (find_loop)
+#           and before anything that is no stroke — Mixamo's "Swimming To
+#           Edge", which has no In Place, swims one stroke and then reaches
+#           for the pool's edge and holds on — closed so that its end is its
+#           start (close_loop), and with what its Hips travel across the
+#           floor over it taken out;
+#   climb   played once, its travel kept: the app follows its Hips out of the
+#           water (Swim.js), its hands on the pool's edge. Begun where its
+#           head is up by its hands (climb_start): Mixamo's "Pulling Up To A
+#           Ledge" first hangs at arms' length, its head 0.4 m under its
+#           hands — under the water, at a pool's edge 0.13 m over it;
+#   move    played once, as it is, its travel kept: sitting down onto a seat
+#           and getting up off one, lined up with the seat by the app.
+AVATAR_AS = [
+    (r"stand(ing)? to sit|sit(ting)? down", "sit-down", "move"),
+    (r"sit(ting)? to stand|stand(ing)? up|get(ting)? up", "stand-up", "move"),
+    (r"climb|ledge|pull(ing)? up|exit|out of", "climbing", "climb"),
+    (r"breast|to edge", "breaststroke", "loop"),
+    (r"tread", "treading", "loop"),
+    (r"swim|crawl|freestyle", "swimming", "loop"),
+]
+# A clip whose Hips travel further than this across the floor was not
+# downloaded In Place (or had no such choice).
+IN_PLACE = 0.15            # m
+# A loop is at least LOOP_LEAST long. How near a pose comes back to another
+# is the root mean square, over the bones, of the angle between their turns
+# (pose_gaps), its end's from its start's and the frame after its end's from
+# the frame after its start's (so that it moves on as it did, too): the
+# nearest such pair of frames — or, of those within LOOP_SLACK of it, the
+# furthest apart (more whole cycles) — bound the loop. Mixamo's own loops
+# come back exactly (0°); one closer than LOOP_CLEAN is as good as made so,
+# and one further off is closed anyway (close_loop), but said so.
+LOOP_LEAST = 0.8           # s
+LOOP_SLACK = 1.0           # degrees
+LOOP_CLEAN = 3.0           # degrees
+# A stroke's hands come no higher over the rest of it than over its first
+# LOOP_LEAST (a crawl's arm coming over the water, a breaststroke's reaching
+# forward): one come up higher than that by more than REACH_UP — onto the
+# pool's edge — ends the stroke, and the loop is cut before it.
+REACH_UP = 0.15            # m
+# Climbing out is begun where its head is no further than this under its
+# hands' mean: at a pool's edge, about at the water.
+CLIMB_HEAD = 0.15          # m
+# Mixamo's strokes swim with the face in the water and the body along it,
+# the back of the neck the highest of the figure: kept under the water
+# with what it wears (Swim.js keeps a hood or a collar under), its face is
+# too. So a stroke (STROKES) is swum heads-up (head_up): the whole figure
+# turned STROKE_PITCH about its head, the legs down, and the neck and the
+# head lifted STROKE_LIFT between them, the face out and looking ahead —
+# measured on both avatars: the male's hoodie under, his mouth at the
+# water and his eyes 5-9 cm over it.
+STROKES = ("swimming", "breaststroke")
+STROKE_PITCH = 35          # degrees
+STROKE_LIFT = 45           # degrees
+
+
+def avatar_clip_files(src):
+    folder = os.path.join(src, "avatar")
+    if not os.path.isdir(folder):
+        return []
+    return sorted(os.path.join(folder, f) for f in os.listdir(folder) if f.lower().endswith(".fbx"))
+
+
+def avatar_as(name):
+    """What a clip is played as, and what is done with it here (AVATAR_AS): (None, None) for neither."""
+    for pattern, played, handling in AVATAR_AS:
+        if re.search(pattern, name, re.I):
+            return played, handling
+    return None, None
+
+
+def pose_track(arm, action):
+    """`action`, frame by frame from its first, as it poses `arm`: each
+    bone's turn in its own rest frame, as a quaternion (w, x, y, z) —
+    what its keys say, and what three.js applies — in an array [frames,
+    bones, 4]; the Hips' location in theirs ([frames, 3]); and where the
+    Hips, the head and the hands are in the armature's frame ([frames, 3]
+    each, metres, Z up)."""
+    lo, hi = frames(action)
+    assign(arm, action)
+    bones = list(arm.pose.bones)
+    joints = {"hips": HIPS, "head": PREFIX + "Head", "left": PREFIX + "LeftHand", "right": PREFIX + "RightHand"}
+    turns, keys, at = [], [], {key: [] for key in joints}
+    for f in range(lo, hi + 1):
+        bpy.context.scene.frame_set(f)
+        turns.append([list(pb.matrix_basis.to_quaternion()) for pb in bones])
+        keys.append(list(arm.pose.bones[HIPS].matrix_basis.to_translation()))
+        for key, name in joints.items():
+            pb = arm.pose.bones.get(name)
+            at[key].append(list(pb.head) if pb else [math.nan] * 3)
+    track = {"lo": lo, "names": [pb.name for pb in bones], "turns": np.array(turns), "keys": np.array(keys)}
+    track.update({key: np.array(points) for key, points in at.items()})
+    return track
+
+
+def pose_gaps(turns, i):
+    """How far each frame's pose is from frame i's: the root mean square,
+    over the bones, of the angle between their turns, in degrees."""
+    dots = np.abs(np.einsum("bk,fbk->fb", turns[i], turns)).clip(0, 1)
+    return np.sqrt(np.mean((2 * np.degrees(np.arccos(dots))) ** 2, axis=1))
+
+
+def find_loop(track):
+    """The loop in a clip (`track`, pose_track's) — its first and last
+    frames, counted from its first — of the stroke part of it (before a
+    hand comes up REACH_UP higher than over its first LOOP_LEAST), at least
+    LOOP_LEAST long: where its pose and the next frame's come back nearest
+    to an earlier frame's and the frame after it (pose_gaps), or as near as
+    LOOP_SLACK to that and further apart. With how far off it came back,
+    in degrees. None for a clip shorter than a loop."""
+    count = len(track["turns"])
+    least = round(LOOP_LEAST * FPS)
+    hands = np.maximum(track["left"][:, 2], track["right"][:, 2])
+    high = np.nanmax(hands[:least + 1]) + REACH_UP
+    over = np.nonzero(hands > high)[0]
+    stroke = int(over[0]) if len(over) else count
+    if stroke <= least:
+        return None
+    gaps = np.array([pose_gaps(track["turns"], i) for i in range(stroke)])
+    pairs = []
+    for s in range(stroke - least):
+        for e in range(s + least, stroke):
+            # (A clip's last frame, Mixamo's loop's, has no next: its start's own is its next's.)
+            after = gaps[s + 1, e + 1] if e + 1 < stroke else gaps[s, e]
+            pairs.append(((gaps[s, e] + after) / 2, s, e))
+    nearest = min(pair[0] for pair in pairs)
+    _, s, e = max((pair for pair in pairs if pair[0] <= nearest + LOOP_SLACK), key=lambda pair: (pair[2] - pair[1], -pair[0]))
+    return s, e, float(gaps[s, e]), stroke
+
+
+def close_loop(track, s, e):
+    """Frames s to e of a clip (`track`, pose_track's, counted from its
+    first) as a loop, as keys for write_keys: each bone's turn at e brought
+    round to the one at s, the difference spread evenly over the loop (an
+    eased turn added, from none at s to all of it at e), and the Hips'
+    location likewise — their travel over the loop, across the floor and
+    up or down, taken out. The loop then ends as it starts, and plays on
+    round without a jump; a stroke stays where the app holds the body."""
+    turns = track["turns"][s:e + 1]
+    keys = track["keys"][s:e + 1]
+    n = e - s
+    samples = {}
+    for b, name in enumerate(track["names"]):
+        first = Quaternion(turns[0, b])
+        last = Quaternion(turns[n, b])
+        if first.dot(last) < 0:
+            last.negate()
+        off = first @ last.inverted()
+        rows = []
+        for k in range(n + 1):
+            q = Quaternion().slerp(off, k / n) @ Quaternion(turns[k, b])
+            place = Vector(keys[k] - (keys[n] - keys[0]) * (k / n)) if name == HIPS else None
+            rows.append((place, q))
+        samples[name] = rows
+    return samples
+
+
+def head_up(arm, samples, pivot):
+    """A stroke's keys (close_loop's) as the visitor swims it, at the
+    surface with the face out of the water: the whole figure turned
+    STROKE_PITCH about the armature's X axis through `pivot` (its head at
+    the loop's start, in the armature's frame) — the head end up, the legs
+    down, as someone swims heads-up — and the neck and the head lifted
+    STROKE_LIFT between them, each about its own X axis (across the body:
+    Mixamo's bones are all rolled so), looking ahead over the water."""
+    rest = arm.data.bones[HIPS].matrix_local
+    turn = Matrix.Translation(pivot) @ Matrix.Rotation(-math.radians(STROKE_PITCH), 4, "X") @ Matrix.Translation(-pivot)
+    rows = []
+    for place, q in samples[HIPS]:
+        basis = rest.inverted() @ turn @ rest @ (Matrix.Translation(place) @ q.to_matrix().to_4x4())
+        loc, rot, _ = basis.decompose()
+        rows.append((loc, rot))
+    samples[HIPS] = rows
+    lift = Quaternion((1, 0, 0), -math.radians(STROKE_LIFT) / 2)
+    for name in (PREFIX + "Neck", PREFIX + "Head"):
+        if name in samples:
+            samples[name] = [(place, q @ lift) for place, q in samples[name]]
+
+
+def rekey(arm, action, samples, first):
+    """A new action of `arm` in `action`'s place, and by its name, keyed
+    with `samples` (write_keys') from frame `first`; `action` is removed —
+    glTF's exporter would take every action that fits the skeleton."""
+    name = action.name
+    action.name = f"{name} (as downloaded)"
+    made = bpy.data.actions.new(name)
+    for rows in samples.values():
+        for k in range(1, len(rows)):
+            if rows[k - 1][1].dot(rows[k][1]) < 0:
+                rows[k] = (rows[k][0], -rows[k][1])
+    write_keys(arm, made, samples, first)
+    bpy.data.actions.remove(action)
+    return made
+
+
+def climb_start(track):
+    """The first frame (counted from the clip's first) where its head is no
+    further than CLIMB_HEAD under its hands."""
+    hands = (track["left"][:, 2] + track["right"][:, 2]) / 2
+    up = np.nonzero(track["head"][:, 2] >= hands - CLIMB_HEAD)[0]
+    return int(up[0]) if len(up) else 0
+
+
+def avatar_clips(src, out):
+    """The visitor's own figure's clips beyond its five: Mixamo's swimming
+    strokes, treading water, climbing out of the pool, sitting down and
+    getting up, downloaded Without Skin into avatar/ (assets/people/avatar/
+    by default) — on one skeleton as the people's clips are (import_clips:
+    the first clip's, any other's re-keyed onto it), none settled or turned
+    as a person's pose is, but each made fit for how the app plays it
+    (AVATAR_AS): a loop cut and closed, held in place; a climb begun with
+    its head out of the water; a move as it is. And measured: how high
+    that skeleton's pelvis stands at rest — the app scales a clip's Hips by
+    each avatar's own over it, as it does the people's (Utils/fitClip.js)
+    — and for each clip what the app plays it as, its length, which frames
+    of the download it keeps, its first frame's head and pelvis over the
+    root and its last frame's pelvis (glTF's axes, metres), how far its
+    Hips travel across the floor as downloaded, and: for a loop, how much
+    of that travel it took out and at what pace the stroke swam it, and how
+    far off its pose came back round; for a climb, where its hands hold on
+    at its start. Writes avatar-clips.glb and avatar-clips.json, which
+    scripts/optimize-people.mjs packs into public/models/people/."""
+    paths = avatar_clip_files(src)
+    if not paths:
+        raise SystemExit(f"No avatar/*.fbx in {src}: download the visitor's clips from Mixamo first "
+                         f"(FBX Binary, Without Skin, 30 fps, In Place where it is offered)")
+    print("> the visitor's clips")
+    fresh()
+    master, actions, _ = import_clips(paths, people=False)
+    rest_pose(master)
+    hips = standing_hips(leg_chain(master), ankles(master))
+    listed = []
+    for index, action in enumerate(actions):
+        name = action.name
+        played, handling = avatar_as(name)
+        track = pose_track(master, action)
+        hips_at = track["hips"]
+        travel = float(np.max(np.linalg.norm(hips_at[:, :2] - hips_at[0, :2], axis=1)))
+        lo, hi = frames(action)
+        entry = {"name": name, "as": played}
+        said = []
+        if handling == "loop":
+            found = find_loop(track)
+            if found:
+                s, e, seam, stroke = found
+                moved = float(np.linalg.norm(hips_at[e, :2] - hips_at[s, :2]))
+                samples = close_loop(track, s, e)
+                entry.update({"loop": True, "stripped": round(moved, 3), "pace": round(moved / ((e - s) / FPS), 3), "seam": round(seam, 1)})
+                said.append(f"looped over frames {lo + s}-{lo + e}" + (f" (of the stroke's {lo}-{lo + stroke - 1})" if stroke < hi - lo + 1 else ""))
+                if moved > 0.005:
+                    said.append(f"{moved:.2f} m of travel taken out (swum at {entry['pace']:.2f} m/s)")
+                if seam > LOOP_CLEAN:
+                    said.append(f"its pose came back round only to {seam:.0f}°, the rest made up over the loop")
+                if played in STROKES:
+                    head_up(master, samples, Vector(track["head"][s].tolist()))
+                    said.append(f"swum heads-up ({STROKE_PITCH}° up, the neck and head {STROKE_LIFT}°)")
+                action = actions[index] = rekey(master, action, samples, track["lo"] + s)
+            else:
+                said.append("TOO SHORT to loop: played as it is")
+        elif handling == "climb":
+            first = climb_start(track)
+            if first:
+                action.use_frame_range = True
+                action.frame_start, action.frame_end = lo + first, hi
+                said.append(f"begun at frame {lo + first} of {lo}-{hi}, its head up by its hands")
+            grip = Vector(((track["left"][first] + track["right"][first]) / 2).tolist())
+            entry["grip"] = gltf(grip)
+            said.append(f"its travel kept, its hands at {entry['grip']}")
+        elif handling == "move":
+            said.append("its travel kept")
+        lo, hi = frames(action)
+        assign(master, action)
+        bpy.context.scene.frame_set(lo)
+        bpy.context.view_layer.update()
+        head = master.pose.bones.get(PREFIX + "Head")
+        entry.update({
+            "duration": round((hi - lo) / FPS, 3),
+            "frames": [lo, hi],
+            "head": gltf(head.head) if head else None,
+            "pelvis": gltf(master.pose.bones[HIPS].head),
+        })
+        bpy.context.scene.frame_set(hi)
+        bpy.context.view_layer.update()
+        entry["last"] = gltf(master.pose.bones[HIPS].head)
+        entry["travel"] = round(travel, 3)
+        listed.append(dict(sorted(entry.items(), key=lambda item: list(AVATAR_KEYS).index(item[0]))))
+        if not played:
+            said.append("NOTHING plays it: name the file after what it is (AVATAR_AS)")
+        elif travel > IN_PLACE and handling not in ("loop", "climb", "move"):
+            said.append("NOT In Place: download it again with In Place ticked")
+        print(f"  {name}: played as {played or '-'}, {entry['duration']} s, its hips travel {travel:.2f} m as downloaded; " + "; ".join(said))
+    assign(master, None)
+    for action in actions:
+        stack(master, action)
+    rest_pose(master)
+    export(os.path.join(out, "avatar-clips.glb"), [master], animations=True)
+    meta = {"file": "avatar-clips.glb", "hips": round(hips, 3), "fps": FPS, "list": listed}
+    with open(os.path.join(out, "avatar-clips.json"), "w") as f:
+        json.dump(meta, f, indent=2)
+        f.write("\n")
+    print(f"  {len(actions)} clips on one skeleton of {len(master.data.bones)} bones, its pelvis {hips:.3f} m up standing")
+
+
+# The order avatar-clips.json lists each clip's fields in.
+AVATAR_KEYS = ("name", "as", "duration", "frames", "head", "pelvis", "last", "travel", "loop", "stripped", "pace", "seam", "grip")
+
+
 def main():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     parser = argparse.ArgumentParser(prog="import_people.py")
     parser.add_argument("--src", default=os.path.join(REPO, "assets", "people"))
     parser.add_argument("--out", required=True)
     parser.add_argument("--standin", action="store_true")
+    parser.add_argument("--avatar-clips", action="store_true")
     args = parser.parse_args(argv)
     os.makedirs(args.out, exist_ok=True)
+
+    if args.avatar_clips:
+        avatar_clips(args.src, args.out)
+        return
 
     if args.standin:
         bodies = [(os.path.join(AVATARS, "avatar_male.glb"), "standin-male", "Alex (stand-in)"),
