@@ -1,6 +1,6 @@
 # openview.py: catalogue GLBs rendered with their opening parts posed — to check each part's hand, its swing and what is
-# inside — and the same cameras shut, for a before/after comparison with imgdiff.py (app-notes.md, Furniture: opening
-# parts; models/README.md).
+# inside — and the same cameras shut, for a before/after comparison with imgdiff.py (../furniture-data.md;
+# ../../visitor-interactions/opening-parts.md; models/README.md).
 #   <blender> --background --python <skill>/models/openview.py -- <out-dir> [--open 1.0] [--views front,left,right,top,low,back]
 #            [--size 900] [--tag open] [--only part,…] [--flat 1] [--cam x,y,z --look x,y,z] <glb> ...
 # Writes <out-dir>/<id>-<view>-<tag>.png (tag "open", or "shut" with --open 0). --open is the share of each part's

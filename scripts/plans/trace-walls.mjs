@@ -4,7 +4,8 @@
  * along their lines, into wall runs with the gaps in them (doors, windows).
  * A first draft of a building's walls, to check against the plan and
  * correct by hand (slanted walls, which it does not trace, among them):
- * see .claude/skills/build-property-space.
+ * see .claude/skills/build-property-space/research-and-plans.md (Measure the
+ * plans).
  *
  *   node scripts/plans/trace-walls.mjs <plan.png> <px-per-metre> <out-prefix>
  *        [--dark 135] [--min 3] [--crop x0,y0,x1,y1]

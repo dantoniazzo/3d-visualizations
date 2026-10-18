@@ -17,7 +17,7 @@
 #
 # The back is Blender -Y by default, which is glTF +Z: the back of a piece
 # modelled with its front to Blender +Y (glTF -Z), as every loose.py and
-# ladonia.py piece is (SKILL.md §4, "Facing"). So "leans back" = top toward -Y in
+# ladonia.py piece is (../furnishing.md, "Facing"; ../furnish.md). So "leans back" = top toward -Y in
 # Blender = toward +Z in glTF. Use --back +y for joinery modelled facing
 # the other way (joinery.py's SOUTHWARD pieces), and -x/+x for the cushions
 # of an L's return (select them with --box), or --back auto.

@@ -1,10 +1,10 @@
 /**
  * Ladonia Residence, Kosinožići — the first three of the project's eight
  * buildings, as the developer's listing shows them (konekt-nekretnine.hr
- * project 253; .claude/skills/build-property-space): buildings A and B,
- * one design, B with the pool in front, and building C, banded in corten;
- * along a village street with parking in front of each behind a dry-stone
- * wall and photinia, the oak woods behind.
+ * project 253; .claude/skills/build-property-space, this file its site.md):
+ * buildings A and B, one design, B with the pool in front, and building C,
+ * banded in corten; along a village street with parking in front of each
+ * behind a dry-stone wall and photinia, the oak woods behind.
  *
  * Site frame: x east (the street), z south; the gardens at 0, the street a
  * metre below. Each building is written in its own frame (ab.js, c.js) and

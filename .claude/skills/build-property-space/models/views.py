@@ -24,7 +24,7 @@
 #   back   perspective from the back on the +X side, above (0.55, -1, 0.45)
 # Each piece stands on a grey floor under a sun and a fill light (EEVEE,
 # AgX), framed to its bounds. Colours read lighter here than in the app
-# (SKILL.md §4): judge colour in an in-app frame. Four pieces at 480 px take
+# (../furnishing.md): judge colour in an in-app frame. Four pieces at 480 px take
 # about 4 s.
 import argparse
 import math

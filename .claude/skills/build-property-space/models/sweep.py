@@ -1,10 +1,10 @@
 # sweep.py: every opening part of a piece swept from shut to open, against the parts of its own piece that stay put —
-# the offline sweep SKILL.md §4 asks a builder for, before a piece is exported or placed (app-notes.md, Furniture:
-# opening parts). It builds each piece from blender/export_furniture.py's PIECES as `npm run furniture` would, before
-# join_piece, and samples each part's faces every 2 cm through `--steps` poses shut to open (a hinge about its marker's
-# axis: z, or the marker's x where it says `axis`; a slide along its x), against every part that stays put, each as its
-# own box as it was built (PLANES=1: a box-like part of 40 faces or fewer by its own planes, so a board cut by a wall
-# or a slant is not its box round it).
+# the offline sweep ../furnishing.md asks a builder for, before a piece is exported or placed (../furniture-data.md;
+# ../../visitor-interactions/opening-parts.md). It builds each piece from blender/export_furniture.py's PIECES as
+# `npm run furniture` would, before join_piece, and samples each part's faces every 2 cm through `--steps` poses shut to open
+# (a hinge about its marker's axis: z, or the marker's x where it says `axis`; a slide along its x), against every part
+# that stays put, each as its own box as it was built (PLANES=1: a box-like part of 40 faces or fewer by its own planes,
+# so a board cut by a wall or a slant is not its box round it).
 #   PLANES=1 <blender> --background --python <skill>/models/sweep.py -- [--tol 0.002] [--steps 18] <piece-id> ...
 # Prints `CLASH <id> <type> <label> at <pivot> <mm> mm at t <share> point <x, y, z> in <part>` for each part that passes
 # more than --tol into another, `SWEPT <id> parts <n> static <n> clashes <n>` a piece, and `TOTAL clashes N`.

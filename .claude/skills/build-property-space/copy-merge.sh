@@ -1,6 +1,6 @@
 #!/bin/bash
 # Parallel builders, each in its own copy, merged back with git merge-file
-# against a pristine base (SKILL.md §11 step 3). Two kinds of copy:
+# against a pristine base (review-rounds.md, step 3). Two kinds of copy:
 #
 #   copy-merge.sh blender-copy <scratch> <name>
 #       <scratch>/<name>/blender: blender/ copied from the base; its
@@ -43,7 +43,7 @@
 # remove <scratch>/base/<what>. Merging is unaffected: it is three-way.
 # After merge-blender, rebuild the merged pieces once with `npm run
 # furniture -- <prefix>` (the only step that writes the real catalogue);
-# after merge-gen, import the generator and reseed (SKILL.md §0).
+# after merge-gen, import the generator and reseed (scene-safety.md).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -245,7 +245,7 @@ merge-gen)
         check_name "$name"
         merge_tree "gen-$name" "$B" "$S/gen-$name/scripts/spaces/$space" "$TGT"
     done
-    report "$TGT" "next: node -e \"import('./scripts/spaces/$space/index.js').then(() => console.log('ok'))\", the checkers, then the seed (SKILL.md §0)"
+    report "$TGT" "next: node -e \"import('./scripts/spaces/$space/index.js').then(() => console.log('ok'))\", the checkers, then the seed (.claude/skills/build-property-space/scene-safety.md)"
     ;;
 diff)
     [[ $# -ge 2 ]] || usage

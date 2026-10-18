@@ -5,7 +5,8 @@
  * opening by where it starts and ends along the wall's main axis (x for a
  * wall running more east–west, z for one running more north–south), rooms
  * by their floor outlines, and the furniture by where each piece stands and
- * which way it faces. See .claude/skills/build-property-space.
+ * which way it faces. See .claude/skills/build-property-space/generator.md
+ * (kit.js's `Building`) and buildings.md.
  */
 
 const round = (n) => Math.round(n * 1000) / 1000;

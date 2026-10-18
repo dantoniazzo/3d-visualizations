@@ -21,7 +21,8 @@ import { uniqueTriangles } from "./Collision.js";
  * HOW. A sash turns in, as a casement does, 90° about the jamb nearer its
  * end of the window — a pair from the middle, a single one from its left —
  * or the jamb `hinge` names: `left` towards its wall's start, `right`
- * towards its end, as a door's swing names them (reference.md's Swing).
+ * towards its end, as a door's swing names them
+ * (.claude/skills/build-property-space/generator.md, Swing).
  * Where something stands in the way of that — a tap on the worktop under a
  * kitchen's window, a desk's lamp, a wardrobe beside it, whatever the
  * collision trees hold in the quarter of a cylinder its turn sweeps

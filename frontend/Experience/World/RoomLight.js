@@ -57,8 +57,9 @@ import { BETWEEN } from "./Whereabouts.js";
 /**
  * How many groups of rooms are drawn live at once, at most, by the slider's step: the one their visitor is in, and
  * those seen from it through what stands open (look) — nearest first; beyond these a room is the bake's, as every
- * room but the visitor's was before. By measurement (`app-notes.md`, Live room light): what an M4 Pro draws at each
- * step with the frames of a walk through a flat staying about 25 ms.
+ * room but the visitor's was before. By measurement (`.claude/skills/baked-view-lighting/live-room-measured.md`; the
+ * rule: `.claude/skills/baked-view-lighting/live-room.md`, How many): what an M4 Pro draws at each step with the
+ * frames of a walk through a flat staying about 25 ms.
  */
 const LIVE_MOST = { 2: 8, 3: 8, 4: 8 };
 /**

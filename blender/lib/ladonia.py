@@ -2410,9 +2410,11 @@ def _cord(col, mats, top, bottom, mat="black_metal", canopy=0.05):
 #
 # A lamp gives light (the bake, the switches, the live lamps) through a node
 # extra `light: {at, power, color, glow, radius, room}`, as Wrenfield's do
-# (furnish.py `_lamp`; app-notes.md, "Lights and fittings"): `at` where its
-# bulb or LED is, in that node's own Blender coordinates; `power` the bake's
-# watts; `glow` the material of the bulb, lens or diffuser, which the bake
+# (furnish.py `_lamp`;
+# .claude/skills/build-property-space/furniture-catalogue.md, "Lamps: a
+# catalogue piece that gives light"): `at` where its bulb or LED is, in that
+# node's own Blender coordinates; `power` the bake's watts; `glow` the
+# material of the bulb, lens or diffuser, which the bake
 # splits out as the bulb (bake_public.py part_bulbs: that material's faces
 # within `radius` + 12 mm of `at`) and the app lights as the switch is;
 # `room`, that it is on its room's ceiling switch, not one of its own

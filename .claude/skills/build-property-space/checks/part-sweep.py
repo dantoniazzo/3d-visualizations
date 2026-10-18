@@ -1,8 +1,9 @@
 """part-sweep.py: every opening part of every placed piece in a scene swept shut to open, against the other pieces
 (their catalogue boxes, as placed) and the walls (solid, their openings included), with how far in each part already
-was shut (a placement's own overlap) — the scene-wide counterpart of models/sweep.py (app-notes.md, Furniture: opening
-parts). The app does the same at run time (Openable.plan stops a part at what is in its way); on Ladonia its hits were
-exactly the app's 32 stops (22 kitchen clashes + 10). A placement builder who does not run the app sweeps with this.
+was shut (a placement's own overlap) — the scene-wide counterpart of models/sweep.py (../furniture-data.md;
+../../visitor-interactions/opening-parts.md). The app does the same at run time (Openable.plan stops a part at what
+is in its way); on Ladonia its hits were exactly the app's 32 stops (22 kitchen clashes + 10). A placement builder who
+does not run the app sweeps with this.
     python3 <skill>/checks/part-sweep.py <scene.json> [<glb-dir>] [<fallback-glb-dir>] [--steps 18] [--tol 0.005] [--only prefix,...]
 Parts come from the GLBs: each node with extras.opens (as join_piece writes them: the hinge at the node's translation,
 in the piece's frame, unrotated), its surface sampled every 2 cm. A GLB is looked for in <glb-dir> (a Blender copy's

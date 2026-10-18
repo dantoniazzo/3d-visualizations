@@ -533,7 +533,7 @@ climbs out with a jump. The water is clear: the steps and a swimmer's body
 show through it. The steps are a pool's `steps` in the scene
 (`landscape.pools[i].steps`): a scene seeded before them has none until its
 file is given them — without seeding it again, which would lose its edits:
-`node .claude/skills/build-property-space/patch-pool-steps.mjs
+`node .claude/skills/visitor-interactions/patch-pool-steps.mjs
 scenes/kosinozici-villas.json` (with every editor tab on it reloaded first).
 
 **Windows that open.** The slim windows over a sill (Ladonia's, 45 of them,
@@ -1391,7 +1391,8 @@ stairwells' edges sit inside the walls beside them, showers stand a
 centimetre off their walls, landscape walls meet at corners without
 overlapping. How it was built, and what to do
 differently next time, is the `build-property-space` skill
-(`.claude/skills/build-property-space/`).
+(`.claude/skills/build-property-space/`; its layering `z-fighting.md`), one
+of the seven project skills the repo's `CLAUDE.md` indexes.
 
 Everything round its buildings is its **landscape** (`spec.landscape`,
 `shared/landscape.js`), and in a space that has one the Fluffy Tree garden,
@@ -1662,7 +1663,8 @@ editor (15 ms a frame where it was 10) was its furniture's collision
 tree, cut that day from a box with room round it: mended the same day —
 the tree is the build before's again (below). And the realistic preview,
 by 0.3–2.4 ms a frame inside the renderer: not mended, and not a thing
-that runs each frame (`app-notes.md`, Measuring).
+that runs each frame
+(`.claude/skills/app-testing-and-performance/measuring.md`).
 
 **How much is shown.** The header's **Show** menu (and the View menu) sets
 the view's scope (`World/Scope.js`), remembered in the browser

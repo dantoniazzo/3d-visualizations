@@ -6,7 +6,7 @@
  *   node c-grade.mjs --code          built live from scripts/spaces/ladonia/index.js
  *   node c-grade.mjs --code=<path>   built from another index.js (a patched copy of scripts/spaces/ladonia/index.js)
  *   add --validate                   pass it through server/scene/validate.js first, as the seed does
- *   add --views=<path>               another ladonia-views.js (default: the skill's)
+ *   add --views=<path>               another ladonia-views.js (default: app-testing-and-performance's)
  *
  * Prints, with numbers:
  *  1. C's vertical offset per kind of element (rooms, walls, roofs, stairs,
@@ -52,7 +52,7 @@ if (arg) {
     scene = JSON.parse(readFileSync(`${REPO}/scenes/kosinozici-villas.json`, "utf8")).scene;
     source = "seeded: scenes/kosinozici-villas.json";
 }
-const viewsPath = process.argv.find((a) => a.startsWith("--views="))?.split("=")[1] ?? `${REPO}/.claude/skills/build-property-space/ladonia-views.js`;
+const viewsPath = process.argv.find((a) => a.startsWith("--views="))?.split("=")[1] ?? `${REPO}/.claude/skills/app-testing-and-performance/ladonia-views.js`;
 
 const L = scene.landscape;
 const T = L.terrain;

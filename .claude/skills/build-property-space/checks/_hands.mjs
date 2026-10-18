@@ -1,7 +1,7 @@
 // _hands.mjs: each opening part of a GLB — its label, its box shut (the app's x, y, z in the piece's frame), the edge it
 // hangs on and which way it swings, or where it slides — grouped by height and sorted along x, so a run's hands read left
-// to right as the piece faces north (−z) at rotation 0, its own −X on the left (app-notes.md, Furniture: opening parts).
-// Read-only.
+// to right as the piece faces north (−z) at rotation 0, its own −X on the left (../furniture-data.md;
+// ../../visitor-interactions/opening-parts.md). Read-only.
 //   node <skill>/checks/_hands.mjs <glb | catalog-id> ...
 // A catalogue id is looked up in the repo's public/models/furniture/catalog.json (the repo four folders above this file,
 // or REPO=<dir>).

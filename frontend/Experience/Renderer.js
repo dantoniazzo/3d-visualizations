@@ -378,8 +378,9 @@ export default class Renderer {
             if (twinned?.keys.has(key)) continue;
             // What three reads of the thing it draws to key a program — what kind it is, rigged or instanced, and its
             // geometry — taken onto a plain object of its own, the copy its material: not an object made from the thing
-            // itself, which would make the thing a prototype, and so another kind of object to the draw loop (app-notes,
-            // the editor's stand-ins: never give a scene object a property of its own).
+            // itself, which would make the thing a prototype, and so another kind of object to the draw loop
+            // (.claude/skills/walkthrough-editor/stand-ins.md; the rule, never give a scene object a property of its
+            // own: .claude/skills/app-testing-and-performance/speed-architecture.md).
             twins.set(key, {
                 isMesh: object.isMesh === true,
                 isLine: object.isLine === true,

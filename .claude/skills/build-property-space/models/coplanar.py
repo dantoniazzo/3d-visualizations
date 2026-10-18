@@ -1,6 +1,6 @@
 # Coplanar overlapping faces inside one GLB: two faces of different parts or
 # materials lying in the same plane, facing the same way. They z-fight
-# (flicker) in the app. SKILL.md §9 has the depth-precision rule; this finds
+# (flicker) in the app. ../z-fighting.md has the depth-precision rule; this finds
 # the cases built into a model (a splashback running on behind an open
 # shelf's back panel, a frame's face in its carcass's plane, a plate on a
 # panel).
@@ -11,7 +11,7 @@
 #
 # How: every face triangulated; at its centre and at three points 70 % of
 # the way to its corners, the faces within --tol (default 0.1 mm: the app's
-# camera fights such gaps from about 9 m, SKILL.md §9) whose normal is within
+# camera fights such gaps from about 9 m, ../z-fighting.md) whose normal is within
 # 2.5 degrees of this face's, same way round. Faces of one part that share a
 # vertex are neighbours, not overlaps. The filters pick the faces tested;
 # their partners can be anywhere.

@@ -1,6 +1,6 @@
 # Model QA: looking at and measuring catalogue GLBs
 
-Tools for checking a Blender piece before it is placed: SKILL.md §4 asks for proof from the
+Tools for checking a Blender piece before it is placed: `../furnishing.md` asks for proof from the
 orthographic side view and a measurement, not by eye. They were written in the 2026-10-03/04
 round, when the user's complaints were pillows falling forward, a flat plane through the white bed
 pillows and pillows that didn't look natural, and they are generic: any GLB, any material names.
@@ -180,7 +180,7 @@ writes `<out>/<id>/<view>.png` (four pieces at 480 px: about 4 s). Views: `front
 from the front, on the piece's −X side, above), `side` (orthographic from +X: the piece's front is
 on the right of the image, so a pillow leaning back has its top displaced to the left), `left`
 (orthographic from −X, front on the left: an L's other end), `top`, `plan` (orthographic straight
-down, front at the bottom), `back`. Colours read lighter there than in the app (SKILL.md §4).
+down, front at the bottom), `back`. Colours read lighter there than in the app (`../furnishing.md`, Model QA; `../blender.md`).
 `sheet.mjs <views-dir> <sheets-dir> [id ...]` writes `<sheets-dir>/<id>.jpg`, two views a row.
 
     node $K/pair.mjs <scratch>/ladonia/gallery <scratch>/frames fin2- <scratch>/pairs 17 21   # Ladonia's
@@ -190,7 +190,7 @@ down, front at the bottom), `back`. Colours read lighter there than in the app (
 frames from `__renderSet`), each cropped to 16:9. It is for your own eye; critics get blind pairs
 from `prep_review.mjs`.
 
-## With Blender copies (SKILL.md §11 step 3)
+## With Blender copies (`../review-rounds.md`, step 3)
 
     CM=.claude/skills/build-property-space/copy-merge.sh
     $CM blender-copy <scratch> beds          # <scratch>/beds/blender, its OUT -> <scratch>/beds/glb
@@ -208,7 +208,7 @@ a stale base is refused.
 
 ## Opening parts: sweep.py, openview.py, imgdiff.py, export_scratch.py (2026-10-17)
 
-SKILL.md §4 asks for every part that opens (a door, a drawer, a flap, a fridge's door, a shower's
+`../furnishing.md` asks for every part that opens (a door, a drawer, a flap, a fridge's door, a shower's
 glass) to be swept against its own piece and against the scene before a piece is placed. These do
 the piece's side; `../checks/part-sweep.py` the scene's, and `../checks/_hands.mjs` lists each
 part's hand and swing from the GLB.
